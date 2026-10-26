@@ -18,10 +18,6 @@ public final class AccountAccess {
         if(p.role()!=role) throw new ApiError.Failure(HttpStatus.FORBIDDEN,"ACCESS_DENIED","접근 권한이 없습니다.");
         return p;
     }
-    public static void student(String id) {
-        if(!require(Role.STUDENT).userId().equals(id))
-            throw new ApiError.Failure(HttpStatus.FORBIDDEN,"ACCESS_DENIED","본인의 기록만 사용할 수 있습니다.");
-    }
     public static void checkTeacherOwner(String owner) {
         var auth=SecurityContextHolder.getContext().getAuthentication();
         if(auth!=null && auth.getPrincipal() instanceof Principal p && p.role()==Role.TEACHER && !p.userId().equals(owner))

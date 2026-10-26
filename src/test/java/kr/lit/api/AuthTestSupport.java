@@ -27,36 +27,21 @@ abstract class AuthTestSupport {
     @Autowired EvaluationService evaluations;
     @Autowired WorkService work;
     @MockitoBean ResetMailer mail;
-    Tokens teacher,student,otherStudent;
+    Tokens teacher;
     String remote;
     static final String PASSWORD="Test-password-123";
     static String unique() {return UUID.randomUUID().toString().replace("-","").substring(0,18);}
-    @BeforeEach void accounts() {
-        remote="test-"+unique();
-        teacher=newTeacher();student=newStudent();otherStudent=newStudent();
-        SecurityContextHolder.clearContext();
-    }
+    @BeforeEach void accounts() {remote="test-"+unique();teacher=newTeacher();as(teacher);}
     @AfterEach void clear() {SecurityContextHolder.clearContext();}
     Tokens newTeacher() {
-        String suffix=unique(),code=UUID.randomUUID().toString()+UUID.randomUUID();
-        auth.bootstrap(code,"테스트학교");
+        String suffix=unique(),code=UUID.randomUUID().toString()+UUID.randomUUID();auth.bootstrap(code,"테스트학교");
         var u=auth.signupTeacher(new TeacherSignup("t_"+suffix,PASSWORD,suffix+"@example.test","교사","테스트학교",code));
         return auth.login(new Login(u.username(),PASSWORD));
     }
-    Tokens newStudent() {
-        String suffix=unique();var u=auth.signupStudent(new StudentSignup("s_"+suffix,PASSWORD,suffix+"@example.test","학생","테스트학교",1,1,1));
-        return auth.login(new Login(u.username(),PASSWORD));
-    }
-    void as(Tokens tokens) {
-        var p=auth.authenticate(tokens.accessToken());
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(p,null,List.of()));
-    }
+    void as(Tokens tokens) {var p=auth.authenticate(tokens.accessToken());SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(p,null,List.of()));}
     MockHttpServletRequestBuilder request(MockHttpServletRequestBuilder r,Tokens tokens) {
-        r.with(req->{req.setRemoteAddr(remote);return req;});
-        return tokens==null?r:r.header("Authorization","Bearer "+tokens.accessToken());
+        r.with(req->{req.setRemoteAddr(remote);return req;});return tokens==null?r:r.header("Authorization","Bearer "+tokens.accessToken());
     }
     MockHttpServletRequestBuilder body(MockHttpServletRequestBuilder r,Object value) throws Exception {return r.contentType("application/json").content(json.writeValueAsString(value));}
     JsonNode ok(MockHttpServletRequestBuilder r) throws Exception {return json.readTree(mvc.perform(r).andExpect(status().is2xxSuccessful()).andReturn().getResponse().getContentAsString());}
-    JsonNode create() throws Exception {return ok(request(body(post("/api/teacher/evaluations"),Map.of("title","수학 평가","expiresInMinutes",60)),teacher));}
-    JsonNode join(String pin,String nickname,Tokens who) throws Exception {return ok(request(body(post("/api/participation/join"),Map.of("pin",pin,"nickname",nickname)),who));}
 }

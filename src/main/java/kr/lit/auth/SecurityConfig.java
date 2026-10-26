@@ -28,7 +28,7 @@ public class SecurityConfig {
     @Bean ApplicationRunner bootstrapInvite(AuthService auth,@Value("${lit.auth.bootstrap-teacher-invite:}") String code,@Value("${lit.auth.bootstrap-school:}") String school) {
         return args->auth.bootstrap(code,school);
     }
-    @Bean SecurityFilterChain security(HttpSecurity http,AuthService auth,ObjectMapper json) throws Exception {
+    @Bean SecurityFilterChain security(HttpSecurity http,AuthService auth,ParticipantAccess participants,ObjectMapper json) throws Exception {
         return http
             // Tokens are accepted only in explicit headers/JSON, never auto-sent cookies.
             .csrf(csrf->csrf.disable()).sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -37,21 +37,21 @@ public class SecurityConfig {
                 .accessDeniedHandler((req,res,ex)->error(res,json,403,"ACCESS_DENIED","접근 권한이 없습니다.")))
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify").permitAll()
+                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
-                .requestMatchers("/api/evaluations/**","/api/participation/join").hasRole("STUDENT")
+                .requestMatchers("/api/evaluations/**").hasRole("PARTICIPANT")
                 .requestMatchers("/api/auth/me","/api/auth/logout").authenticated().anyRequest().denyAll())
-            .addFilterBefore(new BearerFilter(auth,json),UsernamePasswordAuthenticationFilter.class).build();
+            .addFilterBefore(new BearerFilter(auth,participants,json),UsernamePasswordAuthenticationFilter.class).build();
     }
     private static void error(HttpServletResponse response,ObjectMapper json,int status,String code,String message) throws IOException {
         response.setStatus(status);response.setContentType("application/json;charset=UTF-8");
         json.writeValue(response.getOutputStream(),Map.of("code",code,"message",message));
     }
     private static class BearerFilter extends OncePerRequestFilter {
-        private final AuthService auth;private final ObjectMapper json;
+        private final AuthService auth;private final ParticipantAccess participants;private final ObjectMapper json;
         private record Window(long expires,int count) {}
         private final Map<String,Window> attempts=new HashMap<>();
-        BearerFilter(AuthService auth,ObjectMapper json) {this.auth=auth;this.json=json;}
+        BearerFilter(AuthService auth,ParticipantAccess participants,ObjectMapper json) {this.auth=auth;this.participants=participants;this.json=json;}
         private synchronized boolean limit(String ip,String group,int max) {
             long now=System.currentTimeMillis();attempts.entrySet().removeIf(e->e.getValue().expires()<=now);
             String key=ip+":"+group;var prior=attempts.get(key);
@@ -65,6 +65,18 @@ public class SecurityConfig {
             boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/");
             String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path.contains("password-reset")?"reset":path;
             if(limited&&!limit(req.getRemoteAddr(),group,max)) {error(res,json,429,"RATE_LIMITED","요청이 많습니다. 잠시 후 다시 시도해주세요.");return;}
+            boolean guestPath=path.startsWith("/api/evaluations/");
+            if(guestPath) {
+                try {
+                    String[] segments=path.split("/");
+                    if(segments.length<4) {error(res,json,404,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");return;}
+                    var guest=participants.authenticate(segments[3],req.getHeader("X-Participant-Token"));
+                    SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(guest,null,List.of(new SimpleGrantedAuthority("ROLE_PARTICIPANT"))));
+                } catch(ApiError.Failure failure) {error(res,json,failure.status.value(),failure.code,failure.getMessage());return;}
+                chain.doFilter(req,res);return;
+            }
+            // Participation endpoints are public and do not consume account credentials.
+            if(path.startsWith("/api/participation/")) {chain.doFilter(req,res);return;}
             String header=req.getHeader("Authorization");
             if(header!=null) {
                 if(!header.matches("Bearer [A-Za-z0-9_-]{43}")) {error(res,json,401,"INVALID_ACCESS_TOKEN","유효하지 않은 로그인 토큰입니다.");return;}

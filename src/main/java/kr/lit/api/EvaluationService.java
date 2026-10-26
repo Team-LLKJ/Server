@@ -19,7 +19,7 @@ public class EvaluationService {
  public record Participant(String id,String nickname,String presence){}
  public record Lobby(String evaluationId,String title,String state,String screen,int participantCount,List<Participant> participants){}
  public record Created(String id,String title,String pin,String state,Instant expiresAt,String joinUrl,String qrUrl){}
- public record Joined(String participantId,Lobby lobby){}
+ public record Joined(String participantId,String participantToken,Lobby lobby){}
  private Failure fail(HttpStatus status,String code,String message){return new Failure(status,code,message);}
  private Evaluation read(String id){
   var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class).toInstant()),id);
@@ -57,32 +57,31 @@ public class EvaluationService {
   String screen=e.state().equals("ENDED")?"ENDED":!e.expiresAt().isAfter(Instant.now())?"EXPIRED":e.state().equals("STARTED")?"SOLVING":"WAITING";
   return new Lobby(e.id(),e.title(),e.state(),screen,people.size(),people);
  }
- public Joined join(String pin,String nickname,String studentId){
-  kr.lit.auth.AccountAccess.student(studentId);
+ public Joined join(String pin,String nickname,String token){
   var e=byPin(pin);available(e);
-  var existing=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND user_id=?",String.class,e.id(),studentId);
-  if(!existing.isEmpty()) {
-   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=?",existing.get(0));
-   return new Joined(existing.get(0),personalLobby(e,studentId));
+  if(token!=null&&!token.isBlank()) {
+   var ids=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND ((token_hashed=TRUE AND token=?) OR (token_hashed=FALSE AND token=?))",String.class,e.id(),kr.lit.auth.AuthService.hash(token),token);
+   if(ids.isEmpty()||!token.matches("[a-f0-9]{64}"))throw fail(HttpStatus.UNAUTHORIZED,"INVALID_PARTICIPANT_TOKEN","재접속 토큰이 올바르지 않습니다.");
+   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=?",ids.get(0));
+   var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(e.id(),token);
+   return new Joined(guest.participantId(),token,personalLobby(e,guest.participantId()));
   }
   if(!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작된 평가에는 새로 참여할 수 없습니다.");
   String name=nickname==null?"":nickname.strip();
   if(name.isBlank()||name.codePointCount(0,name.length())>20)throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임은 1~20자여야 합니다.");
-  String id=UUID.randomUUID().toString();String secret=UUID.randomUUID().toString().replace("-","")+UUID.randomUUID().toString().replace("-","");
-  try{db.update("INSERT INTO participants(id,evaluation_id,nickname,token,active,last_seen,user_id) VALUES (?,?,?,?,TRUE,CURRENT_TIMESTAMP,?)",id,e.id(),name,secret,studentId);}
+  String id=UUID.randomUUID().toString();byte[] bytes=new byte[32];random.nextBytes(bytes);String secret=HexFormat.of().formatHex(bytes);
+  try{db.update("INSERT INTO participants(id,evaluation_id,nickname,token,active,last_seen,token_hashed) VALUES (?,?,?,?,TRUE,CURRENT_TIMESTAMP,TRUE)",id,e.id(),name,kr.lit.auth.AuthService.hash(secret));}
   catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"NICKNAME_TAKEN","사용 중인 닉네임입니다.");}
-  return new Joined(id,lobby(e));
+  return new Joined(id,secret,lobby(e));
  }
- public Lobby participant(String id,String studentId,boolean leave){
-  var e=read(id);
-  kr.lit.auth.AccountAccess.student(studentId);
-  int count=db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE evaluation_id=? AND user_id=? AND active=TRUE",!leave,id,studentId);
-  if(count==0)throw fail(HttpStatus.UNAUTHORIZED,"PARTICIPATION_REQUIRED","평가에 참여한 계정만 이용할 수 있습니다.");
-  return personalLobby(e,studentId);
+ public Lobby participant(String id,String token,boolean leave){
+  var e=read(id);var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+  db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE id=?",!leave,guest.participantId());
+  return personalLobby(e,guest.participantId());
  }
- private Lobby personalLobby(Evaluation e,String studentId){
+ private Lobby personalLobby(Evaluation e,String participantId){
   var lobby=lobby(e);
-  boolean submitted=db.queryForObject("SELECT COUNT(*) FROM submissions s JOIN participants p ON s.participant_id=p.id WHERE p.evaluation_id=? AND p.user_id=?",Integer.class,e.id(),studentId)>0;
+  boolean submitted=db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,participantId)>0;
   return submitted?new Lobby(lobby.evaluationId(),lobby.title(),lobby.state(),"SUBMITTED",lobby.participantCount(),lobby.participants()):lobby;
  }
  public Lobby start(String id){var e=read(id);available(e);

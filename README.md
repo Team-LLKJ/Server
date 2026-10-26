@@ -1,6 +1,6 @@
 # LIT Server
 
-Spring Boot 3.5.16 / Java 17+ 기반 평가 참여·풀이·제출 및 교사·학생 Auth API입니다.
+Spring Boot 3.5.16 / Java 17+ 기반 평가 참여·풀이·제출 및 교사 Auth·학생 비회원 참여 API입니다.
 화면 UI와 채점 기능은 포함하지 않습니다.
 
 ## 로컬 실행
@@ -17,7 +17,7 @@ printf '%s\n' "$LIT_BOOTSTRAP_TEACHER_INVITE"
 ./mvnw spring-boot:run
 ```
 
-API 주소는 `http://localhost:8080`입니다. 부트스트랩 초대 코드는 24시간 유효한 일회용 코드입니다.
+API 주소는 `http://localhost:5174`입니다. 부트스트랩 초대 코드는 24시간 유효한 일회용 코드입니다.
 최초 교사 가입에만 사용하며, 이후에는 로그인한 교사가 `/api/auth/teacher-invitations`로 초대 코드를 발급할 수 있습니다.
 초기 코드가 필요 없다면 부트스트랩 환경변수를 생략해도 서버는 실행됩니다.
 `LIT_AI_PROVIDER=stub`은 실제 AI를 호출하지 않고 명시적으로 `[테스트 응답]`을 반환합니다.
@@ -48,14 +48,15 @@ MySQL/PostgreSQL 이전에는 드라이버, DB별 SQL과 버전형 마이그레�
 
 ## 인증
 
-교사는 일회용 학교별 초대 코드로, 학생은 학교·학년·반·번호를 입력하여 가입합니다.
-공통 `/api/auth/login`으로 로그인하고 모든 보호 API에 다음 헤더를 사용합니다.
+교사만 일회용 학교별 초대 코드로 가입합니다.
+교사는 `/api/auth/login`으로 로그인하고 교사용 API에 다음 헤더를 사용합니다.
 
 ```http
 Authorization: Bearer {accessToken}
 ```
 
-교사 공통 키와 `X-Participant-Token`은 더 이상 인증에 사용하지 않습니다.
+학생은 가입·로그인 없이 PIN과 닉네임으로 참여합니다. 참여 응답의 participantToken을 학생 API의 `X-Participant-Token` 헤더에 사용하세요.
+교사 공통 키는 사용하지 않습니다.
 Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
 토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
@@ -67,7 +68,6 @@ Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이�
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
-| POST | `/api/auth/signup/student` | 학생 가입 |
 | POST | `/api/auth/signup/teacher` | 교사 초대 코드 가입 |
 | POST | `/api/auth/login` | 공통 로그인 |
 | POST | `/api/auth/refresh` | 토큰 교체 |
@@ -80,7 +80,7 @@ Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이�
 ### 평가·참여
 
 교사용 `/api/teacher/**`는 교사 로그인 및 평가 소유권을 검사합니다.
-PIN 확인은 공개이며 참여와 풀이 API는 학생 로그인이 필요합니다.
+PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평가별 참가자 토큰이 필요합니다.
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
@@ -94,7 +94,7 @@ PIN 확인은 공개이며 참여와 풀이 API는 학생 로그인이 필요합
 | GET | `/api/teacher/evaluations/{id}/questions` | 문항·AI 정책 조회 |
 | GET | `/api/teacher/evaluations/{id}/participants/{participantId}/learning-events` | 학생 학습 기록 |
 | GET | `/api/participation/verify?pin=000001` | PIN 확인 |
-| POST | `/api/participation/join` | 로그인한 학생의 참여·재접속 |
+| POST | `/api/participation/join` | 비회원 학생의 참여·재접속 |
 | GET | `/api/evaluations/{id}/state` | 학생 상태 및 연결 갱신 |
 | POST | `/api/evaluations/{id}/heartbeat` | 연결 갱신 |
 | POST | `/api/evaluations/{id}/leave` | 이탈 |
@@ -112,13 +112,14 @@ PIN 확인은 공개이며 참여와 풀이 API는 학생 로그인이 필요합
 문항 설정: `{"aiPolicy":"HINT_ONLY","questions":[{"position":1,"title":"문항1","content":"2+2는?"}]}`.
 문항 1~100개, 양수 순서 중복 불가. 제목 최대 200자, 본문 최대 10,000자.
 참여: `{"pin":"012345","nickname":"학생1"}`. PIN은 6자리 문자열, 닉네임은 1~20자.
-같은 계정이 다시 참여하면 기존 참가자 ID·답안·닉네임을 유지합니다.
+참여 응답은 participantId·participantToken·lobby를 반환합니다.
+재접속은 `{"pin":"012345","participantToken":"기존 토큰"}`으로 호출하며 참가자 ID·답안·닉네임을 유지합니다.
 
 ## 답안·AI·제출 정책
 
 - 답안 저장: `{"content":"답안","expectedVersion":0,"source":"DIRECT"}`.
 - content 최대 10,000자, 빈 답안 허용. 현재 버전이 일치해야 저장되며 성공 시 version +1.
-- source는 DIRECT / AI_REFERENCED / AI_USED. AI 참고·사용은 같은 학생·문항의 완료된 aiRequestId 필요.
+- source는 DIRECT / AI_REFERENCED / AI_USED. AI 참고·사용은 같은 참가자·문항의 완료된 aiRequestId 필요.
 - 문항 전환 전 저장 성공을 확인하세요. 프런트의 미저장 입력 보존·실패 표시는 별도 구현 항목입니다.
 - AI 정책은 DISABLED / HINT_ONLY / FULL. HINT_ONLY는 모델에 지시하는 제한으로 정답 미노출을 보장하지는 않습니다.
 - AI 질문: `{"requestId":"ask-001","text":"힌트를 주세요"}`. text 최대 4,000자.
@@ -134,7 +135,7 @@ PIN 확인은 공개이며 참여와 풀이 API는 학생 로그인이 필요합
 ## Postman
 
 `postman/LIT.postman_collection.json`을 Import하고 `bootstrapInviteCode`에 최초 교사 초대 코드를 입력하세요.
-**전체 흐름 (테스트)** 폴더를 순서대로 실행하면 가입·로그인·평가·답안·AI·제출·갱신·로그아웃까지 진행합니다.
+**전체 흐름 (테스트)** 폴더를 순서대로 실행하면 교사 가입·로그인·학생 비회원 참여·평가·답안·AI·제출·교사 토큰 갱신·로그아웃까지 진행합니다.
 계정 이름·비밀번호는 첫 요청에서 테스트용으로 생성하고 토큰·ID는 응답에서 자동 저장합니다.
 가입 API는 일회용 초대 코드를 소비하므로 전체 재실행에는 새 초대 코드가 필요합니다.
 가입 이후의 개별 요청은 저장된 변수로 재실행할 수 있으나 답안 expectedVersion과 제출 상태를 확인하세요.
@@ -158,3 +159,5 @@ SMTP_AUTH·SMTP_STARTTLS 기본 true. 연결·읽기·쓰기 제한은 각각 5�
 
 기술 참고: [Spring Security 구조](https://docs.spring.io/spring-security/reference/servlet/architecture.html),
 [비밀번호 저장](https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html).
+
+학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.

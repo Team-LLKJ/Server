@@ -48,7 +48,6 @@ public class AuthService {
         } catch(DuplicateKeyException e) {throw fail(HttpStatus.CONFLICT,"ACCOUNT_ALREADY_EXISTS","이미 사용 중인 아이디 또는 이메일입니다.");}
         return me(id);
     }
-    public User signupStudent(StudentSignup s) {return signup(s.username(),s.password(),s.email(),s.name(),s.school(),Role.STUDENT,s.grade(),s.classNumber(),s.studentNumber());}
     public User signupTeacher(TeacherSignup s) {
         var invites=db.queryForList("SELECT * FROM teacher_invites WHERE code_hash=? FOR UPDATE",hash(s.inviteCode()));
         if(invites.isEmpty()) throw fail(HttpStatus.BAD_REQUEST,"INVALID_INVITE","유효하지 않은 교사 초대 코드입니다.");
@@ -78,7 +77,7 @@ public class AuthService {
         var locked=(OffsetDateTime)row.get("LOCKED_UNTIL");
         if(locked!=null&&locked.isAfter(now())) {encoder.matches(input.password(),dummyHash);throw fail(HttpStatus.UNAUTHORIZED,"INVALID_CREDENTIALS","아이디 또는 비밀번호가 올바르지 않습니다.");}
         boolean valid=encoder.matches(input.password(),(String)row.get("PASSWORD_HASH"));
-        if(!valid||!"ACTIVE".equals(row.get("USER_STATUS"))) {
+        if(!valid||(!"ACTIVE".equals(row.get("USER_STATUS"))||!"TEACHER".equals(row.get("USER_ROLE")))) {
             int failures=locked!=null?1:((Number)row.get("FAILED_LOGINS")).intValue()+1;
             db.update("UPDATE app_users SET failed_logins=?,locked_until=?,updated_at=? WHERE id=?",failures,failures>=5?now().plusMinutes(15):null,now(),id);
             throw fail(HttpStatus.UNAUTHORIZED,"INVALID_CREDENTIALS","아이디 또는 비밀번호가 올바르지 않습니다.");
@@ -87,7 +86,7 @@ public class AuthService {
         return issue(id,UUID.randomUUID().toString(),now().plusDays(14));
     }
     public Principal authenticate(String token) {
-        var rows=db.query("SELECT s.id,s.user_id,u.user_role FROM auth_sessions s JOIN app_users u ON s.user_id=u.id WHERE s.access_hash=? AND s.revoked_at IS NULL AND s.access_expires_at>CURRENT_TIMESTAMP AND u.user_status='ACTIVE'",
+        var rows=db.query("SELECT s.id,s.user_id,u.user_role FROM auth_sessions s JOIN app_users u ON s.user_id=u.id WHERE s.access_hash=? AND s.revoked_at IS NULL AND s.access_expires_at>CURRENT_TIMESTAMP AND u.user_status='ACTIVE' AND u.user_role='TEACHER'",
                 (r,n)->new Principal(r.getString("user_id"),Role.valueOf(r.getString("user_role")),r.getString("id")),hash(token));
         if(rows.isEmpty())throw fail(HttpStatus.UNAUTHORIZED,"INVALID_ACCESS_TOKEN","만료되었거나 유효하지 않은 로그인 토큰입니다.");return rows.get(0);
     }
@@ -103,7 +102,7 @@ public class AuthService {
             db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=?",now(),family);
             throw fail(HttpStatus.UNAUTHORIZED,"REFRESH_TOKEN_REUSED","이미 사용된 갱신 토큰입니다. 다시 로그인해주세요.");
         }
-        if(row.get("REVOKED_AT")!=null||!((OffsetDateTime)row.get("REFRESH_EXPIRES_AT")).isAfter(now())||!me(uid).status().equals("ACTIVE"))
+        if(row.get("REVOKED_AT")!=null||!((OffsetDateTime)row.get("REFRESH_EXPIRES_AT")).isAfter(now())||(!me(uid).status().equals("ACTIVE")||me(uid).role()!=Role.TEACHER))
             throw fail(HttpStatus.UNAUTHORIZED,"INVALID_REFRESH_TOKEN","만료되었거나 유효하지 않은 갱신 토큰입니다.");
         db.update("UPDATE auth_sessions SET revoked_at=?,rotated_at=? WHERE id=?",now(),now(),row.get("ID"));
         return issue(uid,family,(OffsetDateTime)row.get("REFRESH_EXPIRES_AT"));
@@ -114,7 +113,7 @@ public class AuthService {
     }
     public void requestReset(String email) {
         mail.checkConfigured();
-        var ids=db.queryForList("SELECT id FROM app_users WHERE email=? AND user_status='ACTIVE'",String.class,normalized(email));
+        var ids=db.queryForList("SELECT id FROM app_users WHERE email=? AND user_status='ACTIVE' AND user_role='TEACHER'",String.class,normalized(email));
         if(ids.isEmpty())return;
         String id=ids.get(0);db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",id);
         int recent=db.queryForObject("SELECT COUNT(*) FROM password_resets WHERE user_id=? AND created_at>?",Integer.class,id,now().minusMinutes(1));
@@ -127,7 +126,7 @@ public class AuthService {
         if(ids.isEmpty())throw fail(HttpStatus.BAD_REQUEST,"INVALID_RESET_TOKEN","만료되었거나 사용된 재설정 링크입니다.");
         String id=ids.get(0);db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",id);
         var row=db.queryForList("SELECT * FROM password_resets WHERE token_hash=? FOR UPDATE",digest).get(0);
-        if(row.get("USED_AT")!=null||!((OffsetDateTime)row.get("EXPIRES_AT")).isAfter(now()))throw fail(HttpStatus.BAD_REQUEST,"INVALID_RESET_TOKEN","만료되었거나 사용된 재설정 링크입니다.");
+        if(me(id).role()!=Role.TEACHER||row.get("USED_AT")!=null||!((OffsetDateTime)row.get("EXPIRES_AT")).isAfter(now()))throw fail(HttpStatus.BAD_REQUEST,"INVALID_RESET_TOKEN","만료되었거나 사용된 재설정 링크입니다.");
         db.update("UPDATE app_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=? WHERE id=?",encoder.encode(input.newPassword()),now(),id);
         db.update("UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL",now(),id);
         db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?",now(),id);

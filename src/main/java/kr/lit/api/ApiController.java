@@ -21,7 +21,7 @@ class ApiController {
  @Value("${lit.join-base-url}") private String baseUrl;
  ApiController(EvaluationService service){this.service=service;}
  record Create(@NotBlank @Size(max=100) String title,@Min(1) @Max(1440) int expiresInMinutes){}
- record Join(String pin,String nickname){}
+ record Join(String pin,String nickname,@Size(max=64) String participantToken){}
  @PostMapping("/teacher/evaluations") @ResponseStatus(HttpStatus.CREATED)
  Object create(@Valid @RequestBody Create body){return service.create(body.title(),body.expiresInMinutes());}
  @GetMapping("/teacher/evaluations/{id}") Object details(@PathVariable String id){return service.details(id);}
@@ -34,8 +34,8 @@ class ApiController {
   var out=new ByteArrayOutputStream();MatrixToImageWriter.writeToStream(matrix,"PNG",out);return out.toByteArray();
  }
  @GetMapping("/participation/verify") Object verify(@RequestParam String pin){return service.verify(pin);}
- @PostMapping("/participation/join") Object join(@Valid @RequestBody Join body){return service.join(body.pin(),body.nickname(),kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.STUDENT).userId());}
- @GetMapping("/evaluations/{id}/state") Object state(@PathVariable String id,@org.springframework.security.core.annotation.AuthenticationPrincipal kr.lit.auth.AuthModels.Principal account){return service.participant(id,account.userId(),false);}
- @PostMapping("/evaluations/{id}/heartbeat") Object heartbeat(@PathVariable String id,@org.springframework.security.core.annotation.AuthenticationPrincipal kr.lit.auth.AuthModels.Principal account){return service.participant(id,account.userId(),false);}
- @PostMapping("/evaluations/{id}/leave") Object leave(@PathVariable String id,@org.springframework.security.core.annotation.AuthenticationPrincipal kr.lit.auth.AuthModels.Principal account){return service.participant(id,account.userId(),true);}
+ @PostMapping("/participation/join") Object join(@Valid @RequestBody Join body){return service.join(body.pin(),body.nickname(),body.participantToken());}
+ @GetMapping("/evaluations/{id}/state") Object state(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token){return service.participant(id,token,false);}
+ @PostMapping("/evaluations/{id}/heartbeat") Object heartbeat(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token){return service.participant(id,token,false);}
+ @PostMapping("/evaluations/{id}/leave") Object leave(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token){return service.participant(id,token,true);}
 }

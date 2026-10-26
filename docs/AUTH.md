@@ -1,144 +1,125 @@
-# Auth API 명세
+# 교사 Auth · 학생 비회원 참여
 
-기본 경로 `/api/auth`. 요청·응답은 JSON이며 토큰을 담은 응답에는 `Cache-Control: no-store`를 적용합니다.
-인증 헤더는 교사·학생 모두 `Authorization: Bearer {accessToken}`입니다.
-서버가 계정 DB에서 역할·활성 상태를 확인합니다. 클라이언트가 role을 지정해 권한을 얻을 수 없습니다.
+교사만 회원가입·로그인합니다. 학생은 계정 없이 PIN 확인 후 닉네임으로 평가에 참여합니다.
+교사의 계정 인증 토큰과 학생의 평가별 참가자 토큰은 서로 대체할 수 없습니다.
 
-## API 목록
+## 교사 API
+
+기본 경로 `/api/auth`. 모든 JSON 응답은 `Cache-Control: no-store`입니다.
 
 | 메서드 | 경로 | 인증 | 성공 |
 |---|---|---|---|
-| POST | `/signup/student` | 없음 | 201 User |
-| POST | `/signup/teacher` | 없음·유효한 초대 코드 필요 | 201 User |
+| POST | `/signup/teacher` | 유효한 교사 초대 코드 | 201 User |
 | POST | `/login` | 없음 | 200 Tokens |
-| POST | `/refresh` | 없음·Refresh Token 필요 | 200 Tokens |
-| GET | `/me` | 로그인 | 200 User |
-| POST | `/logout` | 로그인 | 200 Message |
-| POST | `/teacher-invitations` | 교사 | 201 Invitation |
+| POST | `/refresh` | Refresh Token(Body) | 200 Tokens |
+| GET | `/me` | 교사 Access Token | 200 User |
+| POST | `/logout` | 교사 Access Token | 200 Message |
+| POST | `/teacher-invitations` | 교사 Access Token | 201 Invitation |
 | POST | `/password-reset/request` | 없음 | 202 Message |
-| POST | `/password-reset/confirm` | 없음·재설정 토큰 필요 | 200 Message |
+| POST | `/password-reset/confirm` | 이메일 재설정 토큰 | 200 Message |
 
-### 학생 가입
+기존 `/signup/student`는 계정을 만들지 않고 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다.
+이전 버전 DB의 STUDENT 계정도 로그인·갱신·Access Token 인증을 허용하지 않습니다. 기존 행을 삭제하지는 않습니다.
 
-```json
-{"username":"student01","password":"Example-password-123","email":"student@example.com","name":"학생","school":"테스트학교","grade":1,"classNumber":2,"studentNumber":3}
-```
-
-### 교사 가입
+교사 가입:
 
 ```json
 {"username":"teacher01","password":"Example-password-123","email":"teacher@example.com","name":"교사","school":"테스트학교","inviteCode":"발급받은 교사 초대 코드"}
 ```
 
-공통 규칙:
-- username: 영문·숫자·밑줄 4~30자. 소문자로 정규화하며 중복 불가.
-- password: 10~128자. 공백만 입력 불가. PBKDF2 해시로 저장.
-- email: 필수·최대 254자·이메일 형식. 앞뒤 공백 제거·소문자 정규화·중복 불가.
-- name: 공백 불가·최대 50자. school: 공백 불가·최대 100자.
-- 학생 grade: 1~12, classNumber: 1~99, studentNumber: 1~999.
-- 교사 inviteCode: 32~128자. 일회용·유효 시간 내·초대 코드 학교와 가입 학교 일치 필요.
-- 가입 성공은 계정 생성만 수행. 로그인 API로 토큰을 발급받아야 함.
-- 학교·학년·반·번호는 학생이 입력한 프로필이며 학교 구성원임을 별도로 인증하지는 않음.
+- username: 영문·숫자·밑줄 4~30자, 소문자 정규화·중복 불가.
+- password: 공백 불가·10~128자, PBKDF2 해시로 저장.
+- email: 이메일 형식·최대254자·소문자 정규화·중복 불가.
+- name: 공백 불가·최대50자. school: 공백 불가·최대100자.
+- inviteCode: 32~128자, 학교 일치·만료 전·미사용 코드 필요.
+- 교사 초대 발급 Body: `{"expiresInHours":24}`. 1~168시간, 발급 교사의 학교로 고정.
+- 첫 코드는 LIT_BOOTSTRAP_TEACHER_INVITE와 LIT_BOOTSTRAP_SCHOOL로 등록하며 24시간 유효. 같은 코드로 재시작해도 소비·만료 상태가 초기화되지 않음.
 
-User 응답:
-
-```json
-{"id":"uuid","username":"student01","email":"student@example.com","name":"학생","school":"테스트학교","role":"STUDENT","status":"ACTIVE","grade":1,"classNumber":2,"studentNumber":3,"createdAt":"2026-10-26T12:00:00Z"}
-```
-
-교사는 학년·반·번호가 null입니다. 비밀번호 해시와 인증 토큰 해시는 응답하지 않습니다.
-
-### 로그인·갱신·로그아웃
+로그인 Body: `{"username":"teacher01","password":"Example-password-123"}`.
+응답:
 
 ```json
-{"username":"student01","password":"Example-password-123"}
+{"tokenType":"Bearer","accessToken":"43자리 토큰","accessExpiresAt":"2026-10-26T12:15:00Z","refreshToken":"43자리 토큰","refreshExpiresAt":"2026-11-09T12:00:00Z","user":{"id":"uuid","username":"teacher01","email":"teacher@example.com","name":"교사","school":"테스트학교","role":"TEACHER","status":"ACTIVE","grade":null,"classNumber":null,"studentNumber":null,"createdAt":"2026-10-26T12:00:00Z"}}
 ```
 
-로그인과 갱신 응답:
+- 교사 보호 API: `Authorization: Bearer {accessToken}`.
+- `/api/teacher/evaluations` 생성·설정·조회·시작·종료·학생 기록 조회는 로그인한 교사 및 평가 소유권을 검사.
+- Access Token 15분, Refresh Token 최초 로그인 기준 최대14일의 opaque 난수 토큰. JWT가 아니며 DB에는 해시만 저장.
+- 갱신 Body: `{"refreshToken":"발급받은 토큰"}`. 갱신 시 두 토큰 모두 교체, 이전 토큰 폐기. 이미 사용한 Refresh Token 재사용 시 해당 로그인 세션 계열 전체 폐기.
+- 로그아웃은 현재 세션 계열만 폐기. 로그인 실패5회 시 계정15분 제한.
+- 학생 참가자 토큰으로 수업 생성이나 교사 API 호출 불가.
+
+## 학생 비회원 참여
+
+```http
+GET /api/participation/verify?pin=012345
+POST /api/participation/join
+Content-Type: application/json
+```
+
+가입·로그인·이메일·학교 정보 없이 참여:
 
 ```json
-{"tokenType":"Bearer","accessToken":"43자리 토큰","accessExpiresAt":"2026-10-26T12:15:00Z","refreshToken":"43자리 토큰","refreshExpiresAt":"2026-11-09T12:00:00Z","user":{"id":"uuid","role":"STUDENT"}}
+{"pin":"012345","nickname":"학생1"}
 ```
 
-위 user는 실제로 전체 User 객체입니다. 예시 토큰·UUID는 설명용입니다.
-토큰은 서명된 JWT가 아닌 256비트 난수의 opaque token입니다. JWT 디코딩으로 role을 판단하지 말고 `/me` 또는 Tokens.user를 사용하세요.
-서버 DB에는 Access·Refresh Token 모두 SHA-256 해시만 저장합니다.
-
-- Access Token: 15분. Refresh Token: 로그인부터 최대 14일.
-- 갱신 요청: `{"refreshToken":"기존 Refresh Token"}`. Authorization 헤더 없이 요청합니다.
-- 갱신 성공 시 Access·Refresh Token을 둘 다 교체하고 이전 토큰을 무효화합니다.
-- 갱신해도 최초 로그인 기준 14일 기한이 연장되지는 않습니다.
-- 이미 갱신에 사용한 Refresh Token이 다시 들어오면 해당 로그인 세션 계열 전체를 폐기합니다. 클라이언트는 갱신 요청을 동시에 보내지 말고 하나로 합쳐야 합니다.
-- 로그아웃: Body 없음. 현재 Access Token이 속한 로그인 세션 계열만 폐기합니다.
-- 만료된 Access Token으로 로그아웃할 수 없다면 갱신 후 로그아웃하거나 클라이언트의 토큰을 삭제하세요.
-- 로그인 실패 5회 누적 시 해당 계정은 15분간 로그인이 제한됩니다. 실패 메시지는 존재하지 않는 계정과 동일합니다.
-- 현재 HTTP 쿠키나 서버 세션으로 인증하지 않습니다. 브라우저 자동 전송 쿠키를 추가할 경우 CSRF 정책을 함께 변경해야 합니다.
-- 운영에서는 HTTPS를 사용하고 프런트의 토큰 보관 방식을 별도로 결정하세요. CORS는 기본적으로 별도 허용하지 않습니다.
-
-### 교사 초대 코드
-
-`POST /teacher-invitations` Body: `{"expiresInHours":24}`. 1~168시간 허용.
+PIN은 앞자리0을 유지하는6자리 문자열. 닉네임은 앞뒤 공백 제거 후1~20자, 평가 내 중복 불가.
+성공 응답:
 
 ```json
-{"inviteCode":"43자리 일회용 초대 코드","school":"테스트학교","expiresAt":"2026-10-27T12:00:00Z"}
+{"participantId":"uuid","participantToken":"64자리 참가자 토큰","lobby":{"evaluationId":"uuid","title":"수학 평가","state":"WAITING","screen":"WAITING","participantCount":1,"participants":[{"id":"uuid","nickname":"학생1","presence":"CONNECTED"}]}}
 ```
 
-발급한 교사의 학교로 고정됩니다. 응답에서 코드를 한 번 전달하고 DB에는 해시만 보관합니다.
-코드를 교사에게 안전하게 전달하세요. 관리자 역할은 따로 없으며, 확인된 교사가 같은 학교의 다른 교사를 초대하는 방식입니다.
-최초 교사는 서버의 `LIT_BOOTSTRAP_TEACHER_INVITE`와 `LIT_BOOTSTRAP_SCHOOL`로 등록합니다.
-부트스트랩 코드는 24시간 유효하며 같은 코드로 재시작해도 만료·사용 상태를 초기화하지 않습니다.
-초기 가입 후 부트스트랩 환경변수는 제거할 수 있습니다.
+이후 학생 상태·문항·답안·AI·대화·제출 API(`/api/evaluations/{id}/...`)에는 다음 헤더를 사용합니다.
 
-### 비밀번호 재설정
+```http
+X-Participant-Token: {participantToken}
+```
 
-요청 Body: `{"email":"student@example.com"}`.
-가입 여부와 관계없이 202 및 동일 안내 메시지를 반환합니다. 계정별 메일 생성은 1분에 1회입니다.
-발송 설정이 없다면 가입 여부를 조회하기 전에 503 MAIL_NOT_CONFIGURED를 반환합니다.
-SMTP 발송 실패 시 내부 트랜잭션은 롤백하고 외부에는 같은 안내 응답을 유지합니다.
-토큰을 API 응답·로그에 노출하지 않으며 이메일 링크에만 전달합니다.
-링크는 `${LIT_RESET_BASE_URL}#token=...` 형식입니다. 프런트는 fragment의 token을 읽어 다음 확인 요청을 보내야 합니다.
+다른 평가의 토큰·다른 학생의 토큰으로 본인 기록을 대신 조회할 수 없으며, 토큰은 해당 참가자의 비밀 인증 정보입니다.
+새 참가자 토큰은256비트 난수의64자리hex 문자열이며 DB에는 SHA-256 해시를 저장합니다.
+이전 버전에서 발급된 동일 형식의 토큰은 호환 처리하되 새 토큰을 발급하는 방식으로 임의 재귀속하지 않습니다.
+학생 API는 교사 Authorization 헤더 대신 참가자 토큰으로 인증합니다. PIN 확인·참여는 계정 인증을 요구하지 않습니다.
 
-확인 Body:
+재접속:
 
 ```json
-{"token":"이메일로 받은 43자리 토큰","newPassword":"New-example-password-456"}
+{"pin":"012345","participantToken":"기존 참가자 토큰"}
 ```
 
-토큰은 30분 유효·일회용이며 DB에는 해시만 저장합니다.
-변경 성공 시 해당 계정의 모든 로그인 세션과 미사용 재설정 토큰을 무효화하고 로그인 실패 제한을 초기화합니다.
-계정 이메일 확인(가입 시 인증), 홈 UI, 비밀번호 재설정 프런트 페이지는 포함하지 않습니다.
+같은 참가자 ID·닉네임·답안 유지, 이탈 후 active 상태 복구. 재접속 시 nickname은 무시합니다.
+평가 시작 후 신규 참여는 차단하고 기존 토큰 재접속만 허용합니다.
+토큰을 잃은 경우 닉네임만으로 기존 기록을 복구하지 않습니다. 재접속할 클라이언트가 토큰을 보관해야 합니다.
+
+## 교사 비밀번호 재설정
+
+요청: `{"email":"teacher@example.com"}`. 가입 여부와 무관하게 같은202 안내를 반환하며 토큰을 응답하지 않습니다.
+메일 설정 누락은 모든 요청에503 MAIL_NOT_CONFIGURED. SMTP 발송 실패는 DB를 롤백하고 같은 안내 응답을 유지합니다.
+메일 링크 `${LIT_RESET_BASE_URL}#token=...`에서 프런트가 토큰을 읽어 다음 Body로 확인합니다.
+
+```json
+{"token":"43자리 이메일 재설정 토큰","newPassword":"New-example-password-456"}
+```
+
+토큰은30분·일회용·해시 저장. 성공 시 해당 교사의 모든 로그인 세션·미사용 재설정 토큰을 폐기합니다.
+SMTP_HOST/PORT/USERNAME/PASSWORD와 LIT_MAIL_FROM 설정 필요. 가입 이메일 인증 및 UI는 별도 구현 범위입니다.
 
 ## 오류
 
-형식: `{"code":"INVALID_CREDENTIALS","message":"아이디 또는 비밀번호가 올바르지 않습니다."}`
+일반 형식: `{"code":"AUTH_REQUIRED","message":"로그인이 필요합니다."}`.
 
 | HTTP | code | 원인 |
 |---|---|---|
-| 400 | INVALID_REQUEST | JSON·필드 검증 실패 |
-| 400 | INVALID_INVITE | 초대 코드 없음·만료·사용·학교 불일치 |
-| 400 | INVALID_RESET_TOKEN | 잘못된·만료된·사용한 재설정 토큰 |
-| 401 | AUTH_REQUIRED | 로그인 필요 |
-| 401 | INVALID_CREDENTIALS | 로그인 실패·계정 제한·비활성 계정 |
-| 401 | INVALID_ACCESS_TOKEN | Access Token 형식·만료·폐기 오류 |
-| 401 | INVALID_REFRESH_TOKEN | Refresh Token 없음·만료·폐기 오류 |
-| 401 | REFRESH_TOKEN_REUSED | 이미 회전된 Refresh Token 재사용, 세션 계열 폐기 |
-| 401 | PARTICIPATION_REQUIRED | 현재 학생 계정이 평가에 참여하지 않았거나 이탈 상태 |
-| 403 | ACCESS_DENIED | 역할 또는 계정 접근 권한 부족 |
-| 404 | EVALUATION_NOT_FOUND | 평가 없음 또는 다른 교사/소유자 없는 기존 평가 |
-| 409 | ACCOUNT_ALREADY_EXISTS | 정규화한 아이디 또는 이메일 중복 |
-| 429 | RATE_LIMITED | IP 기반 요청 제한 |
-| 503 | MAIL_NOT_CONFIGURED | SMTP 발송 설정 누락 |
+| 400 | INVALID_REQUEST / INVALID_INVITE / INVALID_RESET_TOKEN | 입력·교사초대·재설정 토큰 오류 |
+| 401 | AUTH_REQUIRED / INVALID_ACCESS_TOKEN | 교사 로그인 필요·토큰 오류 |
+| 401 | INVALID_CREDENTIALS | 로그인 실패·제한·비활성·STUDENT 계정 |
+| 401 | INVALID_REFRESH_TOKEN / REFRESH_TOKEN_REUSED | 교사 갱신 토큰 오류·재사용 |
+| 401 | PARTICIPANT_TOKEN_REQUIRED / INVALID_PARTICIPANT_TOKEN | 학생 참가자 토큰 누락·다른 평가·이탈·잘못된 토큰 |
+| 403 | ACCESS_DENIED | 교사 권한 부족 |
+| 404 | EVALUATION_NOT_FOUND | 평가 없음·다른 교사 소유 평가 |
+| 409 | ACCOUNT_ALREADY_EXISTS / NICKNAME_TAKEN | 교사 계정 중복·참여 닉네임 중복 |
+| 410 | STUDENT_ACCOUNTS_DISABLED | 학생 가입 경로 비활성화 |
+| 429 | RATE_LIMITED | 요청 횟수 제한 |
+| 503 | MAIL_NOT_CONFIGURED | 교사 재설정 메일 설정 누락 |
 
-IP당 분당 제한: 가입 20회(교사·학생 합산), 로그인 30회, 갱신 30회, 초대 발급 30회,
-재설정 요청·확인 합산 5회, PIN 확인·참여 합산 30회.
-현재 단일 서버 메모리 기반이며 재시작 시 초기화합니다. 프록시의 remoteAddr를 사용하므로 운영 게이트웨이 정책과 조정해야 합니다.
-
-## 기존 평가 API 인증 변경
-
-- 교사 공통 키와 학생 X-Participant-Token 방식은 제거했습니다. 모두 로그인 Access Token을 사용합니다.
-- 평가 생성 시 teacher_id를 저장하며 해당 교사만 조회·설정·시작·종료·학생 기록 조회 가능합니다.
-- 학생은 로그인 후 PIN+nickname으로 참여하며 평가당 계정 하나의 참가 기록을 유지합니다.
-- 참여 응답은 `{"participantId":"uuid","lobby":{...}}`이며 참가자 토큰을 추가 발급하지 않습니다.
-- 재접속도 같은 로그인 계정으로 `/api/participation/join`을 호출하면 됩니다. nickname은 기존 참가자에 대해 무시됩니다.
-- 참가 기록의 내부 ID는 유지되므로 답안·AI 대화·제출 구조는 그대로입니다.
-- 이전 버전의 소유자 없는 평가/참가 기록은 자동 귀속하지 않습니다. 명시적인 관리자 데이터 이관이 필요합니다.
+기존 DB의 사용자·평가·답안 기록은 삭제하지 않습니다. 소유자가 없는 평가를 새 교사에게 자동 귀속하지 않습니다.

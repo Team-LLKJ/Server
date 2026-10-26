@@ -42,13 +42,12 @@ public class WorkService {
         kr.lit.auth.AccountAccess.checkTeacherOwner(db.queryForObject("SELECT teacher_id FROM evaluations WHERE id=?",String.class,id));
         return rows.get(0);
     }
-    private Context authenticate(String id,String studentId) {
+    private Context authenticate(String id,String token) {
         var e=evaluation(id);
-        kr.lit.auth.AccountAccess.student(studentId);
-        var people=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND user_id=? AND active=TRUE",String.class,id,studentId);
-        if(people.isEmpty()) throw failure(HttpStatus.UNAUTHORIZED,"PARTICIPATION_REQUIRED","평가에 참여한 계정만 이용할 수 있습니다.");
-        return new Context(id,people.get(0),e.state(),e.expiresAt());
+        var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+        return new Context(id,guest.participantId(),e.state(),e.expiresAt());
     }
+
     private boolean submitted(Context c) {
         return db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,c.participantId())>0;
     }
@@ -98,17 +97,17 @@ public class WorkService {
     public Configuration configuration(String id) {
         evaluation(id);return new Configuration(id,policy(id),questions(id));
     }
-    public Workspace workspace(String id,String studentId) {
-        var c=authenticate(id,studentId);started(c);
+    public Workspace workspace(String id,String token) {
+        var c=authenticate(id,token);started(c);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c));
     }
-    public QuestionAnswer select(String id,String studentId,String questionId) {
-        var c=authenticate(id,studentId);started(c);
+    public QuestionAnswer select(String id,String token,String questionId) {
+        var c=authenticate(id,token);started(c);
         return new QuestionAnswer(question(id,questionId),answer(c.participantId(),questionId));
     }
-    public Answer save(String id,String studentId,String questionId,SaveAnswer input) {
-        var c=authenticate(id,studentId);editable(c);question(id,questionId);
+    public Answer save(String id,String token,String questionId,SaveAnswer input) {
+        var c=authenticate(id,token);editable(c);question(id,questionId);
         var old=answer(c.participantId(),questionId);
         if(old.version()!=input.expectedVersion()) throw failure(HttpStatus.CONFLICT,"ANSWER_VERSION_CONFLICT","답안이 변경되었습니다. 최신 답안을 조회한 후 다시 저장해주세요.");
         if(input.source()!=AnswerSource.DIRECT) {
@@ -135,8 +134,8 @@ public class WorkService {
     private List<Turn> turns(Context c) {
         return db.query("SELECT * FROM ai_turns WHERE participant_id=? ORDER BY id",this::turn,c.participantId());
     }
-    public List<Turn> conversations(String id,String studentId,String questionId,long afterId,int limit) {
-        var c=authenticate(id,studentId);started(c);
+    public List<Turn> conversations(String id,String token,String questionId,long afterId,int limit) {
+        var c=authenticate(id,token);started(c);
         if(questionId!=null) question(id,questionId);
         return turns(c).stream().filter(t->t.id()>afterId&&(questionId==null||t.questionId().equals(questionId))).limit(limit).toList();
     }
@@ -144,8 +143,8 @@ public class WorkService {
         return db.query("SELECT * FROM learning_events WHERE participant_id=? ORDER BY id",(r,n)->
                 new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),c.participantId());
     }
-    public List<Event> learningEvents(String id,String studentId,long afterId,int limit) {
-        var c=authenticate(id,studentId);started(c);
+    public List<Event> learningEvents(String id,String token,long afterId,int limit) {
+        var c=authenticate(id,token);started(c);
         return events(c).stream().filter(e->e.id()>afterId).limit(limit).toList();
     }
     public List<Event> teacherEvents(String id,String participantId,long afterId,int limit) {
@@ -163,11 +162,11 @@ public class WorkService {
         return new Review(digest,content.conversations().stream().noneMatch(t->t.state().equals("PENDING")),
                 content.answers().stream().filter(a->a.answer().content().isBlank()).map(a->a.question().id()).toList(),content);
     }
-    public Review review(String id,String studentId) {
-        var c=authenticate(id,studentId);editable(c);return review(c);
+    public Review review(String id,String token) {
+        var c=authenticate(id,token);editable(c);return review(c);
     }
-    public Submission submit(String id,String studentId,String reviewToken) {
-        var c=authenticate(id,studentId);
+    public Submission submit(String id,String token,String reviewToken) {
+        var c=authenticate(id,token);
         if(submitted(c)) {
             String previous=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,c.participantId());
             if(!Objects.equals(previous,reviewToken)) throw failure(HttpStatus.CONFLICT,"ALREADY_SUBMITTED","이미 제출한 평가입니다.");
@@ -187,10 +186,10 @@ public class WorkService {
         if(records.isEmpty()) throw failure(HttpStatus.NOT_FOUND,"SUBMISSION_NOT_FOUND","아직 제출하지 않았습니다.");
         return records.get(0);
     }
-    public Submission submission(String id,String studentId) { return submission(authenticate(id,studentId)); }
+    public Submission submission(String id,String token) { return submission(authenticate(id,token)); }
 
-    public Reservation reserve(String id,String studentId,String questionId,Ask ask,String provider,String model) {
-        var c=authenticate(id,studentId);var q=question(id,questionId);
+    public Reservation reserve(String id,String token,String questionId,Ask ask,String provider,String model) {
+        var c=authenticate(id,token);var q=question(id,questionId);
         var existing=db.query("SELECT * FROM ai_turns WHERE participant_id=? AND request_id=?",this::turn,c.participantId(),ask.requestId());
         if(!existing.isEmpty()) {
             var turn=existing.get(0);

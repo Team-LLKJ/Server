@@ -12,8 +12,8 @@ import static kr.lit.auth.AuthModels.*;
 public class AuthController {
     private final AuthService auth;
     public AuthController(AuthService auth) {this.auth=auth;}
-    @PostMapping("/signup/student") @ResponseStatus(HttpStatus.CREATED)
-    User student(@Valid @RequestBody StudentSignup input) {return auth.signupStudent(input);}
+    @PostMapping("/signup/student")
+    void studentSignupDisabled() {throw new kr.lit.api.ApiError.Failure(HttpStatus.GONE,"STUDENT_ACCOUNTS_DISABLED","학생은 가입 없이 PIN으로 참여해주세요.");}
     @PostMapping("/signup/teacher") @ResponseStatus(HttpStatus.CREATED)
     User teacher(@Valid @RequestBody TeacherSignup input) {return auth.signupTeacher(input);}
     @PostMapping("/login") Tokens login(@Valid @RequestBody Login input) {return auth.login(input);}

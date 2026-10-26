@@ -7,12 +7,6 @@ public final class AuthModels {
     private AuthModels() {}
     public enum Role { TEACHER, STUDENT }
     public record Principal(String userId, Role role, String sessionId) {}
-    public record StudentSignup(
-        @NotBlank @Pattern(regexp="[A-Za-z0-9_]{4,30}") String username,
-        @NotBlank @Size(min=10,max=128) String password,
-        @NotBlank @Email @Size(max=254) String email,
-        @NotBlank @Size(max=50) String name, @NotBlank @Size(max=100) String school,
-        @Min(1) @Max(12) int grade, @Min(1) @Max(99) int classNumber, @Min(1) @Max(999) int studentNumber) {}
     public record TeacherSignup(
         @NotBlank @Pattern(regexp="[A-Za-z0-9_]{4,30}") String username,
         @NotBlank @Size(min=10,max=128) String password,

@@ -80,3 +80,5 @@ CREATE INDEX IF NOT EXISTS idx_events_participant ON learning_events(participant
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_id VARCHAR(36) REFERENCES app_users(id);
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_id VARCHAR(36) REFERENCES app_users(id);
 ALTER TABLE participants ADD CONSTRAINT IF NOT EXISTS uq_participant_user UNIQUE(evaluation_id,user_id);
+
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS token_hashed BOOLEAN NOT NULL DEFAULT FALSE;
