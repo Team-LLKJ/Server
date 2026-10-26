@@ -19,11 +19,12 @@ public class EvaluationService {
  public record Participant(String id,String nickname,String presence){}
  public record Lobby(String evaluationId,String title,String state,String screen,int participantCount,List<Participant> participants){}
  public record Created(String id,String title,String pin,String state,Instant expiresAt,String joinUrl,String qrUrl){}
- public record Joined(String participantId,String participantToken,Lobby lobby){}
+ public record Joined(String participantId,Lobby lobby){}
  private Failure fail(HttpStatus status,String code,String message){return new Failure(status,code,message);}
  private Evaluation read(String id){
   var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class).toInstant()),id);
   if(rows.isEmpty())throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
+  kr.lit.auth.AccountAccess.checkTeacherOwner(db.queryForObject("SELECT teacher_id FROM evaluations WHERE id=?",String.class,id));
   return rows.get(0);
  }
  private Evaluation byPin(String pin){
@@ -37,13 +38,14 @@ public class EvaluationService {
   if(!e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
  }
  public Created create(String title,int minutes){
+  String teacherId=kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER).userId();
   // The database unique constraint also protects concurrent PIN creation.
   String pin=null;
   for(int i=0;i<100;i++) {String candidate=String.format(Locale.ROOT,"%06d",random.nextInt(1000000));
    if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE pin=?",Integer.class,candidate)==0){pin=candidate;break;}}
   if(pin==null)throw fail(HttpStatus.SERVICE_UNAVAILABLE,"PIN_UNAVAILABLE","PIN을 다시 생성해주세요.");
   String id=UUID.randomUUID().toString(); Instant expiry=Instant.now().plusSeconds(minutes*60L);
-  try {db.update("INSERT INTO evaluations VALUES (?,?,?,'WAITING',?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC));}
+  try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id) VALUES (?,?,?,'WAITING',?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId);}
   catch(org.springframework.dao.DuplicateKeyException e){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시도해주세요.");}
   return new Created(id,title.strip(),pin,"WAITING",expiry,baseUrl+"?pin="+pin,"/api/teacher/evaluations/"+id+"/qr");
  }
@@ -55,32 +57,32 @@ public class EvaluationService {
   String screen=e.state().equals("ENDED")?"ENDED":!e.expiresAt().isAfter(Instant.now())?"EXPIRED":e.state().equals("STARTED")?"SOLVING":"WAITING";
   return new Lobby(e.id(),e.title(),e.state(),screen,people.size(),people);
  }
- public Joined join(String pin,String nickname,String token){
+ public Joined join(String pin,String nickname,String studentId){
+  kr.lit.auth.AccountAccess.student(studentId);
   var e=byPin(pin);available(e);
-  if(token!=null&&!token.isBlank()) {
-   var ids=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND token=?",String.class,e.id(),token);
-   if(ids.isEmpty())throw fail(HttpStatus.UNAUTHORIZED,"INVALID_PARTICIPANT_TOKEN","재접속 토큰이 올바르지 않습니다.");
-   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=?",ids.get(0));
-   return new Joined(ids.get(0),token,personalLobby(e,token));
+  var existing=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND user_id=?",String.class,e.id(),studentId);
+  if(!existing.isEmpty()) {
+   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=?",existing.get(0));
+   return new Joined(existing.get(0),personalLobby(e,studentId));
   }
   if(!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작된 평가에는 새로 참여할 수 없습니다.");
   String name=nickname==null?"":nickname.strip();
-  if(name.isBlank()||name.codePointCount(0,name.length())>20)throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임은 공백을 제외한 1~20자여야 합니다.");
+  if(name.isBlank()||name.codePointCount(0,name.length())>20)throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임은 1~20자여야 합니다.");
   String id=UUID.randomUUID().toString();String secret=UUID.randomUUID().toString().replace("-","")+UUID.randomUUID().toString().replace("-","");
-  try{db.update("INSERT INTO participants VALUES (?,?,?,?,TRUE,CURRENT_TIMESTAMP)",id,e.id(),name,secret);}
+  try{db.update("INSERT INTO participants(id,evaluation_id,nickname,token,active,last_seen,user_id) VALUES (?,?,?,?,TRUE,CURRENT_TIMESTAMP,?)",id,e.id(),name,secret,studentId);}
   catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"NICKNAME_TAKEN","사용 중인 닉네임입니다.");}
-  return new Joined(id,secret,lobby(e));
+  return new Joined(id,lobby(e));
  }
- public Lobby participant(String id,String token,boolean leave){
+ public Lobby participant(String id,String studentId,boolean leave){
   var e=read(id);
-  if(token==null||token.isBlank())throw fail(HttpStatus.UNAUTHORIZED,"PARTICIPANT_TOKEN_REQUIRED","참가자 토큰이 필요합니다.");
-  int count=db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE evaluation_id=? AND token=? AND active=TRUE",!leave,id,token);
-  if(count==0)throw fail(HttpStatus.UNAUTHORIZED,"INVALID_PARTICIPANT_TOKEN","참가자 토큰 또는 참여 상태를 확인해주세요.");
-  return personalLobby(e,token);
+  kr.lit.auth.AccountAccess.student(studentId);
+  int count=db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE evaluation_id=? AND user_id=? AND active=TRUE",!leave,id,studentId);
+  if(count==0)throw fail(HttpStatus.UNAUTHORIZED,"PARTICIPATION_REQUIRED","평가에 참여한 계정만 이용할 수 있습니다.");
+  return personalLobby(e,studentId);
  }
- private Lobby personalLobby(Evaluation e,String token){
+ private Lobby personalLobby(Evaluation e,String studentId){
   var lobby=lobby(e);
-  boolean submitted=db.queryForObject("SELECT COUNT(*) FROM submissions s JOIN participants p ON s.participant_id=p.id WHERE p.evaluation_id=? AND p.token=?",Integer.class,e.id(),token)>0;
+  boolean submitted=db.queryForObject("SELECT COUNT(*) FROM submissions s JOIN participants p ON s.participant_id=p.id WHERE p.evaluation_id=? AND p.user_id=?",Integer.class,e.id(),studentId)>0;
   return submitted?new Lobby(lobby.evaluationId(),lobby.title(),lobby.state(),"SUBMITTED",lobby.participantCount(),lobby.participants()):lobby;
  }
  public Lobby start(String id){var e=read(id);available(e);

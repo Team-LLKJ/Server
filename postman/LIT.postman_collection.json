@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "LIT 전체 평가 API",
-    "description": "README의 Postman 실행 안내를 먼저 확인하세요. LIT_AI_PROVIDER=stub이면 외부 API 비용 없이 실행됩니다. 01번부터 순서대로 실행하며 응답 ID와 토큰은 자동 저장됩니다.",
+    "description": "교사 초대 가입·학생 일반 가입·공통 Bearer 인증을 사용하는 LIT API. README 참고. 전체 흐름 폴더만 실행하세요. 최초 교사 초대 코드를 bootstrapInviteCode에 입력해야 합니다. SMTP 재설정 폴더는 별도 실행입니다.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,8 +11,48 @@
       "type": "string"
     },
     {
-      "key": "teacherKey",
-      "value": "test",
+      "key": "school",
+      "value": "테스트학교",
+      "type": "string"
+    },
+    {
+      "key": "bootstrapInviteCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "teacherUsername",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentUsername",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "teacherAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "teacherRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentRefreshToken",
+      "value": "",
       "type": "string"
     },
     {
@@ -22,11 +62,6 @@
     },
     {
       "key": "pin",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "participantToken",
       "value": "",
       "type": "string"
     },
@@ -54,566 +89,1048 @@
       "key": "reviewToken",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "nextInviteCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newPassword",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "01 평가 생성",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/api/teacher/evaluations",
-        "auth": {
-          "type": "bearer",
-          "bearer": [
+      "name": "전체 흐름 (테스트)",
+      "item": [
+        {
+          "name": "01 교사 가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/signup/teacher",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherUsername}}@example.test\",\n  \"name\": \"테스트교사\",\n  \"school\": \"{{school}}\",\n  \"inviteCode\": \"{{bootstrapInviteCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
             {
-              "key": "token",
-              "value": "{{teacherKey}}",
-              "type": "string"
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.variables.replaceIn(\"{{$guid}}\").replace(/-/g, \"\").slice(0, 16);",
+                  "pm.collectionVariables.set(\"teacherUsername\", \"teacher_\" + suffix);",
+                  "pm.collectionVariables.set(\"studentUsername\", \"student_\" + suffix);",
+                  "pm.collectionVariables.set(\"password\", pm.variables.replaceIn(\"{{$guid}}\") + \"aA1!\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
             }
           ]
         },
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"title\": \"답안·AI·제출 테스트\",\n  \"expiresInMinutes\": 60\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "const data = pm.response.json();",
-              "pm.collectionVariables.set(\"evaluationId\", data.id);",
-              "pm.collectionVariables.set(\"pin\", data.pin);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "02 문항 및 AI 정책 설정",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/questions",
-        "auth": {
-          "type": "bearer",
-          "bearer": [
+          "name": "02 교사 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
             {
-              "key": "token",
-              "value": "{{teacherKey}}",
-              "type": "string"
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"teacherAccessToken\", data.accessToken);",
+                  "pm.collectionVariables.set(\"teacherRefreshToken\", data.refreshToken);"
+                ]
+              }
             }
           ]
         },
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"덧셈\",\n      \"content\": \"2+2의 값과 그 이유를 설명하세요.\"\n    },\n    {\n      \"position\": 2,\n      \"title\": \"생각 정리\",\n      \"content\": \"이 문제를 해결한 과정을 설명하세요.\"\n    }\n  ]\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+        {
+          "name": "03 학생 가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/signup/student",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{studentUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{studentUsername}}@example.test\",\n  \"name\": \"테스트학생\",\n  \"school\": \"{{school}}\",\n  \"grade\": 1,\n  \"classNumber\": 1,\n  \"studentNumber\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "const data = pm.response.json();",
-              "pm.collectionVariables.set(\"questionId\", data.questions[0].id);",
-              "pm.collectionVariables.set(\"questionId2\", data.questions[1].id);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "03 PIN 확인",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{baseUrl}}/api/participation/verify?pin={{pin}}"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "04 학생 등록",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/api/participation/join",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"pin\": \"{{pin}}\",\n  \"nickname\": \"테스트학생\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "const data = pm.response.json();",
-              "pm.collectionVariables.set(\"participantToken\", data.participantToken);",
-              "pm.collectionVariables.set(\"participantId\", data.participantId);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "05 교사 평가 시작",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/start",
-        "auth": {
-          "type": "bearer",
-          "bearer": [
+          },
+          "event": [
             {
-              "key": "token",
-              "value": "{{teacherKey}}",
-              "type": "string"
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
             }
           ]
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "06 학생 문항과 답안 목록",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "07 첫 문항 답안 저장",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"content\": \"물체 두 개에 두 개를 더하면 네 개가 됩니다.\",\n  \"expectedVersion\": 0,\n  \"source\": \"DIRECT\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "08 다른 문항 선택",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId2}}"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "09 첫 문항으로 돌아와 답안 유지 확인",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "pm.test(\"이전 답안 유지\", () => pm.expect(pm.response.json().answer.version).to.eql(1));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "10 AI 질문",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/ai/questions",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"requestId\": \"{{aiRequestId}}\",\n  \"text\": \"답안을 더 명확히 설명하려면 어떤 개념을 확인해야 하나요?\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "prerequest",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.collectionVariables.set(\"aiRequestId\", pm.variables.replaceIn(\"{{$guid}}\"));"
-            ]
-          }
         },
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "pm.test(\"응답 완료\", () => pm.expect(pm.response.json().state).to.eql(\"COMPLETED\"));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "11 AI 참고 후 답안 수정",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"content\": \"두 개씩 두 묶음을 합치면 모두 네 개이므로 2+2=4입니다.\",\n  \"expectedVersion\": 1,\n  \"source\": \"AI_REFERENCED\",\n  \"aiRequestId\": \"{{aiRequestId}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+          "name": "04 학생 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{studentUsername}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "12 본인 대화 기록 조회",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/conversations?afterId=0&limit=100"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "13 본인 학습 과정 기록 조회",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/learning-events?afterId=0&limit=100"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "14 제출 미리 확인",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/submission-preview"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "const data = pm.response.json();",
-              "pm.collectionVariables.set(\"reviewToken\", data.reviewToken);",
-              "pm.test(\"두 번째 문항 미작성 안내\", () => pm.expect(data.blankQuestionIds).to.include(pm.collectionVariables.get(\"questionId2\")));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "15 제출 확정",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
           },
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/submission",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"reviewToken\": \"{{reviewToken}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "16 확정 제출 조회",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/submission"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "17 제출 완료 화면 상태",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "X-Participant-Token",
-            "value": "{{participantToken}}"
-          }
-        ],
-        "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/state"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
-              "pm.test(\"제출 완료 화면\", () => pm.expect(pm.response.json().screen).to.eql(\"SUBMITTED\"));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "18 교사 학습 과정 조회",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/learning-events?afterId=0&limit=100",
-        "auth": {
-          "type": "bearer",
-          "bearer": [
+          "event": [
             {
-              "key": "token",
-              "value": "{{teacherKey}}",
-              "type": "string"
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"studentAccessToken\", data.accessToken);",
+                  "pm.collectionVariables.set(\"studentRefreshToken\", data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 내 계정 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "pm.test(\"학생 권한\", () => pm.expect(pm.response.json().role).to.eql(\"STUDENT\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 평가 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"답안·AI·제출 테스트\",\n  \"expiresInMinutes\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"evaluationId\", data.id);",
+                  "pm.collectionVariables.set(\"pin\", data.pin);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 문항 및 AI 정책 설정",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/questions",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"덧셈\",\n      \"content\": \"2+2의 값과 그 이유를 설명하세요.\"\n    },\n    {\n      \"position\": 2,\n      \"title\": \"생각 정리\",\n      \"content\": \"이 문제를 해결한 과정을 설명하세요.\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"questionId\", data.questions[0].id);",
+                  "pm.collectionVariables.set(\"questionId2\", data.questions[1].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 PIN 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/participation/verify?pin={{pin}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 학생 등록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/participation/join",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"{{pin}}\",\n  \"nickname\": \"테스트학생\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"participantId\", data.participantId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 교사 평가 시작",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/start",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 학생 문항과 답안 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 첫 문항 답안 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"물체 두 개에 두 개를 더하면 네 개가 됩니다.\",\n  \"expectedVersion\": 0,\n  \"source\": \"DIRECT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 다른 문항 선택",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId2}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 첫 문항으로 돌아와 답안 유지 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "pm.test(\"이전 답안 유지\", () => pm.expect(pm.response.json().answer.version).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 AI 질문",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/ai/questions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestId\": \"{{aiRequestId}}\",\n  \"text\": \"답안을 더 명확히 설명하려면 어떤 개념을 확인해야 하나요?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"aiRequestId\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "pm.test(\"응답 완료\", () => pm.expect(pm.response.json().state).to.eql(\"COMPLETED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 AI 참고 후 답안 수정",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"두 개씩 두 묶음을 합치면 모두 네 개이므로 2+2=4입니다.\",\n  \"expectedVersion\": 1,\n  \"source\": \"AI_REFERENCED\",\n  \"aiRequestId\": \"{{aiRequestId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 본인 대화 기록 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/conversations?afterId=0&limit=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18 본인 학습 과정 기록 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/learning-events?afterId=0&limit=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 제출 미리 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/submission-preview",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"reviewToken\", data.reviewToken);",
+                  "pm.test(\"두 번째 문항 미작성 안내\", () => pm.expect(data.blankQuestionIds).to.include(pm.collectionVariables.get(\"questionId2\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20 제출 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/submission",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewToken\": \"{{reviewToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21 확정 제출 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/submission",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 제출 완료 화면 상태",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/state",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "pm.test(\"제출 완료 화면\", () => pm.expect(pm.response.json().screen).to.eql(\"SUBMITTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 교사 학습 과정 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/learning-events?afterId=0&limit=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "24 교사 초대 코드 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/teacher-invitations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresInHours\": 24\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "pm.collectionVariables.set(\"nextInviteCode\", pm.response.json().inviteCode);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25 학생 토큰 갱신",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{studentRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set(\"studentAccessToken\", data.accessToken);",
+                  "pm.collectionVariables.set(\"studentRefreshToken\", data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26 갱신 후 내 계정 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27 학생 로그아웃",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/logout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
             }
           ]
         }
-      },
-      "event": [
+      ]
+    },
+    {
+      "name": "비밀번호 재설정 (별도 실행)",
+      "item": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
-            ]
-          }
+          "name": "01 재설정 메일 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/password-reset/request",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{studentUsername}}@example.test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 새 비밀번호 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/password-reset/confirm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

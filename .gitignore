@@ -3,3 +3,7 @@ data/
 .env
 .idea/
 *.iml
+
+.DS_Store
+.env.*
+!.env.example

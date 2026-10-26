@@ -6,10 +6,10 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import java.util.Map;
 @RestControllerAdvice
-class ApiError {
- static class Failure extends RuntimeException {
-  final HttpStatus status; final String code;
-  Failure(HttpStatus status,String code,String message){super(message);this.status=status;this.code=code;}
+public class ApiError {
+ public static class Failure extends RuntimeException {
+  public final HttpStatus status; public final String code;
+  public Failure(HttpStatus status,String code,String message){super(message);this.status=status;this.code=code;}
  }
  @ExceptionHandler(Failure.class)
  ResponseEntity<?> failure(Failure e){return ResponseEntity.status(e.status).body(Map.of("code",e.code,"message",e.getMessage()));}

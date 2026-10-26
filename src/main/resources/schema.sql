@@ -1,3 +1,31 @@
+CREATE TABLE IF NOT EXISTS app_users (
+ id VARCHAR(36) PRIMARY KEY, username VARCHAR(30) NOT NULL UNIQUE,
+ email VARCHAR(254) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL,
+ display_name VARCHAR(50) NOT NULL, school VARCHAR(100) NOT NULL,
+ user_role VARCHAR(10) NOT NULL, user_status VARCHAR(10) NOT NULL,
+ grade INT, class_number INT, student_number INT,
+ failed_logins INT NOT NULL DEFAULT 0, locked_until TIMESTAMP WITH TIME ZONE,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE TABLE IF NOT EXISTS teacher_invites (
+ code_hash VARCHAR(64) PRIMARY KEY, school VARCHAR(100) NOT NULL,
+ created_by VARCHAR(36) REFERENCES app_users(id), expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ used_by VARCHAR(36) REFERENCES app_users(id), created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_sessions (
+ id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36) NOT NULL REFERENCES app_users(id),
+ family_id VARCHAR(36) NOT NULL, access_hash VARCHAR(64) NOT NULL UNIQUE,
+ refresh_hash VARCHAR(64) NOT NULL UNIQUE, access_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ refresh_expires_at TIMESTAMP WITH TIME ZONE NOT NULL, revoked_at TIMESTAMP WITH TIME ZONE,
+ rotated_at TIMESTAMP WITH TIME ZONE, created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_family ON auth_sessions(family_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON auth_sessions(user_id);
+CREATE TABLE IF NOT EXISTS password_resets (
+ token_hash VARCHAR(64) PRIMARY KEY, user_id VARCHAR(36) NOT NULL REFERENCES app_users(id),
+ expires_at TIMESTAMP WITH TIME ZONE NOT NULL, used_at TIMESTAMP WITH TIME ZONE,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
 CREATE TABLE IF NOT EXISTS evaluations (
  id VARCHAR(36) PRIMARY KEY, title VARCHAR(100) NOT NULL,
  pin VARCHAR(6) NOT NULL UNIQUE, state VARCHAR(20) NOT NULL,
@@ -48,3 +76,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 );
 CREATE INDEX IF NOT EXISTS idx_turns_participant ON ai_turns(participant_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_participant ON learning_events(participant_id, id);
+
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS teacher_id VARCHAR(36) REFERENCES app_users(id);
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_id VARCHAR(36) REFERENCES app_users(id);
+ALTER TABLE participants ADD CONSTRAINT IF NOT EXISTS uq_participant_user UNIQUE(evaluation_id,user_id);
