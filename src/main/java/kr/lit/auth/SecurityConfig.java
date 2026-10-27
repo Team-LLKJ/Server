@@ -35,6 +35,7 @@ public class SecurityConfig {
             .requestCache(c->c.disable()).formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
             .exceptionHandling(e->e.authenticationEntryPoint((req,res,ex)->error(res,json,401,"AUTH_REQUIRED","로그인이 필요합니다."))
                 .accessDeniedHandler((req,res,ex)->error(res,json,403,"ACCESS_DENIED","접근 권한이 없습니다.")))
+            // Retired reset URLs remain permitAll so missing handlers return 404.
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
@@ -61,9 +62,9 @@ public class SecurityConfig {
         }
         protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain) throws ServletException,IOException {
             res.setHeader("Cache-Control","no-store");String path=req.getRequestURI().substring(req.getContextPath().length());
-            int max=path.contains("password-reset")?5:path.contains("signup")?20:30;
+            int max=path.contains("signup")?20:30;
             boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/");
-            String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path.contains("password-reset")?"reset":path;
+            String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path;
             if(limited&&!limit(req.getRemoteAddr(),group,max)) {error(res,json,429,"RATE_LIMITED","요청이 많습니다. 잠시 후 다시 시도해주세요.");return;}
             boolean guestPath=path.startsWith("/api/evaluations/");
             if(guestPath) {

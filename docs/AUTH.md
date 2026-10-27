@@ -9,14 +9,13 @@
 
 | 메서드 | 경로 | 인증 | 성공 |
 |---|---|---|---|
+| 400 | INVALID_REQUEST / INVALID_INVITE | 입력 또는 교사 초대 코드 오류 |
 | POST | `/signup/teacher` | 유효한 교사 초대 코드 | 201 User |
 | POST | `/login` | 없음 | 200 Tokens |
 | POST | `/refresh` | Refresh Token(Body) | 200 Tokens |
 | GET | `/me` | 교사 Access Token | 200 User |
 | POST | `/logout` | 교사 Access Token | 200 Message |
 | POST | `/teacher-invitations` | 교사 Access Token | 201 Invitation |
-| POST | `/password-reset/request` | 없음 | 202 Message |
-| POST | `/password-reset/confirm` | 이메일 재설정 토큰 | 200 Message |
 
 기존 `/signup/student`는 계정을 만들지 않고 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다.
 이전 버전 DB의 STUDENT 계정도 로그인·갱신·Access Token 인증을 허용하지 않습니다. 기존 행을 삭제하지는 않습니다.
@@ -91,18 +90,7 @@ X-Participant-Token: {participantToken}
 평가 시작 후 신규 참여는 차단하고 기존 토큰 재접속만 허용합니다.
 토큰을 잃은 경우 닉네임만으로 기존 기록을 복구하지 않습니다. 재접속할 클라이언트가 토큰을 보관해야 합니다.
 
-## 교사 비밀번호 재설정
-
-요청: `{"email":"teacher@example.com"}`. 가입 여부와 무관하게 같은202 안내를 반환하며 토큰을 응답하지 않습니다.
-메일 설정 누락은 모든 요청에503 MAIL_NOT_CONFIGURED. SMTP 발송 실패는 DB를 롤백하고 같은 안내 응답을 유지합니다.
-메일 링크 `${LIT_RESET_BASE_URL}#token=...`에서 프런트가 토큰을 읽어 다음 Body로 확인합니다.
-
-```json
-{"token":"43자리 이메일 재설정 토큰","newPassword":"New-example-password-456"}
-```
-
-토큰은30분·일회용·해시 저장. 성공 시 해당 교사의 모든 로그인 세션·미사용 재설정 토큰을 폐기합니다.
-SMTP_HOST/PORT/USERNAME/PASSWORD와 LIT_MAIL_FROM 설정 필요. 가입 이메일 인증 및 UI는 별도 구현 범위입니다.
+비밀번호 찾기·재설정은 이번 개발 범위에서 제외했습니다. 메일 발송 설정은 필요하지 않습니다.
 
 ## 오류
 
@@ -110,7 +98,7 @@ SMTP_HOST/PORT/USERNAME/PASSWORD와 LIT_MAIL_FROM 설정 필요. 가입 이메�
 
 | HTTP | code | 원인 |
 |---|---|---|
-| 400 | INVALID_REQUEST / INVALID_INVITE / INVALID_RESET_TOKEN | 입력·교사초대·재설정 토큰 오류 |
+| 400 | INVALID_REQUEST / INVALID_INVITE | 입력 또는 교사 초대 코드 오류 |
 | 401 | AUTH_REQUIRED / INVALID_ACCESS_TOKEN | 교사 로그인 필요·토큰 오류 |
 | 401 | INVALID_CREDENTIALS | 로그인 실패·제한·비활성·STUDENT 계정 |
 | 401 | INVALID_REFRESH_TOKEN / REFRESH_TOKEN_REUSED | 교사 갱신 토큰 오류·재사용 |
@@ -120,6 +108,5 @@ SMTP_HOST/PORT/USERNAME/PASSWORD와 LIT_MAIL_FROM 설정 필요. 가입 이메�
 | 409 | ACCOUNT_ALREADY_EXISTS / NICKNAME_TAKEN | 교사 계정 중복·참여 닉네임 중복 |
 | 410 | STUDENT_ACCOUNTS_DISABLED | 학생 가입 경로 비활성화 |
 | 429 | RATE_LIMITED | 요청 횟수 제한 |
-| 503 | MAIL_NOT_CONFIGURED | 교사 재설정 메일 설정 누락 |
 
 기존 DB의 사용자·평가·답안 기록은 삭제하지 않습니다. 소유자가 없는 평가를 새 교사에게 자동 귀속하지 않습니다.

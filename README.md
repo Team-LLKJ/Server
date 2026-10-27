@@ -60,7 +60,7 @@ Authorization: Bearer {accessToken}
 Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
 토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
-[Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 초대·재설정·오류 정책을 정리했습니다.
+[Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 초대·오류 정책을 정리했습니다.
 
 ## API 목록
 
@@ -74,8 +74,6 @@ Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이�
 | GET | `/api/auth/me` | 본인 계정 |
 | POST | `/api/auth/logout` | 현재 로그인 세션 폐기 |
 | POST | `/api/auth/teacher-invitations` | 같은 학교 교사 초대 코드 발급 |
-| POST | `/api/auth/password-reset/request` | 재설정 메일 요청 |
-| POST | `/api/auth/password-reset/confirm` | 새 비밀번호 설정 |
 
 ### 평가·참여
 
@@ -139,7 +137,6 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 계정 이름·비밀번호는 첫 요청에서 테스트용으로 생성하고 토큰·ID는 응답에서 자동 저장합니다.
 가입 API는 일회용 초대 코드를 소비하므로 전체 재실행에는 새 초대 코드가 필요합니다.
 가입 이후의 개별 요청은 저장된 변수로 재실행할 수 있으나 답안 expectedVersion과 제출 상태를 확인하세요.
-**비밀번호 재설정 (별도 실행)** 폴더는 SMTP 설정 후에만 실행하세요. 재설정 토큰은 이메일에서 확인해 변수에 입력합니다.
 
 ## 외부 서비스 설정
 
@@ -147,17 +144,15 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 `LIT_JOIN_BASE_URL` 기본값은 `http://localhost:3000/join`이며 참여 웹 페이지는 별도로 필요합니다.
 
-재설정 메일: `SMTP_HOST`, `SMTP_PORT`(기본 587), `SMTP_USERNAME`, `SMTP_PASSWORD`, `LIT_MAIL_FROM`을 설정하세요.
-SMTP_AUTH·SMTP_STARTTLS 기본 true. 연결·읽기·쓰기 제한은 각각 5초입니다.
-`LIT_RESET_BASE_URL` 기본값은 `http://localhost:3000/reset-password`입니다.
-실제 메일을 보내는 테스트는 수행하지 않습니다. 비밀번호 재설정 UI는 별도 구현해야 합니다.
 
 ## 검증
 
-인증·역할·소유권·초대 코드·갱신 재사용·로그아웃·계정 제한·비밀번호 재설정,
+인증·역할·소유권·초대 코드·갱신 재사용·로그아웃·계정 제한,
 전체 평가 흐름·답안 충돌·AI 대화 격리·제출 고정·이전 스키마 보존을 자동 테스트합니다.
 
 기술 참고: [Spring Security 구조](https://docs.spring.io/spring-security/reference/servlet/architecture.html),
 [비밀번호 저장](https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html).
 
 학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
+
+비밀번호 찾기·재설정 기능은 제외했습니다. SMTP나 메일 발송 환경변수는 필요하지 않습니다.

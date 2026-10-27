@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "LIT 전체 평가 API",
-    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 테스트 폴더를 순서대로 실행하세요.",
+    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 비밀번호 찾기 기능은 제외되었습니다.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -77,16 +77,6 @@
     },
     {
       "key": "nextInviteCode",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "resetToken",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "newPassword",
       "value": "",
       "type": "string"
     },
@@ -936,77 +926,6 @@
                   "type": "string"
                 }
               ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "비밀번호 재설정 (별도 실행)",
-      "item": [
-        {
-          "name": "01 재설정 메일 요청",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/api/auth/password-reset/request",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{teacherUsername}}@example.test\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "02 새 비밀번호 확정",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/api/auth/password-reset/confirm",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           },
           "event": [

@@ -3,11 +3,8 @@ package kr.lit.api;
 import kr.lit.auth.*;
 import kr.lit.auth.AuthModels.*;
 import org.junit.jupiter.api.Test;
-import org.springframework.mail.MailSendException;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
-import static org.mockito.Mockito.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -64,27 +61,17 @@ class AuthApiTest extends AuthTestSupport {
         String expired=UUID.randomUUID().toString()+UUID.randomUUID();auth.bootstrap(expired,"테스트학교");db.update("UPDATE teacher_invites SET expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE code_hash=?",AuthService.hash(expired));
         mvc.perform(request(body(post("/api/auth/signup/teacher"),signup(expired,unique(),"테스트학교")),null)).andExpect(status().isBadRequest());
     }
-    @Test void failedLoginCounterAndResetArePrivateAndOneTime() throws Exception {
+    @Test void failedLoginCounterTemporarilyLocksTeacherAccount() throws Exception {
         for(int n=0;n<5;n++)mvc.perform(request(body(post("/api/auth/login"),new Login(teacher.user().username(),"wrong-password")),null)).andExpect(status().isUnauthorized());
         mvc.perform(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null)).andExpect(status().isUnauthorized());
         assertThat(db.queryForObject("SELECT failed_logins FROM app_users WHERE id=?",Integer.class,teacher.user().id())).isEqualTo(5);
-        var token=new AtomicReference<String>();doAnswer(call->{token.set(call.getArgument(1));return null;}).when(mail).send(anyString(),anyString());
-        var result=ok(request(body(post("/api/auth/password-reset/request"),new ResetRequest(teacher.user().email())),null));
-        assertThat(ok(request(body(post("/api/auth/password-reset/request"),new ResetRequest(unique()+"@example.test")),null))).isEqualTo(result);
-        assertThat(token.get()).hasSize(43);assertThat(result.toString()).doesNotContain(token.get());
-        ok(request(body(post("/api/auth/password-reset/confirm"),new ResetConfirm(token.get(),"Changed-password-123")),null));
-        mvc.perform(request(get("/api/auth/me"),teacher)).andExpect(status().isUnauthorized());
-        mvc.perform(request(body(post("/api/auth/password-reset/confirm"),new ResetConfirm(token.get(),"Changed-password-123")),null)).andExpect(status().isBadRequest());
-        ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),"Changed-password-123")),null));
+        db.update("UPDATE app_users SET locked_until=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",teacher.user().id());
+        ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null));
     }
-    @Test void resetMailFailureExpiryAndRateLimit() throws Exception {
-        String code="a".repeat(43);db.update("INSERT INTO password_resets VALUES (?,?,DATEADD('SECOND',-1,CURRENT_TIMESTAMP),NULL,CURRENT_TIMESTAMP)",AuthService.hash(code),teacher.user().id());
-        mvc.perform(request(body(post("/api/auth/password-reset/confirm"),new ResetConfirm(code,"Changed-password-123")),null)).andExpect(status().isBadRequest());
-        doThrow(new MailSendException("test failure")).when(mail).send(anyString(),anyString());
-        db.update("DELETE FROM password_resets WHERE user_id=?",teacher.user().id());
-        ok(request(body(post("/api/auth/password-reset/request"),new ResetRequest(teacher.user().email())),null));
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM password_resets WHERE user_id=?",Integer.class,teacher.user().id())).isZero();
-        for(int n=0;n<3;n++)ok(request(body(post("/api/auth/password-reset/request"),new ResetRequest(unique()+"@example.test")),null));
-        mvc.perform(request(body(post("/api/auth/password-reset/request"),new ResetRequest(unique()+"@example.test")),null)).andExpect(status().isTooManyRequests());
+    @Test void passwordRecoveryEndpointsAreNotAvailable() throws Exception {
+        for(String endpoint:List.of("request","confirm")) {
+            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),null)).andExpect(status().isNotFound());
+            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),teacher)).andExpect(status().isNotFound());
+        }
     }
 }

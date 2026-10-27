@@ -21,11 +21,10 @@ import static kr.lit.auth.AuthModels.*;
 public class AuthService {
     private final JdbcTemplate db;
     private final PasswordEncoder encoder;
-    private final ResetMailer mail;
     private final String dummyHash;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,PasswordEncoder encoder,ResetMailer mail) {
-        this.db=db;this.encoder=encoder;this.mail=mail;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
+    public AuthService(JdbcTemplate db,PasswordEncoder encoder) {
+        this.db=db;this.encoder=encoder;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
     }
     public static String hash(String value) {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}
@@ -92,7 +91,7 @@ public class AuthService {
     }
     @Transactional(noRollbackFor=ApiError.Failure.class)
     public Tokens refresh(String token) {
-        // Lock the user before the session so reset/logout/refresh have consistent lock ordering.
+        // Lock the user before the session so logout and refresh have consistent lock ordering.
         var ids=db.queryForList("SELECT user_id FROM auth_sessions WHERE refresh_hash=?",String.class,hash(token));
         if(ids.isEmpty())throw fail(HttpStatus.UNAUTHORIZED,"INVALID_REFRESH_TOKEN","유효하지 않은 갱신 토큰입니다.");
         String uid=ids.get(0);db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",uid);
@@ -110,26 +109,6 @@ public class AuthService {
     public void logout(Principal p) {
         db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",p.userId());
         db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=(SELECT family_id FROM auth_sessions WHERE id=? AND user_id=?)",now(),p.sessionId(),p.userId());
-    }
-    public void requestReset(String email) {
-        mail.checkConfigured();
-        var ids=db.queryForList("SELECT id FROM app_users WHERE email=? AND user_status='ACTIVE' AND user_role='TEACHER'",String.class,normalized(email));
-        if(ids.isEmpty())return;
-        String id=ids.get(0);db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",id);
-        int recent=db.queryForObject("SELECT COUNT(*) FROM password_resets WHERE user_id=? AND created_at>?",Integer.class,id,now().minusMinutes(1));
-        if(recent>0)return;
-        String token=secret();db.update("INSERT INTO password_resets VALUES (?,?,?,NULL,?)",hash(token),id,now().plusMinutes(30),now());
-        mail.send(normalized(email),token);
-    }
-    public void confirmReset(ResetConfirm input) {
-        String digest=hash(input.token());var ids=db.queryForList("SELECT user_id FROM password_resets WHERE token_hash=?",String.class,digest);
-        if(ids.isEmpty())throw fail(HttpStatus.BAD_REQUEST,"INVALID_RESET_TOKEN","만료되었거나 사용된 재설정 링크입니다.");
-        String id=ids.get(0);db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",id);
-        var row=db.queryForList("SELECT * FROM password_resets WHERE token_hash=? FOR UPDATE",digest).get(0);
-        if(me(id).role()!=Role.TEACHER||row.get("USED_AT")!=null||!((OffsetDateTime)row.get("EXPIRES_AT")).isAfter(now()))throw fail(HttpStatus.BAD_REQUEST,"INVALID_RESET_TOKEN","만료되었거나 사용된 재설정 링크입니다.");
-        db.update("UPDATE app_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=? WHERE id=?",encoder.encode(input.newPassword()),now(),id);
-        db.update("UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL",now(),id);
-        db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?",now(),id);
     }
     public void bootstrap(String code,String school) {
         if(code.isBlank())return;

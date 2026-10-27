@@ -21,11 +21,6 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_family ON auth_sessions(family_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON auth_sessions(user_id);
-CREATE TABLE IF NOT EXISTS password_resets (
- token_hash VARCHAR(64) PRIMARY KEY, user_id VARCHAR(36) NOT NULL REFERENCES app_users(id),
- expires_at TIMESTAMP WITH TIME ZONE NOT NULL, used_at TIMESTAMP WITH TIME ZONE,
- created_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
 CREATE TABLE IF NOT EXISTS evaluations (
  id VARCHAR(36) PRIMARY KEY, title VARCHAR(100) NOT NULL,
  pin VARCHAR(6) NOT NULL UNIQUE, state VARCHAR(20) NOT NULL,

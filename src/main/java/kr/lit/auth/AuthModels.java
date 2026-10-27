@@ -16,9 +16,6 @@ public final class AuthModels {
     public record Login(@NotBlank @Size(max=100) String username, @NotBlank @Size(max=128) String password) {}
     public record Refresh(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String refreshToken) {}
     public record Invite(@Min(1) @Max(168) int expiresInHours) {}
-    public record ResetRequest(@NotBlank @Email @Size(max=254) String email) {}
-    public record ResetConfirm(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String token,
-                               @NotBlank @Size(min=10,max=128) String newPassword) {}
     public record User(String id, String username, String email, String name, String school, Role role,
                        String status, Integer grade, Integer classNumber, Integer studentNumber, Instant createdAt) {}
     public record Tokens(String tokenType, String accessToken, Instant accessExpiresAt,

@@ -10,7 +10,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.*;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import java.util.*;
@@ -26,7 +25,6 @@ abstract class AuthTestSupport {
     @Autowired AuthService auth;
     @Autowired EvaluationService evaluations;
     @Autowired WorkService work;
-    @MockitoBean ResetMailer mail;
     Tokens teacher;
     String remote;
     static final String PASSWORD="Test-password-123";
