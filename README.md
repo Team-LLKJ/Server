@@ -83,6 +83,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | 메서드 | 경로 | 기능 |
 |---|---|---|
 | POST | `/api/teacher/evaluations` | 평가 생성 |
+| GET | `/api/teacher/evaluations?page=0&size=20` | 내가 만든 평가 목록 |
 | GET | `/api/teacher/evaluations/{id}` | 평가 정보·PIN |
 | GET | `/api/teacher/evaluations/{id}/qr` | 참여 URL QR PNG |
 | GET | `/api/teacher/evaluations/{id}/participants` | 참가자 목록 |
@@ -172,3 +173,50 @@ Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
 
 비밀번호 찾기·재설정 기능은 제외했습니다. SMTP나 메일 발송 환경변수는 필요하지 않습니다.
+
+
+### 내가 만든 수행평가 조회
+
+`GET /api/teacher/evaluations?page=0&size=20`에 교사 로그인 응답의 `Authorization: Bearer {accessToken}`을 전달합니다. 학생 참가자 토큰으로는 조회할 수 없습니다. 본인이 만든 평가만 포함하며 종료·만료된 평가도 반환합니다. 페이지는 0부터, size는 1~100(기본20)입니다. 만료 시각 내림차순, 같은 만료 시각은 id 내림차순입니다. 현재 스키마에 생성 시각이 없어 생성순을 의미하지 않습니다.
+
+```json
+{
+  "items": [
+    {
+      "id": "평가 UUID",
+      "title": "수학 수행평가",
+      "pin": "012345",
+      "state": "WAITING",
+      "expiresAt": "2026-10-28T03:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+평가가 없거나 페이지 범위를 넘으면 items는 빈 배열입니다. 잘못된 page/size는400, 인증 누락·만료는401입니다. 프런트는 선택한 items[].id로 기존 평가 상세·문항·참가자 조회 API를 호출합니다.
+
+### 프런트에서 Gemini 대화 연결
+
+학생은 가입 없이 PIN 참여 후 받은 participantToken을 사용합니다. Gemini 키는 서버에만 설정하며 아래 요청에는 넣지 않습니다. 프런트·백엔드가 다른 컴퓨터라면 프런트의 Vite `/api` 프록시 대상을 백엔드 IP:5174로 설정해야 합니다.
+
+```js
+const response = await fetch(`/api/evaluations/${evaluationId}/questions/${questionId}/ai/questions`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Participant-Token': participantToken,
+  },
+  body: JSON.stringify({ requestId: crypto.randomUUID(), text: questionText }),
+});
+const result = await response.json();
+if (!response.ok || result.state === 'FAILED') {
+  throw new Error(result.errorCode || result.code || 'AI_REQUEST_FAILED');
+}
+// COMPLETED이면 result.answerText 표시. PENDING이면 대화 조회로 상태 확인.
+```
+
+질문 버튼 처리의 finally에서 로딩을 해제하고 실패 메시지를 표시하세요. 새 질문마다 새 requestId, 네트워크 재시도는 원래 requestId·본문을 그대로 사용합니다. 대화는 같은 참가자 헤더로 `GET /api/evaluations/{id}/conversations?questionId={questionId}`에서 조회합니다. 평가가 STARTED이고 aiPolicy가 HINT_ONLY 또는 FULL이어야 질문할 수 있습니다.
