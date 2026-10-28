@@ -140,7 +140,23 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 
 ## 외부 서비스 설정
 
-실제 AI: `LIT_AI_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`을 서버에 설정합니다.
+실제 AI 기본 제공자는 Gemini입니다. 백엔드를 실행하는 터미널에 `LIT_AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`을 설정합니다. 모델 이름은 Google AI Studio에서 프로젝트에 사용 가능한 모델로 지정하세요. 키는 프런트엔드의 `VITE_` 변수나 Git에 넣지 않습니다.
+
+```sh
+export LIT_AI_PROVIDER=gemini
+read -s 'GEMINI_API_KEY?Gemini API key: '
+export GEMINI_API_KEY
+export GEMINI_MODEL='<AI Studio에서 선택한 모델 ID>'
+./mvnw spring-boot:run
+```
+
+위 키 입력 명령은 macOS zsh 기준이며 입력값을 화면에 표시하지 않습니다. 기존 서버는 해당 터미널에서 Ctrl+C로 종료한 후 한 번만 실행합니다. 이미 실행 중인 서버에는 새 환경변수가 적용되지 않습니다.
+
+학생의 `POST /api/evaluations/{id}/questions/{questionId}/ai/questions` 요청은 `X-Participant-Token` 헤더와 `{ "requestId": "고유한 요청 ID", "text": "질문 내용" }`를 사용합니다. 같은 요청 재시도에는 같은 requestId를 사용합니다. 서버가 문항, 현재 답안과 최근 대화를 Gemini에 전달하며 질문·응답·제공자·모델·시각·실패 상태를 DB에 남깁니다. `GET /api/evaluations/{id}/conversations`로 본인 대화를 다시 조회합니다. 교사는 기존 학습 이벤트 조회 API로 기록을 확인합니다. 제출 후 신규 AI 질문은 차단합니다.
+
+키나 모델이 없으면 실제 호출 없이 `AI_NOT_CONFIGURED`, 무료 할당량 초과 시 `AI_PROVIDER_RATE_LIMITED`를 기록합니다. 무료 등급에서 한도에 도달해도 자동으로 유료 모델로 전환하지 않습니다.
+
+기존 OpenAI 제공자도 지원합니다. `LIT_AI_PROVIDER=openai`, `GEMINI_API_KEY` 대신 `OPENAI_API_KEY`, `GEMINI_MODEL` 대신 `OPENAI_MODEL`을 사용하며, 커스텀 URL은 `LIT_AI_ENDPOINT`로 지정합니다.
 Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 `LIT_JOIN_BASE_URL` 기본값은 `http://localhost:3000/join`이며 참여 웹 페이지는 별도로 필요합니다.
 
