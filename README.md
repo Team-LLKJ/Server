@@ -220,3 +220,11 @@ if (!response.ok || result.state === 'FAILED') {
 ```
 
 질문 버튼 처리의 finally에서 로딩을 해제하고 실패 메시지를 표시하세요. 새 질문마다 새 requestId, 네트워크 재시도는 원래 requestId·본문을 그대로 사용합니다. 대화는 같은 참가자 헤더로 `GET /api/evaluations/{id}/conversations?questionId={questionId}`에서 조회합니다. 평가가 STARTED이고 aiPolicy가 HINT_ONLY 또는 FULL이어야 질문할 수 있습니다.
+
+### Gemini 오류 진단
+
+현재 서버에서 `gemini-2.5-flash` 호출이 신규 사용자 모델 이용 제한으로404를 반환하는 것을 확인했습니다. API 키가 있어도 해당 모델을 사용할 수 없으면 실패합니다. 같은 키로 gemini-3.1-flash-lite는 실제200 응답을 확인했습니다. `export GEMINI_MODEL=gemini-3.1-flash-lite`로 변경한 같은 터미널에서 서버를 재시작하세요. 모델 목록에 표시되는 것만으로 호출 권한을 보장하지는 않습니다. 모델을 자동 교체하거나 유료 결제를 활성화하지 않습니다.
+
+오류는 Turn(state=FAILED,errorCode=...)로 반환합니다. AI_MODEL_UNAVAILABLE(HTTP502): 모델404; AI_AUTHENTICATION_FAILED(502): 키·권한 오류; AI_INVALID_PROVIDER_REQUEST(502): 제공자 요청400; AI_PROVIDER_UNAVAILABLE(502): 제공자5xx; AI_PROVIDER_RATE_LIMITED(502): 제공자429; AI_NOT_CONFIGURED(503): 서버 키·모델 미설정; AI_TIMEOUT(504): 응답 제한 초과. 키 원문·제공자 원문 오류는 반환하거나 로그에 기록하지 않습니다.
+
+Gemini 일시적 HTTP500/502/503/504는 같은 질문 처리 안에서 최대3회(최초1회+재시도2회), 기본1초·2초 간격으로 재시도합니다. 숫자 Retry-After가 더 길면 해당 간격을 따르되 전체 LIT_AI_TIMEOUT_SECONDS(기본45초)를 넘기지 않습니다. 키 오류·모델 오류·429·네트워크 시간 초과는 자동 재시도하지 않습니다. 모델 자동 전환도 하지 않습니다. 재시도는 새 대화 기록을 만들지 않으며 최종 결과만 기존 Turn에 반영합니다.

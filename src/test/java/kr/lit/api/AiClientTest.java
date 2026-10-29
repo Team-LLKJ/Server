@@ -89,4 +89,43 @@ class AiClientTest {
         assertThatThrownBy(()->blocked.complete(reservation())).hasMessage("AI_INCOMPLETE_RESPONSE");
     }
 
+    @Test void geminiUnavailableModelIsActionable() throws Exception {
+        var c=client("gemini",404,"{\"error\":{\"status\":\"NOT_FOUND\"}}",0);
+        assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_MODEL_UNAVAILABLE");
+    }
+    @Test void geminiInvalidKeyIsDistinguishedWithoutExposingIt() throws Exception {
+        var c=client("gemini",400,"{\"error\":{\"details\":[{\"reason\":\"API_KEY_INVALID\"}]}}",0);
+        assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_AUTHENTICATION_FAILED");
+    }
+    @Test void geminiTemporaryOutageIsDistinguished() throws Exception {
+        var c=client("gemini",503,"{}",0);
+        assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_PROVIDER_UNAVAILABLE");
+    }
+
+    private AiClient sequence(int[] statuses,AtomicInteger calls) throws Exception {
+        client("gemini",200,"{}",0);
+        server.removeContext("/v1/responses");
+        server.createContext("/v1/responses",exchange->{
+            try {
+                exchange.getRequestBody().readAllBytes();
+                int index=calls.getAndIncrement();int status=statuses[Math.min(index,statuses.length-1)];
+                String response=status==200?"{\"candidates\":[{\"finishReason\":\"STOP\",\"content\":{\"parts\":[{\"text\":\"복구됨\"}]}}]}":"{}";
+                byte[] bytes=response.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(status,bytes.length);exchange.getResponseBody().write(bytes);
+            } finally { exchange.close(); }
+        });
+        return new AiClient(json,"gemini","test-only-key","test-model","http://127.0.0.1:"+server.getAddress().getPort()+"/v1/responses",10);
+    }
+    @Test void geminiRetriesTransientOutageAndRecoversWithinSameRequest() throws Exception {
+        var calls=new AtomicInteger();var c=sequence(new int[]{503,503,200},calls);
+        assertThat(c.complete(reservation())).isEqualTo("복구됨");assertThat(calls.get()).isEqualTo(3);
+    }
+    @Test void geminiStopsAfterThreeFailures() throws Exception {
+        var calls=new AtomicInteger();var c=sequence(new int[]{503},calls);
+        assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_PROVIDER_UNAVAILABLE");assertThat(calls.get()).isEqualTo(3);
+    }
+    @Test void geminiDoesNotRetryQuotaErrors() throws Exception {
+        var calls=new AtomicInteger();var c=sequence(new int[]{429,200},calls);
+        assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_PROVIDER_RATE_LIMITED");assertThat(calls.get()).isEqualTo(1);
+    }
+
 }

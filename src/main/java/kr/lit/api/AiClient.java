@@ -11,6 +11,7 @@ import static kr.lit.api.WorkModels.*;
 
 @Component
 public class AiClient {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(AiClient.class);
     private final ObjectMapper json;
     private final String provider, key, model, endpoint;
     private final int timeoutSeconds;
@@ -19,9 +20,9 @@ public class AiClient {
         final String code;
         AiFailure(String code) { super(code);this.code=code; }
     }
-    public AiClient(ObjectMapper json, @Value("${lit.ai.provider:openai}") String provider,
+    public AiClient(ObjectMapper json, @Value("${lit.ai.provider:gemini}") String provider,
                     @Value("${lit.ai.api-key:}") String key, @Value("${lit.ai.model:}") String model,
-                    @Value("${lit.ai.endpoint:https://api.openai.com/v1/responses}") String endpoint,
+                    @Value("${lit.ai.endpoint:}") String endpoint,
                     @Value("${lit.ai.timeout-seconds:45}") int timeoutSeconds) {
         if(!Set.of("openai","gemini","stub").contains(provider)) throw new IllegalArgumentException("LIT_AI_PROVIDER must be openai, gemini or stub");
         if(timeoutSeconds<1||timeoutSeconds>60) throw new IllegalArgumentException("AI timeout must be 1..60 seconds");
@@ -84,12 +85,21 @@ public class AiClient {
         var body=Map.of("systemInstruction",Map.of("parts",List.of(Map.of("text",instructions))),
                 "contents",contents,"generationConfig",Map.of("maxOutputTokens",4096));
         String url=endpoint.replace("{model}",model);
-        var request=HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(timeoutSeconds))
-                .header("x-goog-api-key",key).header("Content-Type","application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
-        var response=http.send(request,HttpResponse.BodyHandlers.ofString());
-        if(response.statusCode()==429) throw new AiFailure("AI_PROVIDER_RATE_LIMITED");
-        if(response.statusCode()<200||response.statusCode()>=300) throw new AiFailure("AI_PROVIDER_ERROR");
+        var response=sendGemini(url,json.writeValueAsString(body));
+        if(response.statusCode()<200||response.statusCode()>=300) {
+            int status=response.statusCode();
+            log.warn("Gemini request failed: HTTP {}, model={}",status,model);
+            if(status==429) throw new AiFailure("AI_PROVIDER_RATE_LIMITED");
+            if(status==404) throw new AiFailure("AI_MODEL_UNAVAILABLE");
+            if(status==401||status==403) throw new AiFailure("AI_AUTHENTICATION_FAILED");
+            if(status==400) {
+                var error=json.readTree(response.body()).path("error");
+                for(var detail:error.path("details")) if(detail.path("reason").asText().startsWith("API_KEY_")) throw new AiFailure("AI_AUTHENTICATION_FAILED");
+                throw new AiFailure("AI_INVALID_PROVIDER_REQUEST");
+            }
+            if(status>=500) throw new AiFailure("AI_PROVIDER_UNAVAILABLE");
+            throw new AiFailure("AI_PROVIDER_ERROR");
+        }
         var payload=json.readTree(response.body());
         var candidate=payload.path("candidates").path(0);
         // Blocked, truncated and empty responses must never be saved as successful answers.
@@ -101,6 +111,31 @@ public class AiClient {
         String result=text.toString().strip();
         if(result.isBlank()||result.length()>100000) throw new AiFailure("AI_INVALID_RESPONSE");
         return result;
+    }
+
+    private HttpResponse<String> sendGemini(String url,String body) throws Exception {
+        long deadline=System.nanoTime()+Duration.ofSeconds(timeoutSeconds).toNanos();
+        for(int attempt=1;attempt<=3;attempt++) {
+            long remaining=deadline-System.nanoTime();
+            if(remaining<=0) throw new HttpTimeoutException("AI overall timeout exceeded");
+            var request=HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofNanos(remaining))
+                    .header("x-goog-api-key",key).header("Content-Type","application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+            var response=http.send(request,HttpResponse.BodyHandlers.ofString());
+            int status=response.statusCode();
+            // Retry only explicit transient server failures, never quota/auth/model errors
+            // or ambiguous network timeouts. All attempts share one overall time budget.
+            if(attempt==3||!Set.of(500,502,503,504).contains(status)) return response;
+            long delayMillis=attempt*1000L;
+            String retryAfter=response.headers().firstValue("Retry-After").orElse("");
+            try { delayMillis=Math.max(delayMillis,Math.multiplyExact(Long.parseLong(retryAfter),1000L)); }
+            catch(NumberFormatException|ArithmeticException ignored) { }
+            long available=deadline-System.nanoTime();
+            if(delayMillis>=available/1_000_000L-100) return response;
+            log.warn("Gemini transient HTTP {}; retry {}/3 after {}ms, model={}",status,attempt+1,delayMillis,model);
+            Thread.sleep(delayMillis);
+        }
+        throw new IllegalStateException("Unreachable retry state");
     }
 
 }
