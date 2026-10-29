@@ -977,6 +977,310 @@
           ]
         }
       ]
+    },
+    {
+      "name": "교사 검토·리포트 (제출 후 테스트)",
+      "description": "전체 흐름에서 제출 후 사용. evaluationId, participantId, teacherAccessToken, participantToken 필요. PDF 요청은 Send and Download로 저장. 교사 검토는 현재 version을 expectedVersion으로 갱신.",
+      "item": [
+        {
+          "name": "교사 학생 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students?page=0&size=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "교사 학생 상세·활용 분류",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "교사 리포트 생성 (제출 후)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/reports",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "리포트 버전 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/reports",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "교사 최신 리포트",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/report",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PDF 다운로드 (원문 제외)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/report/pdf?includeConversations=false",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "교사 검토 저장 (첫 검토 예시)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/review",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{teacherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expectedVersion\": 0,\n  \"compliance\": \"COMPLIANT\",\n  \"ratings\": [\n    {\n      \"criterion\": \"PURPOSE_CLARITY\",\n      \"score\": 3,\n      \"evidence\": \"교사가 확인한 학습 과정 근거\"\n    },\n    {\n      \"criterion\": \"QUESTION_SPECIFICITY\",\n      \"score\": 3,\n      \"evidence\": \"교사가 확인한 학습 과정 근거\"\n    },\n    {\n      \"criterion\": \"VERIFICATION\",\n      \"score\": 3,\n      \"evidence\": \"교사가 확인한 학습 과정 근거\"\n    },\n    {\n      \"criterion\": \"REVISION\",\n      \"score\": 3,\n      \"evidence\": \"교사가 확인한 학습 과정 근거\"\n    },\n    {\n      \"criterion\": \"POLICY_COMPLIANCE\",\n      \"score\": 3,\n      \"evidence\": \"교사가 확인한 학습 과정 근거\"\n    }\n  ],\n  \"comment\": \"임시 5개 영역 기준으로 검토함\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "학생 본인 리포트 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/reports",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "학생 본인 리포트 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/report",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "학생 본인 PDF (원문 포함)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/report/pdf?includeConversations=true",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
