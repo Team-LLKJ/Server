@@ -28,8 +28,22 @@ public class SecurityConfig {
     @Bean ApplicationRunner bootstrapInvite(AuthService auth,@Value("${lit.auth.bootstrap-teacher-invite:}") String code,@Value("${lit.auth.bootstrap-school:}") String school) {
         return args->auth.bootstrap(code,school);
     }
-    @Bean SecurityFilterChain security(HttpSecurity http,AuthService auth,ParticipantAccess participants,ObjectMapper json) throws Exception {
-        return http
+    @Bean org.springframework.web.cors.CorsConfigurationSource corsConfiguration(@Value("${lit.cors.allowed-origins:}") String origins) {
+        var source=new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+        var allowed=Arrays.stream(origins.split(",")).map(String::strip).filter(v->!v.isEmpty()).toList();
+        if(allowed.contains("*"))throw new IllegalArgumentException("CORS requires explicit frontend origins");
+        if(!allowed.isEmpty()) {
+            var config=new org.springframework.web.cors.CorsConfiguration();
+            config.setAllowedOrigins(allowed);config.setAllowedMethods(List.of("GET","POST","PUT","OPTIONS"));
+            config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Participant-Token"));
+            config.setExposedHeaders(List.of("Content-Disposition"));config.setAllowCredentials(false);config.setMaxAge(3600L);
+            source.registerCorsConfiguration("/api/**",config);
+        }
+        return source;
+    }
+    @Bean SecurityFilterChain security(HttpSecurity http,AuthService auth,ParticipantAccess participants,ObjectMapper json,
+            org.springframework.web.cors.CorsConfigurationSource corsConfiguration) throws Exception {
+        return http.cors(cors->cors.configurationSource(corsConfiguration))
             // Tokens are accepted only in explicit headers/JSON, never auto-sent cookies.
             .csrf(csrf->csrf.disable()).sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .requestCache(c->c.disable()).formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
@@ -38,6 +52,7 @@ public class SecurityConfig {
             // Retired reset URLs remain permitAll so missing handlers return 404.
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**").hasRole("PARTICIPANT")

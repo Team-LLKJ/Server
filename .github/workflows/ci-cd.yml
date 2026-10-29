@@ -1,0 +1,123 @@
+name: CI and deploy
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, 'feat/**', 'fix/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Verify
+        run: chmod +x mvnw && ./mvnw -B verify
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      reference: ${{ steps.publish.outputs.reference }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Image name
+        id: name
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: echo "tag=ghcr.io/${REPOSITORY,,}:$REVISION" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ steps.name.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container smoke test
+        env:
+          IMAGE: ${{ steps.name.outputs.tag }}
+        run: |
+          docker run -d --name lit-smoke -e LIT_AI_PROVIDER=stub "$IMAGE"
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' lit-smoke)
+            if [ "$status" = healthy ]; then exit 0; fi
+            if [ "$status" = unhealthy ]; then break; fi
+            sleep 2
+          done
+          docker logs lit-smoke
+          exit 1
+      - name: Publish verified image
+        if: github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+        id: publish
+        env:
+          IMAGE: ${{ steps.name.outputs.tag }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          docker push "$IMAGE"
+          reference=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          [[ "$reference" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
+          echo "reference=$reference" >> "$GITHUB_OUTPUT"
+      - name: Cleanup
+        if: always()
+        run: docker rm -f lit-smoke >/dev/null 2>&1 || true
+
+  deploy:
+    needs: image
+    if: github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Deploy over verified SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+          IMAGE_REF: ${{ needs.image.outputs.reference }}
+        run: |
+          set -Eeuo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY KNOWN_HOSTS IMAGE_REF; do
+            [ -n "${!name}" ] || { echo "Missing production secret/output: $name"; exit 1; }
+          done
+          [[ "$IMAGE_REF" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
+          key="$RUNNER_TEMP/lit-deploy-key"
+          hosts="$RUNNER_TEMP/lit-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          options=(-i "$key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o ConnectTimeout=15)
+          scp -P "$DEPLOY_PORT" "${options[@]}" infra/compose.yml scripts/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:/opt/lit/"
+          ssh -p "$DEPLOY_PORT" "${options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "bash /opt/lit/deploy.sh '$IMAGE_REF'"

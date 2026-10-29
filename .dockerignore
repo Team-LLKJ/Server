@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.DS_Store
+target
+data
+.env
+.env.*
+*.log
+postman
+docs
