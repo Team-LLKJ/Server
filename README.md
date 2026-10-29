@@ -220,3 +220,8 @@ if (!response.ok || result.state === 'FAILED') {
 ```
 
 질문 버튼 처리의 finally에서 로딩을 해제하고 실패 메시지를 표시하세요. 새 질문마다 새 requestId, 네트워크 재시도는 원래 requestId·본문을 그대로 사용합니다. 대화는 같은 참가자 헤더로 `GET /api/evaluations/{id}/conversations?questionId={questionId}`에서 조회합니다. 평가가 STARTED이고 aiPolicy가 HINT_ONLY 또는 FULL이어야 질문할 수 있습니다.
+
+
+## 교사 검토·리포트
+
+학생 목록·상세, 기록 근거 기반 활용 분류, 교사 5개 영역 검토, 제출 리포트 버전 생성·조회, PDF 다운로드를 지원합니다. 자세한 요청·응답과 임시 평가 기준은 [docs/REPORTS.md](docs/REPORTS.md)를 참고하세요. 실제 점수는 교사만 입력하고 자동 채점하지 않습니다. POST reports는 제출 확정 이후에만 가능하며 백그라운드 생성 주기는30초입니다.
