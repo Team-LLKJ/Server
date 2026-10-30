@@ -13,12 +13,13 @@ import static kr.lit.api.ApiError.*;
 public class EvaluationService {
  private final JdbcTemplate db;
  private final String baseUrl;
+ private final WorkService work;
  private final SecureRandom random=new SecureRandom();
- public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl){this.db=db;this.baseUrl=baseUrl;}
+ public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl,WorkService work){this.db=db;this.baseUrl=baseUrl;this.work=work;}
  public record Evaluation(String id,String title,String pin,String state,Instant expiresAt){}
  public record EvaluationPage(List<Evaluation> items,int page,int size,long totalElements,long totalPages){}
  public record Participant(String id,String nickname,String presence){}
- public record Lobby(String evaluationId,String title,String state,String screen,int participantCount,List<Participant> participants){}
+ public record Lobby(String evaluationId,String title,String state,String screen,int participantCount,List<Participant> participants,Instant endsAt,Instant serverNow){}
  public record Created(String id,String title,String pin,String state,Instant expiresAt,String joinUrl,String qrUrl){}
  public record Joined(String participantId,String participantToken,Lobby lobby){}
  private Failure fail(HttpStatus status,String code,String message){return new Failure(status,code,message);}
@@ -39,7 +40,8 @@ public class EvaluationService {
   if(!e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
  }
  public Created create(String title,int minutes){return create(title,minutes,"");}
- public Created create(String title,int minutes,String evaluationContent){
+ public Created create(String title,int minutes,String evaluationContent){return create(title,minutes,evaluationContent,null);}
+ public Created create(String title,int minutes,String evaluationContent,Integer durationMinutes){
   String teacherId=kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER).userId();
   // The database unique constraint also protects concurrent PIN creation.
   String pin=null;
@@ -47,7 +49,7 @@ public class EvaluationService {
    if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE pin=?",Integer.class,candidate)==0){pin=candidate;break;}}
   if(pin==null)throw fail(HttpStatus.SERVICE_UNAVAILABLE,"PIN_UNAVAILABLE","PIN을 다시 생성해주세요.");
   String id=UUID.randomUUID().toString(); Instant expiry=Instant.now().plusSeconds(minutes*60L);
-  try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id,evaluation_content) VALUES (?,?,?,'WAITING',?,?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId,evaluationContent==null?"":evaluationContent);}
+  try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id,evaluation_content,duration_minutes) VALUES (?,?,?,'WAITING',?,?,?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId,evaluationContent==null?"":evaluationContent,durationMinutes==null?minutes:durationMinutes);}
   catch(org.springframework.dao.DuplicateKeyException e){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시도해주세요.");}
   return new Created(id,title.strip(),pin,"WAITING",expiry,baseUrl+"?pin="+pin,"/api/teacher/evaluations/"+id+"/qr");
  }
@@ -67,7 +69,9 @@ public class EvaluationService {
  private Lobby lobby(Evaluation e){
   var people=db.query("SELECT * FROM participants WHERE evaluation_id=? AND active=TRUE ORDER BY last_seen,id",(r,n)->new Participant(r.getString("id"),r.getString("nickname"),r.getObject("last_seen",OffsetDateTime.class).toInstant().isBefore(Instant.now().minusSeconds(30))?"DISCONNECTED":"CONNECTED"),e.id());
   String screen=e.state().equals("ENDED")?"ENDED":!e.expiresAt().isAfter(Instant.now())?"EXPIRED":e.state().equals("STARTED")?"SOLVING":"WAITING";
-  return new Lobby(e.id(),e.title(),e.state(),screen,people.size(),people);
+  var ends=db.queryForObject("SELECT ends_at FROM evaluations WHERE id=?",OffsetDateTime.class,e.id());
+  Instant endsAt=ends==null?null:ends.toInstant();
+  return new Lobby(e.id(),e.title(),e.state(),screen,people.size(),people,endsAt,Instant.now());
  }
  public Joined join(String pin,String nickname,String token){
   var e=byPin(pin);available(e);
@@ -88,23 +92,22 @@ public class EvaluationService {
  }
  public Lobby participant(String id,String token,boolean leave){
   var e=read(id);var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+  if(e.state().equals("STARTED")) {work.finishEvaluation(id,true);e=read(id);}
   db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE id=?",!leave,guest.participantId());
   return personalLobby(e,guest.participantId());
  }
  private Lobby personalLobby(Evaluation e,String participantId){
   var lobby=lobby(e);
   boolean submitted=db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,participantId)>0;
-  return submitted?new Lobby(lobby.evaluationId(),lobby.title(),lobby.state(),"SUBMITTED",lobby.participantCount(),lobby.participants()):lobby;
+  return submitted?new Lobby(lobby.evaluationId(),lobby.title(),lobby.state(),"SUBMITTED",lobby.participantCount(),lobby.participants(),lobby.endsAt(),lobby.serverNow()):lobby;
  }
  public Lobby start(String id){var e=read(id);available(e);
   if(!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","이미 시작된 평가입니다.");
   int count=db.queryForObject("SELECT COUNT(*) FROM participants WHERE evaluation_id=? AND active=TRUE AND last_seen>=?",Integer.class,id,OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(30));
   if(count==0)throw fail(HttpStatus.CONFLICT,"NO_PARTICIPANTS","연결된 참가자가 없습니다.");
-  db.update("UPDATE evaluations SET state='STARTED' WHERE id=?",id);return lobby(read(id));
+  int minutes=db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);
+  var started=OffsetDateTime.now(ZoneOffset.UTC);var ends=started.plusMinutes(minutes);
+  db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=? WHERE id=?",started,ends,ends,id);return lobby(read(id));
  }
- public Lobby end(String id){read(id);db.update("UPDATE evaluations SET state='ENDED' WHERE id=?",id);
-  // Close in-flight AI turns immediately; late network responses cannot become successful.
-  db.update("INSERT INTO learning_events(evaluation_id,participant_id,question_id,event_type,details,created_at) SELECT evaluation_id,participant_id,question_id,'AI_FAILED',JSON_OBJECT('requestId':request_id,'errorCode':'EVALUATION_CLOSED'),CURRENT_TIMESTAMP FROM ai_turns WHERE evaluation_id=? AND state='PENDING'",id);
-  db.update("UPDATE ai_turns SET state='FAILED',error_code='EVALUATION_CLOSED',completed_at=CURRENT_TIMESTAMP WHERE evaluation_id=? AND state='PENDING'",id);
-  return lobby(read(id));}
+ public Lobby end(String id){read(id);work.finishEvaluation(id,false);return lobby(read(id));}
 }

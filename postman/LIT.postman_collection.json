@@ -1447,6 +1447,50 @@
           }
         }
       ]
+    },
+    {
+      "name": "제한 시간·자동 제출",
+      "item": [
+        {
+          "name": "학생 종료 시각·서버 시계",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/state",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "교사 종료·자동 제출 (테스트 평가만)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/end",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "자동 제출 결과 조회",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/submission",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

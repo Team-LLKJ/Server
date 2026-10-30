@@ -110,7 +110,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | POST | `/api/evaluations/{id}/submission` | 최종 제출 확정 |
 | GET | `/api/evaluations/{id}/submission` | 확정된 기록 조회 |
 
-평가 생성: `{"title":"수학 평가","expiresInMinutes":60}`. 제목 1~100자, 유효 시간 1~1440분.
+평가 생성: `{"title":"수학 평가","expiresInMinutes":60}`. 제목 1~100자, PIN 유효 시간 1~1440분. `durationMinutes`(1~1440, 생략 시 expiresInMinutes)는 시작 시점부터 적용되는 제한 시간입니다.
 문항 설정: `{"aiPolicy":"HINT_ONLY","questions":[{"position":1,"title":"문항1","content":"2+2는?"}]}`.
 문항 1~100개, 양수 순서 중복 불가. 제목 최대 200자, 본문 최대 10,000자.
 참여: `{"pin":"012345","nickname":"학생1"}`. PIN은 6자리 문자열, 닉네임은 1~20자.
@@ -240,6 +240,8 @@ Gemini 일시적 HTTP500/502/503/504는 같은 질문 처리 안에서 최대3�
 ## CI/CD 배포
 
 GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배포 설정은 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)를 참고하세요. 서버와 production 환경 Secrets를 설정한 뒤 develop 변경으로 배포합니다. 실제 EC2 연결은 별도 설정이 필요합니다.
+
+종료 시각·서버 시계·자동 제출은 [제한 시간 API](docs/TIME_LIMITS.md)를 참고하세요.
 
 프런트 guidelines·창 이탈 이벤트·1MiB HTML 자동 저장 계약은 [프런트 연동 API](docs/FRONTEND_CONTRACT.md)를 참고하세요.
 
