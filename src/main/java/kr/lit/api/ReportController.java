@@ -14,7 +14,7 @@ class ReportController {
  private final ReportService reports;private final ReportPdf pdf;
  ReportController(ReportService reports,ReportPdf pdf){this.reports=reports;this.pdf=pdf;}
  @GetMapping("/teacher/evaluations/{id}/students")
- Students students(@PathVariable String id,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size){return reports.students(id,page,size);}
+ Students students(@PathVariable String id,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size,@RequestParam(defaultValue="") String query){return reports.students(id,page,size,query);}
  @GetMapping("/teacher/evaluations/{id}/students/{participantId}")
  Detail detail(@PathVariable String id,@PathVariable String participantId){return reports.detail(id,participantId);}
  @PutMapping("/teacher/evaluations/{id}/students/{participantId}/review")
@@ -28,6 +28,9 @@ class ReportController {
  @GetMapping(value="/teacher/evaluations/{id}/students/{participantId}/report/pdf",produces=MediaType.APPLICATION_PDF_VALUE)
  ResponseEntity<byte[]> pdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
                            @RequestParam(defaultValue="false") boolean includeConversations){return download(reports.teacherReport(id,participantId,version),includeConversations);}
+ @GetMapping(value="/teacher/evaluations/{id}/students/{participantId}/report.pdf",produces=MediaType.APPLICATION_PDF_VALUE)
+ ResponseEntity<byte[]> gradingPdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
+                           @RequestParam(defaultValue="false") boolean includeConversations){return download(version==null?reports.teacherGenerate(id,participantId):reports.teacherReport(id,participantId,version),includeConversations);}
  @PostMapping("/evaluations/{id}/reports")
  UsageReport studentGenerate(@PathVariable String id,@RequestHeader("X-Participant-Token") String token){return reports.studentGenerate(id,token);}
  @GetMapping("/evaluations/{id}/report")

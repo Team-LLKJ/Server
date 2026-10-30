@@ -27,17 +27,18 @@ public class ReportPdf {
     if(c.teacherReview()==null){writer.line("미검토: 영역별 점수 미입력. 미입력은 0점을 의미하지 않습니다.",11);}
     else{
      writer.line("규칙 준수 검토: "+c.teacherReview().compliance()+" / 검토 버전 "+c.teacherReview().version(),10);
-     int total=0;
+     int total=0,rated=0;
      for(var rating:c.teacherReview().ratings()){
-      total+=rating.score();writer.line(label(rating.criterion())+": "+rating.score()+" / 4",11);writer.line("근거: "+rating.evidence(),10);
+      if(rating.score()!=null){total+=rating.score();rated++;}
+      writer.line(label(rating.criterion())+": "+(rating.score()==null?"미입력":rating.score())+" / "+c.teacherReview().maxScore(),11);writer.line("근거: "+(rating.evidence()==null||rating.evidence().isBlank()?"[미입력]":rating.evidence()),10);
      }
-     writer.line("합계: "+total+" / 20 (교사 입력)",11);writer.line("교사 의견: "+c.teacherReview().comment(),10);
+     writer.line(rated==5?"합계: "+total+" / "+(c.teacherReview().maxScore()*5)+" (교사 입력)":"부분합: "+total+" (입력 "+rated+"/5개 영역, 미입력은 0점이 아닙니다.)",11);writer.line("교사 의견: "+c.teacherReview().comment(),10);
     }
     writer.line("최종 제출 답안",13);
     for(var a:c.submission().path("answers")){
      writer.line(a.path("question").path("title").asText(),12);
      writer.line("문항: "+a.path("question").path("content").asText(),10);
-     String answer=a.path("answer").path("content").asText();writer.line("답안: "+(answer.isBlank()?"[미작성]":answer),11);
+     String answer=a.path("answer").path("content").asText();writer.line("답안: "+(answer.isBlank()?"[미작성]":answerText(answer)),11);
     }
     writer.line("AI 활용 분류 및 이력 요약",13);
     for(var x:c.analysis().classifications()){
@@ -59,13 +60,26 @@ public class ReportPdf {
    document.save(out);return out.toByteArray();
   }catch(IOException e){throw new IllegalStateException("PDF 생성에 실패했습니다.",e);}
  }
- private String label(Criterion c){return switch(c){case PURPOSE_CLARITY->"활용 목적 명확성";case QUESTION_SPECIFICITY->"질문 구체성";case VERIFICATION->"검증 과정";case REVISION->"답안 수정 과정";case POLICY_COMPLIANCE->"허용 규칙 준수";};}
+ static String label(Criterion c){return switch(c){case PURPOSE_CLARITY->"활용 목적 명확성";case QUESTION_SPECIFICITY->"질문 구체성";case VERIFICATION->"검증 과정";case REVISION->"답안 수정 과정";case POLICY_COMPLIANCE->"허용 규칙 준수";};}
+ static String answerText(String html){
+  if(!html.matches("(?s).*<\\s*(?:/?[A-Za-z]|!).*"))return html;
+  var body=org.jsoup.Jsoup.parseBodyFragment(html).body();body.select("script,style").remove();
+  for(var image:body.select("img"))image.replaceWith(new org.jsoup.nodes.TextNode("[이미지]"));
+  for(var row:body.select("tr")){
+   var cells=row.children().stream().filter(e->e.tagName().equals("td")||e.tagName().equals("th")).map(e->e.text().isBlank()?"[빈 셀]":e.text()).toList();
+   row.before(new org.jsoup.nodes.TextNode(String.join(" | ",cells)+"\n"));row.remove();
+  }
+  for(var br:body.select("br"))br.replaceWith(new org.jsoup.nodes.TextNode("\n"));
+  for(var block:body.select("p,div,li,h1,h2,h3,h4,blockquote,pre"))block.appendText("\n");
+  return body.wholeText();
+ }
  private static final class Writer implements AutoCloseable{
   private final PDDocument doc;private final PDFont font;private PDPageContentStream stream;private float y;private int page;
   Writer(PDDocument doc,PDFont font)throws IOException{this.doc=doc;this.font=font;newPage();}
   private void newPage()throws IOException{if(stream!=null)stream.close();var p=new PDPage(PDRectangle.A4);doc.addPage(p);page++;stream=new PDPageContentStream(doc,p);y=790;
    stream.beginText();stream.setFont(font,8);stream.newLineAtOffset(48,28);stream.showText("LIT | "+page);stream.endText();}
   void line(String value,int size)throws IOException{
+   if(size>=12&&y<135)newPage();
    for(String paragraph:Objects.toString(value,"").split("\\R",-1)){
     StringBuilder line=new StringBuilder();
     for(int code:paragraph.codePoints().toArray()){

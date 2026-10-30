@@ -246,3 +246,5 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 프런트 guidelines·창 이탈 이벤트·1MiB HTML 자동 저장 계약은 [프런트 연동 API](docs/FRONTEND_CONTRACT.md)를 참고하세요.
 
 평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.
+
+교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요.

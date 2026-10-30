@@ -1491,6 +1491,128 @@
           }
         }
       ]
+    },
+    {
+      "name": "교사 채점 화면 연동",
+      "item": [
+        {
+          "name": "학생 검색·상태 집계",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students?query=&page=0&size=20"
+          }
+        },
+        {
+          "name": "학생 답안 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/answers"
+          }
+        },
+        {
+          "name": "학생 AI 대화 메시지",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/conversations?page=0&size=200"
+          }
+        },
+        {
+          "name": "학생 활동 카드",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/activity"
+          }
+        },
+        {
+          "name": "루브릭 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/review"
+          }
+        },
+        {
+          "name": "영역 점수 조정 (제출 후)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/review/criteria/PURPOSE_CLARITY",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 18\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "점수 조정 이력",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/review/history?afterId=0&limit=100"
+          }
+        },
+        {
+          "name": "현재 리포트 PDF (제출 후)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/report.pdf"
+          }
+        }
+      ]
     }
   ]
 }
