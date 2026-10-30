@@ -80,9 +80,15 @@ public class WorkService {
     private List<QuestionAnswer> answers(Context c) {
         return questions(c.evaluationId()).stream().map(q->new QuestionAnswer(q,answer(c.participantId(),q.id()))).toList();
     }
-    private void event(Context c,String questionId,String type,Object details) {
-        db.update("INSERT INTO learning_events(evaluation_id,participant_id,question_id,event_type,details,created_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)",
-                c.evaluationId(),c.participantId(),questionId,type,encode(details));
+    private long event(Context c,String questionId,String type,Object details) {
+        var key=new org.springframework.jdbc.support.GeneratedKeyHolder();
+        db.update(connection->{
+            var statement=connection.prepareStatement("INSERT INTO learning_events(evaluation_id,participant_id,question_id,event_type,details,created_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)",new String[]{"id"});
+            statement.setString(1,c.evaluationId());statement.setString(2,c.participantId());
+            statement.setString(3,questionId);statement.setString(4,type);statement.setString(5,encode(details));
+            return statement;
+        },key);
+        return Objects.requireNonNull(key.getKey()).longValue();
     }
     public Configuration configure(String id,Configure config) {
         var e=evaluation(id);
@@ -92,15 +98,22 @@ public class WorkService {
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions VALUES (?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,config.aiPolicy().name());
-        return new Configuration(id,config.aiPolicy(),questions(id));
+        if(config.guidelines()!=null) {
+            if(!e.expiresAt().isAfter(Instant.now())) throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
+            db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",config.guidelines(),id);
+        }
+        return new Configuration(id,config.aiPolicy(),questions(id),guidelines(id));
     }
     public Configuration configuration(String id) {
-        evaluation(id);return new Configuration(id,policy(id),questions(id));
+        evaluation(id);return new Configuration(id,policy(id),questions(id),guidelines(id));
+    }
+    private String guidelines(String id) {
+        return db.queryForObject("SELECT evaluation_content FROM evaluations WHERE id=?",String.class,id);
     }
     public Workspace workspace(String id,String token) {
         var c=authenticate(id,token);started(c);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c),db.queryForObject("SELECT evaluation_content FROM evaluations WHERE id=?",String.class,id));
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c),guidelines(id),guidelines(id));
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);
@@ -108,6 +121,7 @@ public class WorkService {
     }
     public Answer save(String id,String token,String questionId,SaveAnswer input) {
         var c=authenticate(id,token);editable(c);question(id,questionId);
+        String safeContent=AnswerHtml.clean(input.content());
         var old=answer(c.participantId(),questionId);
         if(old.version()!=input.expectedVersion()) throw failure(HttpStatus.CONFLICT,"ANSWER_VERSION_CONFLICT","답안이 변경되었습니다. 최신 답안을 조회한 후 다시 저장해주세요.");
         if(input.source()!=AnswerSource.DIRECT) {
@@ -118,13 +132,25 @@ public class WorkService {
             throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_REFERENCE","직접 작성에는 AI 대화 ID를 지정하지 않습니다.");
         }
         var timestamp=OffsetDateTime.now(ZoneOffset.UTC);
-        db.update("MERGE INTO answers(participant_id,question_id,content,version,updated_at) KEY(participant_id,question_id) VALUES (?,?,?,?,?)",c.participantId(),questionId,input.content(),old.version()+1,timestamp);
+        db.update("MERGE INTO answers(participant_id,question_id,content,version,updated_at) KEY(participant_id,question_id) VALUES (?,?,?,?,?)",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
         var change=new LinkedHashMap<String,Object>();
-        change.put("previousContent",old.content());change.put("content",input.content());
+        change.put("previousContent",old.content());change.put("content",safeContent);
         change.put("previousVersion",old.version());change.put("version",old.version()+1);
         change.put("source",input.source());change.put("aiRequestId",input.aiRequestId());
         event(c,questionId,"ANSWER_SAVED",change);
         return answer(c.participantId(),questionId);
+    }
+    public Event recordClientEvent(String id,String token,ClientEvent input) {
+        var c=authenticate(id,token);editable(c);
+        if(input.questionId()!=null) question(id,input.questionId());
+        Instant now=Instant.now();
+        if(input.occurredAt().isAfter(now.plusSeconds(300))||input.occurredAt().isBefore(now.minusSeconds(86400)))
+            throw failure(HttpStatus.BAD_REQUEST,"INVALID_EVENT_TIME","이벤트 시각을 확인해주세요.");
+        int count=db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ('WINDOW_LEAVE','SHORTCUT_CAPTURE') AND created_at>=?",Integer.class,c.participantId(),OffsetDateTime.ofInstant(now.minusSeconds(60),ZoneOffset.UTC));
+        if(count>=60) throw failure(HttpStatus.TOO_MANY_REQUESTS,"EVENT_RATE_LIMITED","이벤트 요청이 많습니다. 잠시 후 다시 시도해주세요.");
+        var details=Map.of("occurredAt",input.occurredAt().toString(),"clientReported",true);
+        long eventId=event(c,input.questionId(),input.type().name(),details);
+        return db.queryForObject("SELECT * FROM learning_events WHERE id=?",(r,n)->new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),eventId);
     }
     private Turn turn(ResultSet r,int n) throws SQLException {
         return new Turn(r.getLong("id"),r.getString("request_id"),r.getString("question_id"),r.getString("question_text"),
