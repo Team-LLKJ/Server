@@ -58,6 +58,9 @@ jobs:
           load: true
           push: false
           tags: ${{ steps.name.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Container smoke test
@@ -93,31 +96,37 @@ jobs:
   deploy:
     needs: image
     if: github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, lit-production]
     timeout-minutes: 15
-    environment: production
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Deploy over verified SSH
+        with:
+          persist-credentials: false
+      - name: Deploy verified image on EC2
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
           IMAGE_REF: ${{ needs.image.outputs.reference }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
         run: |
           set -Eeuo pipefail
-          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY KNOWN_HOSTS IMAGE_REF; do
-            [ -n "${!name}" ] || { echo "Missing production secret/output: $name"; exit 1; }
-          done
           [[ "$IMAGE_REF" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
-          key="$RUNNER_TEMP/lit-deploy-key"
-          hosts="$RUNNER_TEMP/lit-known-hosts"
-          trap 'rm -f "$key" "$hosts"' EXIT
-          umask 077
-          printf '%s\n' "$DEPLOY_KEY" > "$key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
-          options=(-i "$key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o ConnectTimeout=15)
-          scp -P "$DEPLOY_PORT" "${options[@]}" infra/compose.yml scripts/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:/opt/lit/"
-          ssh -p "$DEPLOY_PORT" "${options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "bash /opt/lit/deploy.sh '$IMAGE_REF'"
+          test -s /opt/lit/app.env
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          install -m 0644 infra/compose.yml /opt/lit/compose.yml
+          install -m 0750 scripts/deploy.sh /opt/lit/deploy.sh
+          bash /opt/lit/deploy.sh "$IMAGE_REF"
+      - name: Verify public HTTPS readiness
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          test -n "$PRODUCTION_URL"
+          curl --fail --silent --show-error --retry 3 --connect-timeout 5 --max-time 15 "$PRODUCTION_URL/actuator/health/readiness"
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io >/dev/null 2>&1 || true

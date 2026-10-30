@@ -9,6 +9,7 @@ spring:
   jackson:
     time-zone: UTC
 server:
+  forward-headers-strategy: native
   port: ${SERVER_PORT:${PORT:5174}}
   error:
     include-message: never
