@@ -38,7 +38,8 @@ public class EvaluationService {
   if(e.state().equals("ENDED"))throw fail(HttpStatus.CONFLICT,"EVALUATION_ENDED","종료된 평가입니다.");
   if(!e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
  }
- public Created create(String title,int minutes){
+ public Created create(String title,int minutes){return create(title,minutes,"");}
+ public Created create(String title,int minutes,String evaluationContent){
   String teacherId=kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER).userId();
   // The database unique constraint also protects concurrent PIN creation.
   String pin=null;
@@ -46,7 +47,7 @@ public class EvaluationService {
    if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE pin=?",Integer.class,candidate)==0){pin=candidate;break;}}
   if(pin==null)throw fail(HttpStatus.SERVICE_UNAVAILABLE,"PIN_UNAVAILABLE","PIN을 다시 생성해주세요.");
   String id=UUID.randomUUID().toString(); Instant expiry=Instant.now().plusSeconds(minutes*60L);
-  try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id) VALUES (?,?,?,'WAITING',?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId);}
+  try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id,evaluation_content) VALUES (?,?,?,'WAITING',?,?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId,evaluationContent==null?"":evaluationContent);}
   catch(org.springframework.dao.DuplicateKeyException e){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시도해주세요.");}
   return new Created(id,title.strip(),pin,"WAITING",expiry,baseUrl+"?pin="+pin,"/api/teacher/evaluations/"+id+"/qr");
  }

@@ -85,6 +85,9 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | POST | `/api/teacher/evaluations` | 평가 생성 |
 | GET | `/api/teacher/evaluations?page=0&size=20` | 내가 만든 평가 목록 |
 | GET | `/api/teacher/evaluations/{id}` | 평가 정보·PIN |
+| PUT | `/api/teacher/evaluations/{id}/content` | 평가 기준·규칙 저장 (대기 중 소유 교사) |
+| GET | `/api/teacher/evaluations/{id}/content` | 저장한 평가 내용 조회 (소유 교사) |
+| GET | `/api/evaluations/{id}/content` | 평가 내용 조회 (해당 평가 참가자) |
 | GET | `/api/teacher/evaluations/{id}/qr` | 참여 URL QR PNG |
 | GET | `/api/teacher/evaluations/{id}/participants` | 참가자 목록 |
 | POST | `/api/teacher/evaluations/{id}/start` | 평가 시작 |
@@ -237,3 +240,5 @@ Gemini 일시적 HTTP500/502/503/504는 같은 질문 처리 안에서 최대3�
 ## CI/CD 배포
 
 GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배포 설정은 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)를 참고하세요. 서버와 production 환경 Secrets를 설정한 뒤 develop 변경으로 배포합니다. 실제 EC2 연결은 별도 설정이 필요합니다.
+
+평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.
