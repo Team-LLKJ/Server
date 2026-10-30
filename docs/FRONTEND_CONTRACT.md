@@ -55,3 +55,5 @@
 1MiB HTML은 JSON의 따옴표·제어문자 이스케이프로 요청 본문이 더 커질 수 있습니다. Nginx `client_max_body_size`를 **8m**로 설정하고 `nginx -t` 후 reload해야 합니다 (`infra/nginx.conf.example`). 이 설정은 기존 EC2에 자동 적용되지 않습니다. 백엔드는 JSON을 파싱한 content의 UTF-8 바이트 수를 기준으로 1MiB를 검사합니다.
 
 HTML 정리는 [jsoup 공식 허용 목록 API](https://jsoup.org/apidocs/org/jsoup/safety/Safelist)를 사용합니다.
+
+제한 시간 후속 변경에서는 시작한 평가의 만료·수동 종료 시 서버가 최신 저장 답안을 자동 제출합니다. 종료 시각·서버 시계·durationMinutes 설정과 상세 동작은 [제한 시간 API](TIME_LIMITS.md)를 참고하세요.

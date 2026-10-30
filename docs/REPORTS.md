@@ -68,7 +68,7 @@ PDF는 application/pdf, Content-Disposition attachment입니다. 한글 글꼴�
 
 ## 평가 종료
 
-종료는 반복 가능하며 학생 답안·기존 제출 기록을 보존합니다. PENDING AI는 즉시 FAILED / EVALUATION_CLOSED로 기록하며 늦게 도착한 답변으로 덮어쓰지 않습니다. 미제출을 자동 제출하지 않습니다. 종료 후 학생 state는 ENDED(기제출 학생은 SUBMITTED), 미제출 학생은 교사 목록에 CLOSED_UNSUBMITTED로 남습니다. 신규 참가·작성·제출·새 AI 질문은 차단됩니다.
+종료는 반복 가능하며 학생 답안·기존 제출 기록을 보존합니다. PENDING AI는 즉시 FAILED / EVALUATION_CLOSED로 기록하며 늦게 도착한 답변으로 덮어쓰지 않습니다. 시작한 평가의 미제출 참가자는 연결·이탈 여부와 관계없이 최신 저장 답안으로 자동 제출합니다. 기존 수동 제출은 보존합니다. 종료 후 state=ENDED, 제출된 학생 screen=SUBMITTED이며 교사 목록의 제출 상태도 SUBMITTED입니다. 시작 전 취소한 평가와 기존 종료 기록은 자동 제출하지 않습니다. 신규 참가·작성·제출·새 AI 질문은 차단됩니다.
 
 ## 오류
 

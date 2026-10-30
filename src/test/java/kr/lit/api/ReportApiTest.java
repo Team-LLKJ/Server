@@ -63,7 +63,7 @@ class ReportApiTest extends AuthTestSupport {
    .andExpect(jsonPath("items[0].submissionStatus").value("NOT_SUBMITTED"));
   as(teacher);var detail=reports.detail(f.id(),f.pid());assertThat(detail.work().path("answers").size()).isEqualTo(1);
   assertThat(detail.analysis().classifications()).hasSize(1);
-  evaluations.end(f.id());assertThat(reports.students(f.id(),0,20).items().get(0).submissionStatus()).isEqualTo("CLOSED_UNSUBMITTED");
+  evaluations.end(f.id());assertThat(reports.students(f.id(),0,20).items().get(0).submissionStatus()).isEqualTo("SUBMITTED");
  }
  @Test void duplicateRubricAndOutOfRangeScoreRejected() throws Exception {
   var f=fixture(true);var input=new ReviewInput(0,Compliance.COMPLIANT,Collections.nCopies(5,new Rating(Criterion.REVISION,2,"근거")),"");

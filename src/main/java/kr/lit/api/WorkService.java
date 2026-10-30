@@ -37,7 +37,7 @@ public class WorkService {
     }
     private Context evaluation(String id) {
         var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->
-                new Context(id,null,r.getString("state"),instant(r,"expires_at")),id);
+                new Context(id,null,r.getString("state"),instant(r,r.getObject("ends_at")==null?"expires_at":"ends_at")),id);
         if(rows.isEmpty()) throw failure(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
         kr.lit.auth.AccountAccess.checkTeacherOwner(db.queryForObject("SELECT teacher_id FROM evaluations WHERE id=?",String.class,id));
         return rows.get(0);
@@ -93,25 +93,29 @@ public class WorkService {
     public Configuration configure(String id,Configure config) {
         var e=evaluation(id);
         if(!e.state().equals("WAITING")) throw failure(HttpStatus.CONFLICT,"CONFIGURATION_LOCKED","시작 후에는 문항과 AI 정책을 변경할 수 없습니다.");
+        if((config.guidelines()!=null||config.durationMinutes()!=null)&&!e.expiresAt().isAfter(Instant.now()))
+            throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
         if(config.questions().stream().map(QuestionInput::position).distinct().count()!=config.questions().size())
             throw failure(HttpStatus.BAD_REQUEST,"DUPLICATE_POSITION","문항 순서는 중복될 수 없습니다.");
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions VALUES (?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,config.aiPolicy().name());
         if(config.guidelines()!=null) {
-            if(!e.expiresAt().isAfter(Instant.now())) throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
             db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",config.guidelines(),id);
         }
-        return new Configuration(id,config.aiPolicy(),questions(id),guidelines(id));
+        if(config.durationMinutes()!=null) db.update("UPDATE evaluations SET duration_minutes=? WHERE id=?",config.durationMinutes(),id);
+        return new Configuration(id,config.aiPolicy(),questions(id),guidelines(id),durationMinutes(id));
     }
     public Configuration configuration(String id) {
-        evaluation(id);return new Configuration(id,policy(id),questions(id),guidelines(id));
+        evaluation(id);return new Configuration(id,policy(id),questions(id),guidelines(id),durationMinutes(id));
     }
+    private int durationMinutes(String id) {return db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);}
     private String guidelines(String id) {
         return db.queryForObject("SELECT evaluation_content FROM evaluations WHERE id=?",String.class,id);
     }
     public Workspace workspace(String id,String token) {
         var c=authenticate(id,token);started(c);
+        finishEvaluation(id,true);c=authenticate(id,token);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c),guidelines(id),guidelines(id));
     }
@@ -202,17 +206,48 @@ public class WorkService {
         if(!review.canConfirm()) throw failure(HttpStatus.CONFLICT,"AI_IN_PROGRESS","AI 응답 완료 후 제출해주세요.");
         if(!review.reviewToken().equals(reviewToken)) throw failure(HttpStatus.CONFLICT,"REVIEW_CHANGED","답안 또는 대화가 변경되었습니다. 제출 내용을 다시 확인해주세요.");
         var now=OffsetDateTime.now(ZoneOffset.UTC);
-        db.update("INSERT INTO submissions VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(review.content()),now);
+        db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(review.content()),now);
         event(c,null,"SUBMITTED",Map.of("reviewToken",reviewToken));
         return submission(c);
     }
     private Submission submission(Context c) {
         var records=db.query("SELECT * FROM submissions WHERE participant_id=?",(r,n)->
-                new Submission("SUBMITTED",instant(r,"submitted_at"),decode(r.getString("snapshot"))),c.participantId());
+                new Submission("SUBMITTED",instant(r,"submitted_at"),decode(r.getString("snapshot")),r.getString("submission_mode")),c.participantId());
         if(records.isEmpty()) throw failure(HttpStatus.NOT_FOUND,"SUBMISSION_NOT_FOUND","아직 제출하지 않았습니다.");
         return records.get(0);
     }
-    public Submission submission(String id,String token) { return submission(authenticate(id,token)); }
+    public Submission submission(String id,String token) {
+        authenticate(id,token);finishEvaluation(id,true);return submission(authenticate(id,token));
+    }
+
+    public void finishEvaluation(String id,boolean deadlineOnly) {
+        var e=evaluation(id);
+        if(e.state().equals("ENDED")) return;
+        if(deadlineOnly&&(!e.state().equals("STARTED")||e.expiresAt().isAfter(Instant.now()))) return;
+        boolean wasStarted=e.state().equals("STARTED");
+        Instant now=Instant.now();
+        boolean expired=wasStarted&&!e.expiresAt().isAfter(now);
+        String mode=expired?"AUTO_DEADLINE":"AUTO_TEACHER_END";
+        db.update("UPDATE evaluations SET state='ENDED',ended_at=? WHERE id=?",OffsetDateTime.ofInstant(now,ZoneOffset.UTC),id);
+        var pending=db.query("SELECT * FROM ai_turns WHERE evaluation_id=? AND state='PENDING'",this::turn,id);
+        for(var turn:pending) {
+            String pid=db.queryForObject("SELECT participant_id FROM ai_turns WHERE id=?",String.class,turn.id());
+            event(new Context(id,pid,"ENDED",e.expiresAt()),turn.questionId(),"AI_FAILED",Map.of("requestId",turn.requestId(),"errorCode","EVALUATION_CLOSED"));
+        }
+        db.update("UPDATE ai_turns SET state='FAILED',error_code='EVALUATION_CLOSED',completed_at=CURRENT_TIMESTAMP WHERE evaluation_id=? AND state='PENDING'",id);
+        if(!wasStarted)return;
+        var participants=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? ORDER BY id",String.class,id);
+        for(String pid:participants) {
+            var context=new Context(id,pid,"ENDED",e.expiresAt());
+            if(submitted(context))continue;
+            var snapshot=new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context));
+            String content=encode(snapshot),hash;
+            try {hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8)));}
+            catch(NoSuchAlgorithmException ex){throw new IllegalStateException(ex);}
+            db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at,submission_mode) VALUES (?,?,?,?,?,?)",pid,id,hash,content,OffsetDateTime.ofInstant(now,ZoneOffset.UTC),mode);
+            event(context,null,"SUBMITTED",Map.of("reviewToken",hash,"submissionMode",mode));
+        }
+    }
 
     public Reservation reserve(String id,String token,String questionId,Ask ask,String provider,String model) {
         var c=authenticate(id,token);var q=question(id,questionId);

@@ -12,8 +12,9 @@ public final class WorkModels {
     public record QuestionInput(@Min(1) int position, @NotBlank @Size(max=200) String title,
                                 @NotBlank @Size(max=10000) String content) {}
     public record Configure(@NotNull AiPolicy aiPolicy,
-                            @NotEmpty @Size(max=100) List<@NotNull @Valid QuestionInput> questions, @Size(max=10000) String guidelines) {
-        public Configure(AiPolicy aiPolicy,List<QuestionInput> questions) { this(aiPolicy,questions,null); }
+                            @NotEmpty @Size(max=100) List<@NotNull @Valid QuestionInput> questions, @Size(max=10000) String guidelines, @Min(1) @Max(1440) Integer durationMinutes) {
+        public Configure(AiPolicy aiPolicy,List<QuestionInput> questions,String guidelines) { this(aiPolicy,questions,guidelines,null); }
+        public Configure(AiPolicy aiPolicy,List<QuestionInput> questions) { this(aiPolicy,questions,null,null); }
     }
     public record SaveAnswer(@NotNull String content, @Min(0) int expectedVersion,
                              @NotNull AnswerSource source, @Size(max=64) String aiRequestId) {}
@@ -28,7 +29,7 @@ public final class WorkModels {
     public record QuestionAnswer(Question question, Answer answer) {}
     public record Workspace(String evaluationId, String participantId, String status, boolean readOnly,
                             AiPolicy aiPolicy, List<QuestionAnswer> questions, String evaluationContent, String guidelines) {}
-    public record Configuration(String evaluationId, AiPolicy aiPolicy, List<Question> questions, String guidelines) {}
+    public record Configuration(String evaluationId, AiPolicy aiPolicy, List<Question> questions, String guidelines,int durationMinutes) {}
     public record Turn(long id, String requestId, String questionId, String questionText, String answerText,
                        String state, String errorCode, String provider, String model, AiPolicy aiPolicy,
                        int answerVersion, Instant createdAt, Instant completedAt) {}
@@ -37,7 +38,7 @@ public final class WorkModels {
     public record ReviewContent(String evaluationId, String participantId, AiPolicy aiPolicy,
                                 List<QuestionAnswer> answers, List<Turn> conversations, List<Event> learningEvents) {}
     public record Review(String reviewToken, boolean canConfirm, List<String> blankQuestionIds, ReviewContent content) {}
-    public record Submission(String status, Instant submittedAt, com.fasterxml.jackson.databind.JsonNode snapshot) {}
+    public record Submission(String status, Instant submittedAt, com.fasterxml.jackson.databind.JsonNode snapshot,String submissionMode) {}
     public record Context(String evaluationId, String participantId, String state, Instant expiresAt) {}
     public record Reservation(Context context, Turn turn, Question question, Answer answer, List<Turn> history, boolean fresh) {}
 }

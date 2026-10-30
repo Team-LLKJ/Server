@@ -160,9 +160,9 @@ class WorkApiTest extends AuthTestSupport {
         mvc.perform(student(payload(put(answerPath(f)),direct("답안",0)),f)).andExpect(status().isConflict());
         mvc.perform(student(get(root(f)+"/questions"),f)).andExpect(status().isOk()).andExpect(jsonPath("readOnly").value(true));
         var expired=fixture(AiPolicy.FULL,true);
-        db.update("UPDATE evaluations SET expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",expired.id());
+        db.update("UPDATE evaluations SET expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP),ends_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",expired.id());
         mvc.perform(student(payload(put(answerPath(expired)),direct("답안",0)),expired)).andExpect(status().isGone());
-        mvc.perform(student(get(root(expired)+"/questions"),expired)).andExpect(jsonPath("status").value("EXPIRED"));
+        mvc.perform(student(get(root(expired)+"/questions"),expired)).andExpect(jsonPath("status").value("SUBMITTED"));
     }
     @Test void conversationsUseStableIdCursor() throws Exception {
         var f=fixture(AiPolicy.FULL,true);
