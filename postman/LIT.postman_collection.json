@@ -1338,6 +1338,115 @@
           }
         }
       ]
+    },
+    {
+      "name": "프런트 안내·창 이탈 연동",
+      "item": [
+        {
+          "name": "안내·문항 설정 (시작 전, 문항 ID 재발급)",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/configuration",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guidelines\": \"풀이 근거를 작성하세요.\\nAI는 힌트만 확인하세요.\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"분수 덧셈의 원리를 설명하세요.\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "안내·설정 조회",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/configuration",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "학생 풀이·안내 조회 (시작 후)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/workspace",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "창 이탈 이벤트 기록 (시작 후)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"WINDOW_LEAVE\",\n  \"occurredAt\": \"{{$isoTimestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "캡처 단축키 이벤트 기록 (시작 후)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"SHORTCUT_CAPTURE\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"questionId\": \"{{questionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

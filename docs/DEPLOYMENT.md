@@ -37,3 +37,5 @@ Nginx는 HTTP-01 검증 경로를 제공하고 나머지 HTTP 요청을 HTTPS로
 ## Git 규칙
 
 feature/#이슈번호-내용, fix/#이슈번호-내용 브랜치와 feat : 내용, fix : 내용 커밋 형식을 사용합니다. 기능별 PR을 develop에 통합한 뒤 CI/CD PR을 마지막에 병합합니다. main은 배포 대상으로 변경하지 않습니다.
+
+HTML 답안 1MiB 입력을 지원하는 배포에서는 Nginx `client_max_body_size 8m;` 설정이 필요합니다. JSON 이스케이프 오버헤드를 고려한 본문 상한입니다. `infra/nginx.conf.example`을 참고해 기존 운영 설정의 값을 변경하고 `sudo nginx -t && sudo systemctl reload nginx`로 적용하세요. Compose 교체만으로 기존 Nginx 설정이 바뀌지는 않습니다.

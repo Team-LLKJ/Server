@@ -120,7 +120,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 ## 답안·AI·제출 정책
 
 - 답안 저장: `{"content":"답안","expectedVersion":0,"source":"DIRECT"}`.
-- content 최대 10,000자, 빈 답안 허용. 현재 버전이 일치해야 저장되며 성공 시 version +1.
+- content 입력 최대 UTF-8 1MiB, 표 HTML·빈 답안 허용. 현재 버전이 일치해야 저장되며 성공 시 version +1.
 - source는 DIRECT / AI_REFERENCED / AI_USED. AI 참고·사용은 같은 참가자·문항의 완료된 aiRequestId 필요.
 - 문항 전환 전 저장 성공을 확인하세요. 프런트의 미저장 입력 보존·실패 표시는 별도 구현 항목입니다.
 - AI 정책은 DISABLED / HINT_ONLY / FULL. HINT_ONLY는 모델에 지시하는 제한으로 정답 미노출을 보장하지는 않습니다.
@@ -240,5 +240,7 @@ Gemini 일시적 HTTP500/502/503/504는 같은 질문 처리 안에서 최대3�
 ## CI/CD 배포
 
 GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배포 설정은 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)를 참고하세요. 서버와 production 환경 Secrets를 설정한 뒤 develop 변경으로 배포합니다. 실제 EC2 연결은 별도 설정이 필요합니다.
+
+프런트 guidelines·창 이탈 이벤트·1MiB HTML 자동 저장 계약은 [프런트 연동 API](docs/FRONTEND_CONTRACT.md)를 참고하세요.
 
 평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.

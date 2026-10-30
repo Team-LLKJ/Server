@@ -92,3 +92,5 @@ CREATE TABLE IF NOT EXISTS usage_reports (
 CREATE INDEX IF NOT EXISTS idx_reports_participant ON usage_reports(participant_id,version);
 
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS evaluation_content VARCHAR(10000) NOT NULL DEFAULT '';
+
+ALTER TABLE answers ALTER COLUMN content CLOB;

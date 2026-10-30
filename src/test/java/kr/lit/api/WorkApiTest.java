@@ -102,7 +102,7 @@ class WorkApiTest extends AuthTestSupport {
         mvc.perform(student(get(root(f)+"/questions/"+other.q1()),f)).andExpect(status().isNotFound());
         mvc.perform(student(payload(put(answerPath(f)),new SaveAnswer("참고",0,AnswerSource.AI_USED,"foreign")),f)).andExpect(status().isBadRequest());
         mvc.perform(student(payload(post(aiPath(f)),new Ask("empty","   ")),f)).andExpect(status().isBadRequest());
-        mvc.perform(student(payload(put(answerPath(f)),direct("가".repeat(10001),0)),f)).andExpect(status().isBadRequest());
+        mvc.perform(student(payload(put(answerPath(f)),direct("가".repeat(349526),0)),f)).andExpect(status().isPayloadTooLarge());
         mvc.perform(student(get(root(f)+"/conversations").param("limit","201"),f)).andExpect(status().isBadRequest());
         mvc.perform(student(get(root(f)+"/learning-events").param("afterId","-1"),f)).andExpect(status().isBadRequest());
         mvc.perform(get("/api/teacher/evaluations/"+f.id()+"/participants/"+other.participantId()+"/learning-events").header("Authorization","Bearer "+teacher.accessToken())).andExpect(status().isNotFound());

@@ -55,7 +55,7 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
-                .requestMatchers("/api/evaluations/**").hasRole("PARTICIPANT")
+                .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
                 .requestMatchers("/api/auth/me","/api/auth/logout").authenticated().anyRequest().denyAll())
             .addFilterBefore(new BearerFilter(auth,participants,json),UsernamePasswordAuthenticationFilter.class).build();
     }
@@ -81,12 +81,14 @@ public class SecurityConfig {
             boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/");
             String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path;
             if(limited&&!limit(req.getRemoteAddr(),group,max)) {error(res,json,429,"RATE_LIMITED","요청이 많습니다. 잠시 후 다시 시도해주세요.");return;}
-            boolean guestPath=path.startsWith("/api/evaluations/");
+            boolean studentPath=path.startsWith("/api/student/evaluations/");
+            boolean guestPath=path.startsWith("/api/evaluations/")||studentPath;
             if(guestPath) {
                 try {
                     String[] segments=path.split("/");
-                    if(segments.length<4) {error(res,json,404,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");return;}
-                    var guest=participants.authenticate(segments[3],req.getHeader("X-Participant-Token"));
+                    int idIndex=studentPath?4:3;
+                    if(segments.length<=idIndex) {error(res,json,404,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");return;}
+                    var guest=participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
                     SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(guest,null,List.of(new SimpleGrantedAuthority("ROLE_PARTICIPANT"))));
                 } catch(ApiError.Failure failure) {error(res,json,failure.status.value(),failure.code,failure.getMessage());return;}
                 chain.doFilter(req,res);return;
