@@ -22,7 +22,7 @@ public final class WorkModels {
     public record Answer(String questionId, String content, int version, Instant updatedAt) {}
     public record QuestionAnswer(Question question, Answer answer) {}
     public record Workspace(String evaluationId, String participantId, String status, boolean readOnly,
-                            AiPolicy aiPolicy, List<QuestionAnswer> questions) {}
+                            AiPolicy aiPolicy, List<QuestionAnswer> questions, String evaluationContent) {}
     public record Configuration(String evaluationId, AiPolicy aiPolicy, List<Question> questions) {}
     public record Turn(long id, String requestId, String questionId, String questionText, String answerText,
                        String state, String errorCode, String provider, String model, AiPolicy aiPolicy,

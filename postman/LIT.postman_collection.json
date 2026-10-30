@@ -1281,6 +1281,63 @@
           ]
         }
       ]
+    },
+    {
+      "name": "평가 내용 저장·공유 (평가 시작 전 저장)",
+      "item": [
+        {
+          "name": "교사 평가 내용 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/content",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"evaluationContent\": \"평가 기준: 근거를 제시하세요.\\nAI는 힌트 확인에만 사용하세요.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "교사 평가 내용 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/content"
+          }
+        },
+        {
+          "name": "학생 평가 내용 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/content"
+          }
+        }
+      ]
     }
   ]
 }

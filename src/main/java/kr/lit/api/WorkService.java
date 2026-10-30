@@ -100,7 +100,7 @@ public class WorkService {
     public Workspace workspace(String id,String token) {
         var c=authenticate(id,token);started(c);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c));
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c),db.queryForObject("SELECT evaluation_content FROM evaluations WHERE id=?",String.class,id));
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);
