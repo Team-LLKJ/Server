@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:h2:file:./data/lit}
+    username: ${DATABASE_USER:sa}
+    password: ${DATABASE_PASSWORD:}
+  sql:
+    init:
+      mode: always
+  jackson:
+    time-zone: UTC
+server:
+  port: ${SERVER_PORT:5174}
+  error:
+    include-message: never
+lit:
+  join-base-url: ${LIT_JOIN_BASE_URL:http://localhost:3000/join}
+  ai:
+    provider: ${LIT_AI_PROVIDER:openai}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:}
+    endpoint: ${OPENAI_RESPONSES_URL:https://api.openai.com/v1/responses}
+    timeout-seconds: ${LIT_AI_TIMEOUT_SECONDS:45}
+  auth:
+    bootstrap-teacher-invite: ${LIT_BOOTSTRAP_TEACHER_INVITE:}
+    bootstrap-school: ${LIT_BOOTSTRAP_SCHOOL:}
