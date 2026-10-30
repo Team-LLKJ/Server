@@ -37,14 +37,22 @@ public class ReportService {
    String status=submitted!=null?"SUBMITTED":closed?"CLOSED_UNSUBMITTED":"NOT_SUBMITTED";
    return new Student(pid,r.getString("nickname"),!active?"LEFT":connected?"CONNECTED":"DISCONNECTED",status,
      submitted!=null?"SUBMITTED":e.state().equals("ENDED")?"ENDED":closed?"EXPIRED":e.state().equals("STARTED")?"IN_PROGRESS":"WAITING",
-     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name());
+     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),activityWarning(pid)?"WARNING":submitted!=null?"SUBMITTED":"WRITING",activityWarning(pid));
   },pid,id).get(0);
  }
- public Students students(String id,int page,int size){
-  teacher(id);if(page<0||size<1||size>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100입니다.");
-  long count=db.queryForObject("SELECT COUNT(*) FROM participants WHERE evaluation_id=?",Long.class,id);
-  var ids=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? ORDER BY nickname,id LIMIT ? OFFSET ?",String.class,id,size,(long)page*size);
-  return new Students(ids.stream().map(p->student(id,p)).toList(),page,size,count,(count+size-1)/size);
+ private boolean activityWarning(String pid){return db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ('WINDOW_LEAVE','SHORTCUT_CAPTURE')",Integer.class,pid)>0;}
+ public Students students(String id,int page,int size){return students(id,page,size,"");}
+ public Students students(String id,int page,int size,String query){
+  teacher(id);if(page<0||size<1||size>100||query==null||query.length()>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100, query는100자 이하입니다.");
+  String filter=" FROM participants p WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0";
+  String q=query.strip();
+  long count=db.queryForObject("SELECT COUNT(*)"+filter,Long.class,id,q);
+  String warning="EXISTS (SELECT 1 FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ('WINDOW_LEAVE','SHORTCUT_CAPTURE'))";
+  long warnings=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warning,Long.class,id,q);
+  long submitted=db.queryForObject("SELECT COUNT(*)"+filter+" AND NOT "+warning+" AND EXISTS (SELECT 1 FROM submissions s WHERE s.participant_id=p.id)",Long.class,id,q);
+  var ids=db.queryForList("SELECT p.id"+filter+" ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",String.class,id,q,size,(long)page*size);
+  var items=ids.stream().map(p->student(id,p)).toList();
+  return new Students(items,page,size,count,(count+size-1)/size,new Counts(submitted,warnings,count-warnings-submitted),items);
  }
  private JsonNode source(String id,String pid){
   person(id,pid);
@@ -97,13 +105,39 @@ public class ReportService {
   var current=review(pid);int version=current==null?0:current.version();
   if(version!=input.expectedVersion())throw fail(HttpStatus.CONFLICT,"REVIEW_VERSION_CONFLICT","최신 교사 검토를 조회해주세요.");
   var next=new TeacherReview(version+1,input.compliance(),input.ratings(),input.comment(),AccountAccess.current().userId(),Instant.now());
-  db.update("MERGE INTO teacher_reviews(participant_id,evaluation_id,review_json,updated_at) KEY(participant_id) VALUES (?,?,?,CURRENT_TIMESTAMP)",pid,id,encode(next));return next;
+  persistReview(id,pid,current,next);return next;
+ }
+ public TeacherReview teacherReview(String id,String pid){teacher(id);person(id,pid);return review(pid);}
+ public TeacherReview saveCriterion(String id,String pid,Criterion criterion,ScoreInput input){
+  teacher(id);person(id,pid);requireSubmitted(pid);
+  var current=review(pid);int version=current==null?0:current.version();
+  if(input.expectedVersion()!=null&&input.expectedVersion()!=version)throw fail(HttpStatus.CONFLICT,"REVIEW_VERSION_CONFLICT","최신 교사 검토를 조회해주세요.");
+  var ratings=new ArrayList<Rating>();
+  for(var c:Criterion.values()) {
+   var prior=current==null?null:current.ratings().stream().filter(r->r.criterion()==c).findFirst().orElse(null);
+   ratings.add(new Rating(c,c==criterion?input.score():prior==null||prior.score()==null?null:prior.score()*20/current.maxScore(),prior==null?"":prior.evidence()));
+  }
+  var next=new TeacherReview(version+1,current==null?Compliance.NOT_REVIEWED:current.compliance(),ratings,current==null?"":current.comment(),AccountAccess.current().userId(),Instant.now(),20);
+  persistReview(id,pid,current,next);return next;
+ }
+ private void persistReview(String id,String pid,TeacherReview current,TeacherReview next){
+  for(var rating:next.ratings()) {
+   Integer before=current==null?null:current.ratings().stream().filter(r->r.criterion()==rating.criterion()).map(Rating::score).filter(Objects::nonNull).findFirst().orElse(null);
+   int priorMax=current==null?next.maxScore():current.maxScore();
+   boolean equal=before==null?rating.score()==null:rating.score()!=null&&before*next.maxScore()==rating.score()*priorMax;
+   if(!equal) db.update("INSERT INTO teacher_review_changes(evaluation_id,participant_id,criterion_id,previous_score,score,teacher_id,changed_at,review_version,previous_max_score,max_score) VALUES (?,?,?,?,?,?,?,?,?,?)",id,pid,rating.criterion().name(),before,rating.score(),next.teacherId(),OffsetDateTime.ofInstant(next.reviewedAt(),ZoneOffset.UTC),next.version(),priorMax,next.maxScore());
+  }
+  db.update("MERGE INTO teacher_reviews(participant_id,evaluation_id,review_json,updated_at) KEY(participant_id) VALUES (?,?,?,CURRENT_TIMESTAMP)",pid,id,encode(next));
+ }
+ public List<ReviewChange> reviewHistory(String id,String pid,long afterId,int limit){
+  teacher(id);person(id,pid);if(afterId<0||limit<1||limit>200)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이력 조회 범위를 확인해주세요.");
+  return db.query("SELECT * FROM teacher_review_changes WHERE participant_id=? AND id>? ORDER BY id LIMIT ?",(r,n)->new ReviewChange(r.getLong("id"),r.getString("criterion_id"),(Integer)r.getObject("previous_score"),(Integer)r.getObject("score"),r.getString("teacher_id"),instant(r,"changed_at"),r.getInt("review_version"),r.getInt("previous_max_score"),r.getInt("max_score")),pid,afterId,limit);
  }
  private void requireSubmitted(String pid){if(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,pid)==0)throw fail(HttpStatus.CONFLICT,"SUBMISSION_REQUIRED","학생 제출 확정 후 리포트를 생성할 수 있습니다.");}
  private UsageReport generate(String id,String pid){
   person(id,pid);requireSubmitted(pid);var e=evaluations.details(id);var src=source(id,pid);
   String snapshotHash=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,pid);
-  var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
+  var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),review(pid)!=null&&review(pid).maxScore()==20?"PROVISIONAL_FIVE_CRITERIA_0_TO_20":"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
     List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."));
   String hash=AuthService.hash(encode(content));
   var existing=db.queryForList("SELECT id FROM usage_reports WHERE participant_id=? AND source_hash=?",String.class,pid,hash);

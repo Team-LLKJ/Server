@@ -81,3 +81,5 @@ PDF는 application/pdf, Content-Disposition attachment입니다. 한글 글꼴�
 - 409 REVIEW_VERSION_CONFLICT: 다른 검토가 먼저 저장됨. 상세 재조회 필요.
 
 교사·학생의 PDF 다운로드에도 같은 인증 헤더를 사용합니다. 브라우저에서는 fetch 후 Blob으로 저장하고 URL에 토큰을 넣지 마세요.
+
+채점 화면용 별칭과 신규 응답은 [교사 채점 화면 연동](TEACHER_GRADING.md)에 정의합니다. 기존 일괄 리뷰 입력0~4점은 유지하되 새 개별 채점은20점 기준이며 TeacherReview.maxScore를 함께 확인하세요. PDF는 부분 점수와 실제 배점을 표시합니다.
