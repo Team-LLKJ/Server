@@ -221,6 +221,11 @@ if (!response.ok || result.state === 'FAILED') {
 
 질문 버튼 처리의 finally에서 로딩을 해제하고 실패 메시지를 표시하세요. 새 질문마다 새 requestId, 네트워크 재시도는 원래 requestId·본문을 그대로 사용합니다. 대화는 같은 참가자 헤더로 `GET /api/evaluations/{id}/conversations?questionId={questionId}`에서 조회합니다. 평가가 STARTED이고 aiPolicy가 HINT_ONLY 또는 FULL이어야 질문할 수 있습니다.
 
+
+## 교사 검토·리포트
+
+학생 목록·상세, 기록 근거 기반 활용 분류, 교사 5개 영역 검토, 제출 리포트 버전 생성·조회, PDF 다운로드를 지원합니다. 자세한 요청·응답과 임시 평가 기준은 [docs/REPORTS.md](docs/REPORTS.md)를 참고하세요. 실제 점수는 교사만 입력하고 자동 채점하지 않습니다. POST reports는 제출 확정 이후에만 가능하며 백그라운드 생성 주기는30초입니다.
+
 ### Gemini 오류 진단
 
 현재 서버에서 `gemini-2.5-flash` 호출이 신규 사용자 모델 이용 제한으로404를 반환하는 것을 확인했습니다. API 키가 있어도 해당 모델을 사용할 수 없으면 실패합니다. 같은 키로 gemini-3.1-flash-lite는 실제200 응답을 확인했습니다. `export GEMINI_MODEL=gemini-3.1-flash-lite`로 변경한 같은 터미널에서 서버를 재시작하세요. 모델 목록에 표시되는 것만으로 호출 권한을 보장하지는 않습니다. 모델을 자동 교체하거나 유료 결제를 활성화하지 않습니다.

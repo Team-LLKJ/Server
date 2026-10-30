@@ -77,3 +77,16 @@ ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_id VARCHAR(36) REFERENCES
 ALTER TABLE participants ADD CONSTRAINT IF NOT EXISTS uq_participant_user UNIQUE(evaluation_id,user_id);
 
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS token_hashed BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS teacher_reviews (
+ participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id),
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
+ review_json CLOB NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usage_reports (
+ id VARCHAR(36) PRIMARY KEY, evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id), version INT NOT NULL,
+ source_hash VARCHAR(64) NOT NULL, content CLOB NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ UNIQUE(participant_id,version), UNIQUE(participant_id,source_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_reports_participant ON usage_reports(participant_id,version);

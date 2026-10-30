@@ -101,5 +101,9 @@ public class EvaluationService {
   if(count==0)throw fail(HttpStatus.CONFLICT,"NO_PARTICIPANTS","연결된 참가자가 없습니다.");
   db.update("UPDATE evaluations SET state='STARTED' WHERE id=?",id);return lobby(read(id));
  }
- public Lobby end(String id){read(id);db.update("UPDATE evaluations SET state='ENDED' WHERE id=?",id);return lobby(read(id));}
+ public Lobby end(String id){read(id);db.update("UPDATE evaluations SET state='ENDED' WHERE id=?",id);
+  // Close in-flight AI turns immediately; late network responses cannot become successful.
+  db.update("INSERT INTO learning_events(evaluation_id,participant_id,question_id,event_type,details,created_at) SELECT evaluation_id,participant_id,question_id,'AI_FAILED',JSON_OBJECT('requestId':request_id,'errorCode':'EVALUATION_CLOSED'),CURRENT_TIMESTAMP FROM ai_turns WHERE evaluation_id=? AND state='PENDING'",id);
+  db.update("UPDATE ai_turns SET state='FAILED',error_code='EVALUATION_CLOSED',completed_at=CURRENT_TIMESTAMP WHERE evaluation_id=? AND state='PENDING'",id);
+  return lobby(read(id));}
 }
