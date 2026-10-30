@@ -17,11 +17,14 @@ class AiClientTest {
     private final AtomicReference<JsonNode> received=new AtomicReference<>();
     private final AtomicReference<String> authorization=new AtomicReference<>();
     private AiClient client(int status,String response,int delayMillis) throws Exception {
+        return client("openai",status,response,delayMillis);
+    }
+    private AiClient client(String provider,int status,String response,int delayMillis) throws Exception {
         server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         server.createContext("/v1/responses",exchange->{
             try {
                 received.set(json.readTree(exchange.getRequestBody()));
-                authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+                authorization.set(exchange.getRequestHeaders().getFirst(provider.equals("gemini")?"x-goog-api-key":"Authorization"));
                 if(delayMillis>0) Thread.sleep(delayMillis);
                 byte[] bytes=response.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type","application/json");
@@ -30,7 +33,7 @@ class AiClientTest {
             finally {exchange.close();}
         });
         server.start();
-        return new AiClient(json,"openai","test-only-key","test-model","http://127.0.0.1:"+server.getAddress().getPort()+"/v1/responses",1);
+        return new AiClient(json,provider,"test-only-key","test-model","http://127.0.0.1:"+server.getAddress().getPort()+"/v1/responses",1);
     }
     private Reservation reservation() {
         var now=Instant.now();
@@ -63,4 +66,27 @@ class AiClientTest {
         var c=new AiClient(json,"openai","","","http://127.0.0.1:1",1);
         assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_NOT_CONFIGURED");
     }
+    @Test void geminiIncludesContextHistoryAndSystemPolicy() throws Exception {
+        var c=client("gemini",200,"{\"candidates\":[{\"finishReason\":\"STOP\",\"content\":{\"parts\":[{\"text\":\"private thought\",\"thought\":true},{\"text\":\"힌트입니다\"}]}}]}",0);
+        assertThat(c.complete(reservation())).isEqualTo("힌트입니다");
+        assertThat(authorization.get()).isEqualTo("test-only-key");
+        assertThat(received.get().path("systemInstruction").toString()).contains("최종 정답이나 완성된 답안을 제공하지 마세요");
+        assertThat(received.get().path("contents").toString()).contains("학생 초안","이전 질문","이전 응답","힌트를 알려줘");
+        assertThat(received.get().path("contents").path(2).path("role").asText()).isEqualTo("model");
+        assertThat(received.get().has("input")).isFalse();
+    }
+    @Test void geminiTruncatedResponseIsNotSuccessful() throws Exception {
+        var c=client("gemini",200,"{\"candidates\":[{\"finishReason\":\"MAX_TOKENS\",\"content\":{\"parts\":[{\"text\":\"partial\"}]}}]}",0);
+        assertThatThrownBy(()->c.complete(reservation())).hasMessage("AI_INCOMPLETE_RESPONSE");
+    }
+    @Test void geminiQuotaAndSafetyBlockAreSafeFailures() throws Exception {
+        var c=client("gemini",429,"{\"error\":{\"message\":\"private detail\"}}",0);
+        var limited=c;
+        assertThatThrownBy(()->limited.complete(reservation())).hasMessage("AI_PROVIDER_RATE_LIMITED");
+        server.stop(0);
+        c=client("gemini",200,"{\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}",0);
+        var blocked=c;
+        assertThatThrownBy(()->blocked.complete(reservation())).hasMessage("AI_INCOMPLETE_RESPONSE");
+    }
+
 }

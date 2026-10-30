@@ -16,6 +16,7 @@ public class EvaluationService {
  private final SecureRandom random=new SecureRandom();
  public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl){this.db=db;this.baseUrl=baseUrl;}
  public record Evaluation(String id,String title,String pin,String state,Instant expiresAt){}
+ public record EvaluationPage(List<Evaluation> items,int page,int size,long totalElements,long totalPages){}
  public record Participant(String id,String nickname,String presence){}
  public record Lobby(String evaluationId,String title,String state,String screen,int participantCount,List<Participant> participants){}
  public record Created(String id,String title,String pin,String state,Instant expiresAt,String joinUrl,String qrUrl){}
@@ -48,6 +49,16 @@ public class EvaluationService {
   try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id) VALUES (?,?,?,'WAITING',?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId);}
   catch(org.springframework.dao.DuplicateKeyException e){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시도해주세요.");}
   return new Created(id,title.strip(),pin,"WAITING",expiry,baseUrl+"?pin="+pin,"/api/teacher/evaluations/"+id+"/qr");
+ }
+ @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+ public EvaluationPage mine(int page,int size){
+  String teacherId=kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER).userId();
+  if(page<0||size<1||size>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는 0 이상, size는 1~100이어야 합니다.");
+  long total=db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE teacher_id=?",Long.class,teacherId);
+  // Expiry is the existing persisted timestamp; do not present it as creation time.
+  var items=db.query("SELECT id,title,pin,state,expires_at FROM evaluations WHERE teacher_id=? ORDER BY expires_at DESC,id DESC LIMIT ? OFFSET ?",
+   (r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class).toInstant()),teacherId,size,(long)page*size);
+  return new EvaluationPage(items,page,size,total,(total+size-1)/size);
  }
  public Evaluation details(String id){return read(id);}
  public Evaluation verify(String pin){var e=byPin(pin);available(e);return e;}

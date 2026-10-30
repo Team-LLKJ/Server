@@ -66,4 +66,31 @@ class EvaluationApiTest extends AuthTestSupport {
   String id=UUID.randomUUID().toString();db.update("INSERT INTO evaluations(id,title,pin,state,expires_at) VALUES (?,?,?,'WAITING',DATEADD('HOUR',1,CURRENT_TIMESTAMP))",id,"앞자리 0","000001");
   mvc.perform(get("/api/participation/verify").param("pin"," 000001 ")).andExpect(status().isOk()).andExpect(jsonPath("pin").value("000001"));
  }
+ @Test void ownEvaluationListIsIsolatedAndPaginated() throws Exception {
+  var first=create();var second=create();var other=newTeacher();
+  as(other);var theirs=service.create("다른 교사의 평가",60);as(teacher);
+  db.update("UPDATE evaluations SET expires_at=DATEADD('HOUR',2,CURRENT_TIMESTAMP),state='ENDED' WHERE id=?",first.path("id").asText());
+  db.update("UPDATE evaluations SET expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",second.path("id").asText());
+  var page=mapper.readTree(mvc.perform(get("/api/teacher/evaluations").header("Authorization","Bearer "+teacher.accessToken()).param("size","1"))
+    .andExpect(status().isOk()).andExpect(jsonPath("totalElements").value(2)).andExpect(jsonPath("totalPages").value(2))
+    .andExpect(jsonPath("items[0].state").value("ENDED")).andReturn().getResponse().getContentAsString());
+  assertThat(page.path("items").get(0).path("id").asText()).isEqualTo(first.path("id").asText());
+  mvc.perform(get("/api/teacher/evaluations").header("Authorization","Bearer "+teacher.accessToken()).param("page","1").param("size","1"))
+    .andExpect(status().isOk()).andExpect(jsonPath("items[0].id").value(second.path("id").asText()));
+  mvc.perform(get("/api/teacher/evaluations").header("Authorization","Bearer "+teacher.accessToken()).param("page","2").param("size","1"))
+    .andExpect(status().isOk()).andExpect(jsonPath("items").isEmpty()).andExpect(jsonPath("totalElements").value(2));
+  mvc.perform(get("/api/teacher/evaluations").header("Authorization","Bearer "+other.accessToken()))
+    .andExpect(status().isOk()).andExpect(jsonPath("totalElements").value(1)).andExpect(jsonPath("items[0].id").value(theirs.id()));
+ }
+ @Test void emptyListAndInvalidPaginationAndGuestAccess() throws Exception {
+  mvc.perform(get("/api/teacher/evaluations").header("Authorization","Bearer "+teacher.accessToken()))
+    .andExpect(status().isOk()).andExpect(jsonPath("items").isEmpty()).andExpect(jsonPath("totalElements").value(0)).andExpect(jsonPath("totalPages").value(0));
+  for(String query:List.of("page=-1","size=0","size=101","page=bad","size=999999999999")) {
+   mvc.perform(get("/api/teacher/evaluations?"+query).header("Authorization","Bearer "+teacher.accessToken())).andExpect(status().isBadRequest());
+  }
+  mvc.perform(get("/api/teacher/evaluations")).andExpect(status().isUnauthorized());
+  var e=create();var joined=request("/api/participation/join","{\"pin\":\""+e.path("pin").asText()+"\",\"nickname\":\"학생\"}");
+  mvc.perform(get("/api/teacher/evaluations").header("X-Participant-Token",joined.path("participantToken").asText())).andExpect(status().isUnauthorized());
+ }
+
 }

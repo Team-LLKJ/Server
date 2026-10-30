@@ -15,10 +15,10 @@ server:
 lit:
   join-base-url: ${LIT_JOIN_BASE_URL:http://localhost:3000/join}
   ai:
-    provider: ${LIT_AI_PROVIDER:openai}
-    api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:}
-    endpoint: ${OPENAI_RESPONSES_URL:https://api.openai.com/v1/responses}
+    provider: ${LIT_AI_PROVIDER:gemini}
+    api-key: ${GEMINI_API_KEY:${OPENAI_API_KEY:}}
+    model: ${GEMINI_MODEL:${OPENAI_MODEL:}}
+    endpoint: ${LIT_AI_ENDPOINT:}
     timeout-seconds: ${LIT_AI_TIMEOUT_SECONDS:45}
   auth:
     bootstrap-teacher-invite: ${LIT_BOOTSTRAP_TEACHER_INVITE:}

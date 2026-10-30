@@ -83,6 +83,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | 메서드 | 경로 | 기능 |
 |---|---|---|
 | POST | `/api/teacher/evaluations` | 평가 생성 |
+| GET | `/api/teacher/evaluations?page=0&size=20` | 내가 만든 평가 목록 |
 | GET | `/api/teacher/evaluations/{id}` | 평가 정보·PIN |
 | GET | `/api/teacher/evaluations/{id}/qr` | 참여 URL QR PNG |
 | GET | `/api/teacher/evaluations/{id}/participants` | 참가자 목록 |
@@ -140,7 +141,23 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 
 ## 외부 서비스 설정
 
-실제 AI: `LIT_AI_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`을 서버에 설정합니다.
+실제 AI 기본 제공자는 Gemini입니다. 백엔드를 실행하는 터미널에 `LIT_AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`을 설정합니다. 모델 이름은 Google AI Studio에서 프로젝트에 사용 가능한 모델로 지정하세요. 키는 프런트엔드의 `VITE_` 변수나 Git에 넣지 않습니다.
+
+```sh
+export LIT_AI_PROVIDER=gemini
+read -s 'GEMINI_API_KEY?Gemini API key: '
+export GEMINI_API_KEY
+export GEMINI_MODEL='<AI Studio에서 선택한 모델 ID>'
+./mvnw spring-boot:run
+```
+
+위 키 입력 명령은 macOS zsh 기준이며 입력값을 화면에 표시하지 않습니다. 기존 서버는 해당 터미널에서 Ctrl+C로 종료한 후 한 번만 실행합니다. 이미 실행 중인 서버에는 새 환경변수가 적용되지 않습니다.
+
+학생의 `POST /api/evaluations/{id}/questions/{questionId}/ai/questions` 요청은 `X-Participant-Token` 헤더와 `{ "requestId": "고유한 요청 ID", "text": "질문 내용" }`를 사용합니다. 같은 요청 재시도에는 같은 requestId를 사용합니다. 서버가 문항, 현재 답안과 최근 대화를 Gemini에 전달하며 질문·응답·제공자·모델·시각·실패 상태를 DB에 남깁니다. `GET /api/evaluations/{id}/conversations`로 본인 대화를 다시 조회합니다. 교사는 기존 학습 이벤트 조회 API로 기록을 확인합니다. 제출 후 신규 AI 질문은 차단합니다.
+
+키나 모델이 없으면 실제 호출 없이 `AI_NOT_CONFIGURED`, 무료 할당량 초과 시 `AI_PROVIDER_RATE_LIMITED`를 기록합니다. 무료 등급에서 한도에 도달해도 자동으로 유료 모델로 전환하지 않습니다.
+
+기존 OpenAI 제공자도 지원합니다. `LIT_AI_PROVIDER=openai`, `GEMINI_API_KEY` 대신 `OPENAI_API_KEY`, `GEMINI_MODEL` 대신 `OPENAI_MODEL`을 사용하며, 커스텀 URL은 `LIT_AI_ENDPOINT`로 지정합니다.
 Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 `LIT_JOIN_BASE_URL` 기본값은 `http://localhost:3000/join`이며 참여 웹 페이지는 별도로 필요합니다.
 
@@ -156,3 +173,50 @@ Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
 
 비밀번호 찾기·재설정 기능은 제외했습니다. SMTP나 메일 발송 환경변수는 필요하지 않습니다.
+
+
+### 내가 만든 수행평가 조회
+
+`GET /api/teacher/evaluations?page=0&size=20`에 교사 로그인 응답의 `Authorization: Bearer {accessToken}`을 전달합니다. 학생 참가자 토큰으로는 조회할 수 없습니다. 본인이 만든 평가만 포함하며 종료·만료된 평가도 반환합니다. 페이지는 0부터, size는 1~100(기본20)입니다. 만료 시각 내림차순, 같은 만료 시각은 id 내림차순입니다. 현재 스키마에 생성 시각이 없어 생성순을 의미하지 않습니다.
+
+```json
+{
+  "items": [
+    {
+      "id": "평가 UUID",
+      "title": "수학 수행평가",
+      "pin": "012345",
+      "state": "WAITING",
+      "expiresAt": "2026-10-28T03:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+평가가 없거나 페이지 범위를 넘으면 items는 빈 배열입니다. 잘못된 page/size는400, 인증 누락·만료는401입니다. 프런트는 선택한 items[].id로 기존 평가 상세·문항·참가자 조회 API를 호출합니다.
+
+### 프런트에서 Gemini 대화 연결
+
+학생은 가입 없이 PIN 참여 후 받은 participantToken을 사용합니다. Gemini 키는 서버에만 설정하며 아래 요청에는 넣지 않습니다. 프런트·백엔드가 다른 컴퓨터라면 프런트의 Vite `/api` 프록시 대상을 백엔드 IP:5174로 설정해야 합니다.
+
+```js
+const response = await fetch(`/api/evaluations/${evaluationId}/questions/${questionId}/ai/questions`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Participant-Token': participantToken,
+  },
+  body: JSON.stringify({ requestId: crypto.randomUUID(), text: questionText }),
+});
+const result = await response.json();
+if (!response.ok || result.state === 'FAILED') {
+  throw new Error(result.errorCode || result.code || 'AI_REQUEST_FAILED');
+}
+// COMPLETED이면 result.answerText 표시. PENDING이면 대화 조회로 상태 확인.
+```
+
+질문 버튼 처리의 finally에서 로딩을 해제하고 실패 메시지를 표시하세요. 새 질문마다 새 requestId, 네트워크 재시도는 원래 requestId·본문을 그대로 사용합니다. 대화는 같은 참가자 헤더로 `GET /api/evaluations/{id}/conversations?questionId={questionId}`에서 조회합니다. 평가가 STARTED이고 aiPolicy가 HINT_ONLY 또는 FULL이어야 질문할 수 있습니다.

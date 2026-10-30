@@ -24,6 +24,8 @@ class ApiController {
  record Join(String pin,String nickname,@Size(max=64) String participantToken){}
  @PostMapping("/teacher/evaluations") @ResponseStatus(HttpStatus.CREATED)
  Object create(@Valid @RequestBody Create body){return service.create(body.title(),body.expiresInMinutes());}
+ @GetMapping("/teacher/evaluations")
+ Object mine(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size){return service.mine(page,size);}
  @GetMapping("/teacher/evaluations/{id}") Object details(@PathVariable String id){return service.details(id);}
  @GetMapping("/teacher/evaluations/{id}/participants") Object list(@PathVariable String id){return service.lobby(id);}
  @PostMapping("/teacher/evaluations/{id}/start") Object start(@PathVariable String id){return service.start(id);}
