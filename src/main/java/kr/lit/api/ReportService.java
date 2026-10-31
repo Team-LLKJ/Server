@@ -33,7 +33,7 @@ public class ReportService {
   var e=evaluations.details(id);
   return db.query("SELECT p.*,s.submitted_at,(SELECT MAX(version) FROM usage_reports u WHERE u.participant_id=p.id) report_version FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id WHERE p.id=? AND p.evaluation_id=?",(r,n)->{
    boolean active=r.getBoolean("active");boolean connected=active&&r.getObject("last_seen",OffsetDateTime.class).toInstant().isAfter(Instant.now().minusSeconds(30));
-   Instant submitted=instant(r,"submitted_at");boolean closed=e.state().equals("ENDED")||!e.expiresAt().isAfter(Instant.now());
+   Instant submitted=instant(r,"submitted_at");boolean closed=e.state().equals("ENDED")||e.expiresAt()!=null&&!e.expiresAt().isAfter(Instant.now());
    String status=submitted!=null?"SUBMITTED":closed?"CLOSED_UNSUBMITTED":"NOT_SUBMITTED";
    return new Student(pid,r.getString("nickname"),!active?"LEFT":connected?"CONNECTED":"DISCONNECTED",status,
      submitted!=null?"SUBMITTED":e.state().equals("ENDED")?"ENDED":closed?"EXPIRED":e.state().equals("STARTED")?"IN_PROGRESS":"WAITING",

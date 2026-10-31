@@ -81,10 +81,10 @@ public final class WorkModels {
     public record Workspace(String evaluationId, String participantId, String status, boolean readOnly,
                             AiPolicy aiPolicy, List<QuestionAnswer> questions, String evaluationContent, String guidelines,
                             int aiLevel, String aiLevelDescription,List<?> criteria,
-                            com.fasterxml.jackson.databind.JsonNode antiCheat) {}
+                            com.fasterxml.jackson.databind.JsonNode antiCheat,String assessmentId,String className) {}
     public record Configuration(String evaluationId, AiPolicy aiPolicy, List<Question> questions, String guidelines,int durationMinutes,
                                 int aiLevel, String aiLevelDescription,List<?> criteria,
-                            com.fasterxml.jackson.databind.JsonNode antiCheat) {}
+                            com.fasterxml.jackson.databind.JsonNode antiCheat,String assessmentId,String className) {}
     public record Turn(long id, String requestId, String questionId, String questionText, String answerText,
                        String state, String errorCode, String provider, String model, AiPolicy aiPolicy,
                        int answerVersion, Instant createdAt, Instant completedAt) {}

@@ -98,6 +98,7 @@ public class WorkService {
     }
     public Configuration configure(String id,Configure config) {
         var e=evaluation(id);
+        ClassSnapshots.requireStandalone(db,id);
         AiPolicy resolved=config.resolvedPolicy();
         if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy 또는 aiLevel(1~5)이 필요하며 둘 다 보내면 같은 단계여야 합니다.");
         if(!e.state().equals("WAITING")) throw failure(HttpStatus.CONFLICT,"CONFIGURATION_LOCKED","시작 후에는 문항과 AI 정책을 변경할 수 없습니다.");
@@ -122,11 +123,11 @@ public class WorkService {
     }
     public Configuration configuration(String id) {
         evaluation(id);var p=policy(id);var shared=shared(id);
-        return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat());
+        return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
     }
-    private record Shared(List<?> criteria,JsonNode antiCheat) {}
+    private record Shared(List<?> criteria,JsonNode antiCheat,String assessmentId,String className) {}
     private Shared shared(String id) {
-        return db.queryForObject("SELECT criteria_json,criteria_kind,anti_cheat_json FROM evaluations WHERE id=?",(r,n)->{
+        return db.queryForObject("SELECT criteria_json,criteria_kind,anti_cheat_json,assessment_id,class_name FROM evaluations WHERE id=?",(r,n)->{
             try {
                 List<?> criteria=json.readValue(r.getString("criteria_json"),new com.fasterxml.jackson.core.type.TypeReference<List<Object>>(){});
                 // 기존 사용자 지정 루브릭도 새 configuration 응답에서 읽을 수 있게 합니다.
@@ -137,7 +138,7 @@ public class WorkService {
                         criteria=rubric.stream().map(c->new AssessmentModels.CriterionInput(c.name(),c.maxScore(),c.description(),c.levelDescriptions(),c.indicator())).toList();
                     }
                 }
-                return new Shared(criteria,decode(r.getString("anti_cheat_json")));
+                return new Shared(criteria,decode(r.getString("anti_cheat_json")),r.getString("assessment_id"),r.getString("class_name"));
             }catch(JsonProcessingException ex){throw new IllegalStateException(ex);}
         },id);
     }
@@ -151,7 +152,7 @@ public class WorkService {
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         var p=policy(id);
         var shared=shared(id);
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat());
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);

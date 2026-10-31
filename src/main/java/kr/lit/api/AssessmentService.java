@@ -82,7 +82,7 @@ public class AssessmentService {
     public Rubric rubric(String id) { teacher(id);return rubricView(id); }
     /** 평가마다 기준·배점을 바꿀 수 있습니다. 합계는 100점이어야 하며, 한 명이라도 교사 점수가 저장되면 잠깁니다. */
     public Rubric saveRubric(String id,RubricInput input) {
-        teacher(id);
+        teacher(id);ClassSnapshots.requireStandalone(db,id);
         if(rubricLocked(id)) throw fail(HttpStatus.CONFLICT,"RUBRIC_LOCKED","이미 채점이 시작된 평가는 기준을 바꿀 수 없습니다.");
         int total=input.criteria().stream().mapToInt(CriterionInput::maxScore).sum();
         if(total!=100) throw fail(HttpStatus.BAD_REQUEST,"INVALID_RUBRIC","배점 합계는 100점이어야 합니다. (현재 "+total+"점)");
@@ -96,7 +96,7 @@ public class AssessmentService {
         return rubricView(id);
     }
     public Rubric resetRubric(String id) {
-        teacher(id);
+        teacher(id);ClassSnapshots.requireStandalone(db,id);
         if(rubricLocked(id)) throw fail(HttpStatus.CONFLICT,"RUBRIC_LOCKED","이미 채점이 시작된 평가는 기준을 바꿀 수 없습니다.");
         db.update("DELETE FROM evaluation_rubrics WHERE evaluation_id=?",id);
         db.update("UPDATE evaluations SET criteria_json='[]',criteria_kind='LEGACY' WHERE id=? AND criteria_kind<>'TITLES'",id);
