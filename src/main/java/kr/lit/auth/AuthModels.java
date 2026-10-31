@@ -22,4 +22,6 @@ public final class AuthModels {
                          String refreshToken, Instant refreshExpiresAt, User user) {}
     public record Invitation(String inviteCode, String school, Instant expiresAt) {}
     public record Message(String message) {}
+    public record UpdateMe(@NotBlank @Size(max=50) String name) {}
+    public record ChangePassword(@NotBlank @Size(max=128) String currentPassword, @NotBlank @Size(min=10,max=128) String newPassword) {}
 }
