@@ -20,7 +20,10 @@ public final class WorkModels {
     }
     public enum AnswerSource { DIRECT, AI_REFERENCED, AI_USED }
     public record QuestionInput(@Min(1) int position, @NotBlank @Size(max=200) String title,
-                                @NotBlank @Size(max=10000) String content) {}
+                                @NotBlank @Size(max=10000) String content,@Min(1) @Max(99999) Integer minChars,
+                                @Min(1) @Max(99999) Integer maxChars) {
+        public QuestionInput(int position,String title,String content) {this(position,title,content,null,null);}
+    }
     public record Configure(AiPolicy aiPolicy,
                             @NotEmpty @Size(max=100) List<@NotNull @Valid QuestionInput> questions, @Size(max=10000) String guidelines, @Min(1) @Max(1440) Integer durationMinutes,
                             @Min(1) @Max(5) Integer aiLevel) {
@@ -66,7 +69,9 @@ public final class WorkModels {
     public record Ask(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,64}") String requestId,
                       @NotBlank @Size(max=4000) String text) {}
     public record Confirm(@NotBlank @Pattern(regexp="[a-f0-9]{64}") String reviewToken) {}
-    public record Question(String id, int position, String title, String content) {}
+    public record Question(String id, int position, String title, String content,Integer minChars,Integer maxChars) {
+        public Question(String id,int position,String title,String content) {this(id,position,title,content,null,null);}
+    }
     public record Answer(String questionId, String content, int version, Instant updatedAt) {}
     public record QuestionAnswer(Question question, Answer answer) {}
     public record Workspace(String evaluationId, String participantId, String status, boolean readOnly,
@@ -81,7 +86,9 @@ public final class WorkModels {
                         Instant createdAt) {}
     public record ReviewContent(String evaluationId, String participantId, AiPolicy aiPolicy,
                                 List<QuestionAnswer> answers, List<Turn> conversations, List<Event> learningEvents) {}
-    public record Review(String reviewToken, boolean canConfirm, List<String> blankQuestionIds, ReviewContent content) {}
+    public record AnswerValidationError(String questionId,int actualChars,int minChars,Integer maxChars) {}
+    public record Review(String reviewToken, boolean canConfirm, List<String> blankQuestionIds, ReviewContent content,
+                         List<AnswerValidationError> answerValidationErrors) {}
     public record Submission(String status, Instant submittedAt, com.fasterxml.jackson.databind.JsonNode snapshot,String submissionMode) {}
     public static String levelDescription(AiPolicy p) {
         return switch(p) {

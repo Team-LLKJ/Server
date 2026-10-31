@@ -63,7 +63,10 @@ public class ReportService {
   root.put("aiPolicy",policy.isEmpty()?"DISABLED":policy.get(0));
   var answers=root.putArray("answers");
   db.query("SELECT q.*,a.content draft,a.version answer_version,a.updated_at FROM questions q LEFT JOIN answers a ON a.question_id=q.id AND a.participant_id=? WHERE q.evaluation_id=? ORDER BY q.position,q.id",r->{
-   var item=answers.addObject();item.putObject("question").put("id",r.getString("id")).put("position",r.getInt("position")).put("title",r.getString("title")).put("content",r.getString("content"));
+   var item=answers.addObject();var question=item.putObject("question");
+   question.put("id",r.getString("id")).put("position",r.getInt("position")).put("title",r.getString("title")).put("content",r.getString("content"));
+   question.set("minChars",json.valueToTree(r.getInt("min_chars")==0?null:r.getInt("min_chars")));
+   question.set("maxChars",json.valueToTree(r.getObject("max_chars")));
    var a=item.putObject("answer");a.put("questionId",r.getString("id")).put("content",Objects.toString(r.getString("draft"),"")).put("version",r.getInt("answer_version"));
    var updated=instant(r,"updated_at");a.put("updatedAt",updated==null?null:updated.toString());
   },pid,id);

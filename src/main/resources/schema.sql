@@ -172,3 +172,6 @@ CREATE TABLE IF NOT EXISTS user_settings (
 
 -- HTML 정리 후 길이가 늘어날 수 있어 안내도 CLOB로 보존합니다. 입력 상한은 API에서 10,000자입니다.
 ALTER TABLE evaluations ALTER COLUMN evaluation_content CLOB DEFAULT '' NOT NULL;
+
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS min_chars INT NOT NULL DEFAULT 0;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS max_chars INT;
