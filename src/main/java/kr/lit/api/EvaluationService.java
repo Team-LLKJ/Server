@@ -110,6 +110,18 @@ public class EvaluationService {
   var started=OffsetDateTime.now(ZoneOffset.UTC);var ends=started.plusMinutes(minutes);
   db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=? WHERE id=?",started,ends,ends,id);return lobby(read(id));
  }
+ public Lobby extend(String id,int additionalMinutes) {
+  kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER);
+  var e=read(id);
+  if(additionalMinutes<1||additionalMinutes>600)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","연장은1~600분이어야 합니다.");
+  var old=db.queryForObject("SELECT ends_at FROM evaluations WHERE id=?",OffsetDateTime.class,id);
+  Instant effective=old==null?e.expiresAt():old.toInstant();
+  if(!e.state().equals("STARTED")||effective==null||!effective.isAfter(Instant.now()))
+   throw fail(HttpStatus.CONFLICT,"EVALUATION_NOT_RUNNING","현재 진행 중인 평가만 연장할 수 있습니다.");
+  var deadline=OffsetDateTime.ofInstant(effective,ZoneOffset.UTC);
+  db.update("UPDATE evaluations SET ends_at=?,expires_at=?,duration_minutes=duration_minutes+? WHERE id=?",deadline.plusMinutes(additionalMinutes),deadline.plusMinutes(additionalMinutes),additionalMinutes,id);
+  return lobby(read(id));
+ }
  void activateClass(String id,int minutes) {
   var e=read(id);
   if(e.assessmentId()==null||!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작 전 반 회차가 아닙니다.");

@@ -32,6 +32,30 @@ class FrontendRequestedApiTest extends AuthTestSupport {
         mvc.perform(body(request(put("/api/teacher/evaluations/"+e.id()+"/configuration"),teacher),v)).andExpect(status().isOk()).andExpect(jsonPath("criteria[1]").value("자기 생각"));
         mvc.perform(request(get("/api/teacher/evaluations/"+e.id()+"/configuration"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("antiCheat[1]").value("PRINT_BLOCK"));
     }
+    @Test void extensionUpdatesStudentDeadlineAndPreservesPinAndExistingAnswers() throws Exception {
+        var e=evaluations.create("시간 연장",60);var conf=work.configure(e.id(),new Configure(AiPolicy.FULL,List.of(new QuestionInput(1,"문항","문제"))));
+        var p=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());work.save(e.id(),p.participantToken(),conf.questions().get(0).id(),new SaveAnswer("기존 답안",0,AnswerSource.DIRECT,null));
+        var before=evaluations.lobby(e.id()).endsAt();
+        var extended=ok(body(request(post("/api/teacher/evaluations/"+e.id()+"/extend"),teacher),Map.of("additionalMinutes",10)));
+        assertThat(Instant.parse(extended.path("endsAt").asText())).isEqualTo(before.plusSeconds(600));
+        mvc.perform(get("/api/student/evaluations/"+e.id()+"/state").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(jsonPath("endsAt").value(extended.path("endsAt").asText()));
+        as(teacher);assertThat(evaluations.details(e.id()).pin()).isEqualTo(e.pin());assertThat(work.workspace(e.id(),p.participantToken()).questions().get(0).answer().version()).isEqualTo(1);
+    }
+    @Test void classExtensionIsVisibleInClassListAndCannotResurrectExpiredClass() throws Exception {
+        var t=createTemplate();String id=t.path("id").asText(),c=add(id).path("classId").asText();var s=start(id,c);
+        var extended=ok(body(request(post("/api/teacher/evaluations/"+c+"/extend"),teacher),Map.of("additionalMinutes",600)));
+        assertThat(Instant.parse(extended.path("endsAt").asText())).isEqualTo(Instant.parse(s.path("endsAt").asText()).plusSeconds(36000));
+        mvc.perform(request(get("/api/teacher/assessments/"+id+"/classes"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("$[0].endsAt").value(extended.path("endsAt").asText()));
+        db.update("UPDATE evaluations SET ends_at=? WHERE id=?",OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(2),c);
+        mvc.perform(body(request(post("/api/teacher/evaluations/"+c+"/extend"),teacher),Map.of("additionalMinutes",10))).andExpect(status().isConflict());
+    }
+    @Test void extensionRejectsWaitingEndedInvalidRangeAndOtherTeacher() throws Exception {
+        var e=evaluations.create("연장 검사",60);String url="/api/teacher/evaluations/"+e.id()+"/extend";
+        mvc.perform(body(request(post(url),teacher),Map.of("additionalMinutes",10))).andExpect(status().isConflict());
+        for(int n:List.of(0,601,-1))mvc.perform(body(request(post(url),teacher),Map.of("additionalMinutes",n))).andExpect(status().isBadRequest());
+        mvc.perform(body(request(post(url),newTeacher()),Map.of("additionalMinutes",10))).andExpect(status().isNotFound());
+        as(teacher);evaluations.end(e.id());mvc.perform(body(request(post(url),teacher),Map.of("additionalMinutes",10))).andExpect(status().isConflict());
+    }
     @Test void selectionArraysRejectBlankDuplicateMixedAndUnsupportedCodes() throws Exception {
         for(var criteria:List.of(List.of(""),List.of("중복","중복"),List.of("제목",Map.of("name","상세","maxScore",100)))) {
             var v=templateInput();v.put("criteria",criteria);
