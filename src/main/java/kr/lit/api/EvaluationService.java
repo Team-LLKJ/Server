@@ -110,4 +110,30 @@ public class EvaluationService {
   db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=? WHERE id=?",started,ends,ends,id);return lobby(read(id));
  }
  public Lobby end(String id){read(id);work.finishEvaluation(id,false);return lobby(read(id));}
+ public record Updated(String id,String title,String pin,String state,Instant expiresAt,int durationMinutes){}
+ /** 시작 전(WAITING)에만 제목·풀이 시간·PIN 유효 시간을 바꿉니다. 문항·AI 정책은 PUT /questions를 사용합니다. */
+ public Updated update(String id,String title,Integer durationMinutes,Integer expiresInMinutes){
+  var e=read(id);
+  if(!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"EVALUATION_LOCKED","시작 전(WAITING) 평가만 수정할 수 있습니다.");
+  if(title==null&&durationMinutes==null&&expiresInMinutes==null)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","변경할 값을 하나 이상 보내주세요.");
+  if(expiresInMinutes==null&&!e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다. expiresInMinutes로 PIN 유효 시간을 연장할 수 있습니다.");
+  if(title!=null){String t=title.strip();if(t.isEmpty()||t.length()>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","제목은 1~100자여야 합니다.");db.update("UPDATE evaluations SET title=? WHERE id=?",t,id);}
+  if(durationMinutes!=null)db.update("UPDATE evaluations SET duration_minutes=? WHERE id=?",durationMinutes,id);
+  if(expiresInMinutes!=null)db.update("UPDATE evaluations SET expires_at=? WHERE id=?",OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(expiresInMinutes),id);
+  var u=read(id);
+  return new Updated(u.id(),u.title(),u.pin(),u.state(),u.expiresAt(),db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id));
+ }
+ /** 진행 중(STARTED, 마감 전)인 평가는 삭제할 수 없습니다. 참가·답안·대화·채점·리포트·알림 기록을 함께 삭제합니다. */
+ public void delete(String id){
+  var e=read(id);
+  if(e.state().equals("STARTED")&&e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.CONFLICT,"EVALUATION_IN_PROGRESS","진행 중인 평가는 종료한 뒤 삭제해주세요.");
+  for(String table:List.of("notifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
+    "usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
+   db.update("DELETE FROM "+table+" WHERE evaluation_id=?",id);
+  db.update("DELETE FROM answers WHERE participant_id IN (SELECT id FROM participants WHERE evaluation_id=?)",id);
+  db.update("DELETE FROM questions WHERE evaluation_id=?",id);
+  db.update("DELETE FROM evaluation_settings WHERE evaluation_id=?",id);
+  db.update("DELETE FROM participants WHERE evaluation_id=?",id);
+  db.update("DELETE FROM evaluations WHERE id=?",id);
+ }
 }

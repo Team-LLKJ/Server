@@ -27,6 +27,9 @@ class ApiController {
  @GetMapping("/teacher/evaluations")
  Object mine(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size){return service.mine(page,size);}
  @GetMapping("/teacher/evaluations/{id}") Object details(@PathVariable String id){return service.details(id);}
+ record Update(@Size(max=100) String title,@Min(1) @Max(1440) Integer durationMinutes,@Min(1) @Max(1440) Integer expiresInMinutes){}
+ @PatchMapping("/teacher/evaluations/{id}") Object update(@PathVariable String id,@Valid @RequestBody Update body){return service.update(id,body.title(),body.durationMinutes(),body.expiresInMinutes());}
+ @DeleteMapping("/teacher/evaluations/{id}") ResponseEntity<Void> delete(@PathVariable String id){service.delete(id);return ResponseEntity.noContent().build();}
  @GetMapping("/teacher/evaluations/{id}/participants") Object list(@PathVariable String id){return service.lobby(id);}
  @PostMapping("/teacher/evaluations/{id}/start") Object start(@PathVariable String id){return service.start(id);}
  @PostMapping("/teacher/evaluations/{id}/end") Object end(@PathVariable String id){return service.end(id);}

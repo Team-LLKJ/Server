@@ -19,7 +19,11 @@ public class WorkService {
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final NotificationService notifications;
-    public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications) { this.db=db; this.json=json; this.notifications=notifications; }
+    private final int endGraceSeconds;
+    public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds) {
+        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);
+    }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
         return new ApiError.Failure(status, code, message);
@@ -128,7 +132,12 @@ public class WorkService {
         return new QuestionAnswer(question(id,questionId),answer(c.participantId(),questionId));
     }
     public Answer save(String id,String token,String questionId,SaveAnswer input) {
-        var c=authenticate(id,token);editable(c);question(id,questionId);
+        var c=authenticate(id,token);
+        // 마감 직후(서버 작업 전)라면 먼저 종료·자동 제출을 처리해 유예 저장 경로로 보냅니다.
+        if(endGraceSeconds>0&&c.state().equals("STARTED")&&!c.expiresAt().isAfter(Instant.now())) { finishEvaluation(id,true);c=authenticate(id,token); }
+        boolean late=lateSaveAllowed(c);
+        if(!late) editable(c);
+        question(id,questionId);
         String safeContent=AnswerHtml.clean(input.content());
         var old=answer(c.participantId(),questionId);
         if(old.version()!=input.expectedVersion()) throw failure(HttpStatus.CONFLICT,"ANSWER_VERSION_CONFLICT","답안이 변경되었습니다. 최신 답안을 조회한 후 다시 저장해주세요.");
@@ -145,8 +154,36 @@ public class WorkService {
         change.put("previousContent",old.content());change.put("content",safeContent);
         change.put("previousVersion",old.version());change.put("version",old.version()+1);
         change.put("source",input.source());change.put("aiRequestId",input.aiRequestId());
+        if(late) change.put("lateSave",true);
         event(c,questionId,"ANSWER_SAVED",change);
+        if(late) refreshAutoSubmission(c);
         return answer(c.participantId(),questionId);
+    }
+    /** 종료 후 유예 시간 동안 자동 제출된(AUTO_*) 참가자의 마지막 저장을 허용합니다. 수동 제출자는 해당하지 않습니다. */
+    private boolean lateSaveAllowed(Context c) {
+        if(endGraceSeconds<=0||!c.state().equals("ENDED")) return false;
+        if(db.queryForObject("SELECT COUNT(*) FROM grading_score_changes WHERE participant_id=?",Integer.class,c.participantId())>0
+                ||db.queryForObject("SELECT COUNT(*) FROM teacher_reviews WHERE participant_id=?",Integer.class,c.participantId())>0
+                ||db.queryForObject("SELECT COUNT(*) FROM grading_scores WHERE participant_id=?",Integer.class,c.participantId())>0
+                ||db.queryForObject("SELECT COUNT(*) FROM usage_reports WHERE participant_id=?",Integer.class,c.participantId())>0)
+            return false;
+        var rows=db.query("SELECT s.submission_mode,e.ended_at,e.ends_at FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.participant_id=?",
+                (r,n)->new Object[]{r.getString("submission_mode"),instant(r,"ended_at"),instant(r,"ends_at")},c.participantId());
+        if(rows.isEmpty()) return false;
+        String mode=(String)rows.get(0)[0];Instant ended=(Instant)rows.get(0)[1];
+        Instant cutoff="AUTO_DEADLINE".equals(mode)&&rows.get(0)[2]!=null?(Instant)rows.get(0)[2]:ended;
+        return mode!=null&&mode.startsWith("AUTO_")&&cutoff!=null&&Instant.now().isBefore(cutoff.plusSeconds(endGraceSeconds));
+    }
+    private void refreshAutoSubmission(Context c) {
+        var snapshot=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c));
+        String content=encode(snapshot);
+        db.update("UPDATE submissions SET snapshot=?,review_token=? WHERE participant_id=?",content,sha(content),c.participantId());
+        requestAnalysis(c.evaluationId(),c.participantId());
+    }
+    public int endGraceSeconds() { return endGraceSeconds; }
+    private static String sha(String content) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8))); }
+        catch(NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }
     /** 제출 직후 분석을 예약합니다. GradingAnalysisJob이 처리하며 조회 시에도 즉시 계산됩니다. */
     void requestAnalysis(String evaluationId,String participantId) {
