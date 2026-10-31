@@ -110,6 +110,21 @@ public class AuthService {
         db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",p.userId());
         db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=(SELECT family_id FROM auth_sessions WHERE id=? AND user_id=?)",now(),p.sessionId(),p.userId());
     }
+    public User updateName(Principal p,String name) {
+        String value=name==null?"":name.strip();
+        if(value.isEmpty()||value.length()>50) throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이름은 1~50자여야 합니다.");
+        db.update("UPDATE app_users SET display_name=?,updated_at=? WHERE id=?",value,now(),p.userId());
+        return me(p.userId());
+    }
+    /** 현재 비밀번호 확인 후 변경하고, 지금 로그인한 세션을 제외한 다른 기기의 세션을 모두 폐기합니다. */
+    @Transactional(noRollbackFor=ApiError.Failure.class)
+    public void changePassword(Principal p,String current,String next) {
+        var rows=db.queryForList("SELECT password_hash FROM app_users WHERE id=? FOR UPDATE",String.class,p.userId());
+        if(rows.isEmpty()||!encoder.matches(current,rows.get(0))) throw fail(HttpStatus.BAD_REQUEST,"INVALID_CURRENT_PASSWORD","현재 비밀번호가 올바르지 않습니다.");
+        if(next.equals(current)) throw fail(HttpStatus.BAD_REQUEST,"PASSWORD_UNCHANGED","새 비밀번호가 현재 비밀번호와 같습니다.");
+        db.update("UPDATE app_users SET password_hash=?,updated_at=? WHERE id=?",encoder.encode(next),now(),p.userId());
+        db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND family_id<>(SELECT family_id FROM auth_sessions WHERE id=?)",now(),p.userId(),p.sessionId());
+    }
     public void bootstrap(String code,String school) {
         if(code.isBlank())return;
         if(code.length()<32||code.length()>128||school.isBlank()||school.length()>100)throw new IllegalStateException("Bootstrap invitation requires a 32..128 character code and a school name");

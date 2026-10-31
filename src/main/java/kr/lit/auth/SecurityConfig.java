@@ -34,7 +34,7 @@ public class SecurityConfig {
         if(allowed.contains("*"))throw new IllegalArgumentException("CORS requires explicit frontend origins");
         if(!allowed.isEmpty()) {
             var config=new org.springframework.web.cors.CorsConfiguration();
-            config.setAllowedOrigins(allowed);config.setAllowedMethods(List.of("GET","POST","PUT","OPTIONS"));
+            config.setAllowedOrigins(allowed);config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
             config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Participant-Token"));
             config.setExposedHeaders(List.of("Content-Disposition"));config.setAllowCredentials(false);config.setMaxAge(3600L);
             source.registerCorsConfiguration("/api/**",config);
@@ -56,6 +56,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
+                .requestMatchers("/api/users/me","/api/users/me/**").hasRole("TEACHER")
                 .requestMatchers("/api/auth/me","/api/auth/logout").authenticated().anyRequest().denyAll())
             .addFilterBefore(new BearerFilter(auth,participants,json),UsernamePasswordAuthenticationFilter.class).build();
     }
@@ -77,8 +78,8 @@ public class SecurityConfig {
         }
         protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain) throws ServletException,IOException {
             res.setHeader("Cache-Control","no-store");String path=req.getRequestURI().substring(req.getContextPath().length());
-            int max=path.contains("signup")?20:30;
-            boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/");
+            int max=path.equals("/api/users/me/password")?10:path.contains("signup")?20:30;
+            boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/")||path.equals("/api/users/me/password");
             String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path;
             if(limited&&!limit(req.getRemoteAddr(),group,max)) {error(res,json,429,"RATE_LIMITED","요청이 많습니다. 잠시 후 다시 시도해주세요.");return;}
             boolean studentPath=path.startsWith("/api/student/evaluations/");
