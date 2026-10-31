@@ -283,3 +283,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.
 
 교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요.
+
+## 수행평가 틀과 반별 회차
+
+공통 문제를 한 번 정의하고 반별 PIN·시작·제출·채점을 분리하는 API는 [docs/ASSESSMENT_CLASSES.md](docs/ASSESSMENT_CLASSES.md)를 참고하세요. 이 변경은 로컬 커밋에 포함되어 있으며 아직 푸시·운영 배포하지 않았습니다.
