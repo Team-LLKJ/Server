@@ -2,7 +2,7 @@
 
 ## 수행평가 안내
 
-`guidelines`는 기존 `evaluationContent`와 동일한 `evaluations.evaluation_content` DB 값을 사용합니다. 기존 저장값은 그대로 새 필드로 조회됩니다. 일반 텍스트 최대 10,000자이며 공백·줄바꿈을 유지합니다. 학생 화면에서는 텍스트로 출력하세요.
+`guidelines`는 기존 `evaluationContent`와 동일한 `evaluations.evaluation_content` DB 값을 사용합니다. 기존 저장값은 그대로 새 필드로 조회됩니다. 안전한 HTML 또는 일반 텍스트를 받습니다. 원본/정리 결과 각각 최대10,000자이며 굵게·목록 등 허용 서식과 줄바꿈을 유지합니다. script·이벤트 속성 등은 제거합니다. 학생 화면은 안전한 HTML 렌더링을 적용하세요.
 
 - `POST /api/teacher/evaluations`: `guidelines` 선택 필드 추가. 생략/null이면 기존 evaluationContent를 사용하거나 빈 문자열로 생성합니다. 두 필드를 동시에 보내면 값이 같아야 합니다 (다르면 400 INVALID_REQUEST).
 - `PUT /api/teacher/evaluations/{id}/configuration`: 기존 `/questions`의 별칭. aiPolicy·questions 전체와 함께 guidelines를 보냅니다. guidelines 생략/null이면 기존 내용 유지, `""`이면 삭제합니다. 새 문항 ID가 발급되므로 응답을 사용하세요. WAITING에서만 문항을 변경하고, 안내 변경은 만료 전만 가능합니다.

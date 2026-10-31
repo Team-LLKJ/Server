@@ -113,3 +113,6 @@ CREATE TABLE IF NOT EXISTS teacher_review_changes (
 CREATE INDEX IF NOT EXISTS idx_review_changes_participant ON teacher_review_changes(participant_id,id);
 ALTER TABLE teacher_review_changes ADD COLUMN IF NOT EXISTS previous_max_score INT NOT NULL DEFAULT 4;
 ALTER TABLE teacher_review_changes ADD COLUMN IF NOT EXISTS max_score INT NOT NULL DEFAULT 4;
+
+-- HTML 안내 서식을 보존하면서 기존 기본값을 유지합니다.
+ALTER TABLE evaluations ALTER COLUMN evaluation_content CLOB DEFAULT '' NOT NULL;

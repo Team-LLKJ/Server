@@ -14,7 +14,7 @@ final class AnswerHtml {
         if(value.getBytes(StandardCharsets.UTF_8).length>MAX_BYTES)
             throw new ApiError.Failure(HttpStatus.PAYLOAD_TOO_LARGE,"ANSWER_TOO_LARGE","답안 HTML은 UTF-8 기준 1MiB 이하여야 합니다.");
         if(!value.matches("(?s).*<\\s*(?:/?[A-Za-z]|!).*")) return value;
-        var safe=Safelist.relaxed().addTags("colgroup","col","s","mark","span","div")
+        var safe=Safelist.relaxed().addTags("colgroup","col","s","mark","span","div","u","h1","h2","h3","h4","h5","h6","hr")
                 .addAttributes("td","colspan","rowspan","colwidth")
                 .addAttributes("th","colspan","rowspan","colwidth")
                 .addAttributes("col","span","width","colwidth")

@@ -101,7 +101,7 @@ public class WorkService {
         for(var q:config.questions()) db.update("INSERT INTO questions VALUES (?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,config.aiPolicy().name());
         if(config.guidelines()!=null) {
-            db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",config.guidelines(),id);
+            db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(config.guidelines()),id);
         }
         if(config.durationMinutes()!=null) db.update("UPDATE evaluations SET duration_minutes=? WHERE id=?",config.durationMinutes(),id);
         return new Configuration(id,config.aiPolicy(),questions(id),guidelines(id),durationMinutes(id));
