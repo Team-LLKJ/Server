@@ -50,7 +50,7 @@ public class GradingService {
         for(var event:detail.work().path("learningEvents")) {
             String type=event.path("type").asText();
             switch(type) {case "ANSWER_SAVED"->saves++;case "AI_REQUESTED"->asked++;case "AI_COMPLETED"->completed++;case "AI_FAILED"->failed++;default->{}}
-            if(type.equals("WINDOW_LEAVE")||type.equals("SHORTCUT_CAPTURE")) {
+            if(WorkModels.ClientEventType.warningNames().contains(type)) {
                 Instant received=time(event.path("createdAt")),occurred=time(event.path("details").path("occurredAt"));
                 warnings.add(new ActivityWarning(event.path("id").asLong(),type,event.path("questionId").isNull()?null:event.path("questionId").asText(),occurred==null?received:occurred,received,event.path("details").path("clientReported").asBoolean(false)));
             }
@@ -64,7 +64,7 @@ public class GradingService {
         }
         long warningCount=warnings.size();
         var recent=warnings.stream().skip(Math.max(0,warnings.size()-200)).toList();
-        String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·단축키 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";
+        String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·캡처·복사 시도 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";
         return new Activity(null,usage,recent,warningCount,warningCount>200,summary,detail.analysis().method());
     }
     private String purposeLabel(String purpose) {return switch(purpose) {
