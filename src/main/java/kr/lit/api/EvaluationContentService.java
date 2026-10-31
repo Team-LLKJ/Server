@@ -34,7 +34,7 @@ public class EvaluationContentService {
             throw new ApiError.Failure(HttpStatus.CONFLICT,"EVALUATION_CONTENT_LOCKED","평가 시작 후에는 평가 내용을 수정할 수 없습니다.");
         if(!evaluation.expiresAt().isAfter(Instant.now()))
             throw new ApiError.Failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
-        db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",value,id);
+        db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(value),id);
         return read(id);
     }
     public Content student(String id,String token) {
