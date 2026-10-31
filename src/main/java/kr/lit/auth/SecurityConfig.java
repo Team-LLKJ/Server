@@ -56,7 +56,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
-                .requestMatchers("/api/users/me","/api/users/me/**").hasRole("TEACHER")
+                .requestMatchers("/api/notifications","/api/notifications/**","/api/users/me","/api/users/me/**").hasRole("TEACHER")
                 .requestMatchers("/api/auth/me","/api/auth/logout").authenticated().anyRequest().denyAll())
             .addFilterBefore(new BearerFilter(auth,participants,json),UsernamePasswordAuthenticationFilter.class).build();
     }

@@ -18,7 +18,8 @@ import static kr.lit.api.WorkModels.*;
 public class WorkService {
     private final JdbcTemplate db;
     private final ObjectMapper json;
-    public WorkService(JdbcTemplate db, ObjectMapper json) { this.db=db; this.json=json; }
+    private final NotificationService notifications;
+    public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications) { this.db=db; this.json=json; this.notifications=notifications; }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
         return new ApiError.Failure(status, code, message);
@@ -144,6 +145,9 @@ public class WorkService {
         event(c,questionId,"ANSWER_SAVED",change);
         return answer(c.participantId(),questionId);
     }
+    private String nickname(String participantId) {
+        return db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,participantId);
+    }
     public Event recordClientEvent(String id,String token,ClientEvent input) {
         var c=authenticate(id,token);editable(c);
         if(input.questionId()!=null) question(id,input.questionId());
@@ -208,6 +212,7 @@ public class WorkService {
         var now=OffsetDateTime.now(ZoneOffset.UTC);
         db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(review.content()),now);
         event(c,null,"SUBMITTED",Map.of("reviewToken",reviewToken));
+        notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",c.participantId(),"submission:"+c.participantId());
         return submission(c);
     }
     private Submission submission(Context c) {
@@ -237,6 +242,7 @@ public class WorkService {
         db.update("UPDATE ai_turns SET state='FAILED',error_code='EVALUATION_CLOSED',completed_at=CURRENT_TIMESTAMP WHERE evaluation_id=? AND state='PENDING'",id);
         if(!wasStarted)return;
         var participants=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? ORDER BY id",String.class,id);
+        int autoSubmitted=0;
         for(String pid:participants) {
             var context=new Context(id,pid,"ENDED",e.expiresAt());
             if(submitted(context))continue;
@@ -246,7 +252,12 @@ public class WorkService {
             catch(NoSuchAlgorithmException ex){throw new IllegalStateException(ex);}
             db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at,submission_mode) VALUES (?,?,?,?,?,?)",pid,id,hash,content,OffsetDateTime.ofInstant(now,ZoneOffset.UTC),mode);
             event(context,null,"SUBMITTED",Map.of("reviewToken",hash,"submissionMode",mode));
+            autoSubmitted++;
         }
+        String title=db.queryForObject("SELECT title FROM evaluations WHERE id=?",String.class,id);
+        notifications.notifyOwner(id,NotificationService.Type.EVALUATION_ENDED,"평가 종료",
+                "'"+title+"' 평가가 "+(expired?"제한 시간 만료로":"교사 종료로")+" 종료되었습니다. 미제출 "+autoSubmitted+"명의 최신 저장 답안을 자동 제출했습니다.",
+                null,"ended:"+id);
     }
 
     public Reservation reserve(String id,String token,String questionId,Ask ask,String provider,String model) {
