@@ -85,6 +85,8 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | POST | `/api/teacher/evaluations` | 평가 생성 |
 | GET | `/api/teacher/evaluations?page=0&size=20` | 내가 만든 평가 목록 |
 | GET | `/api/teacher/evaluations/{id}` | 평가 정보·PIN |
+| PATCH | `/api/teacher/evaluations/{id}` | 제목·풀이 시간·PIN 유효 시간 수정 (WAITING만) |
+| DELETE | `/api/teacher/evaluations/{id}` | 평가와 관련 기록 삭제 (진행 중 불가) |
 | PUT | `/api/teacher/evaluations/{id}/content` | 평가 기준·규칙 저장 (대기 중 소유 교사) |
 | GET | `/api/teacher/evaluations/{id}/content` | 저장한 평가 내용 조회 (소유 교사) |
 | GET | `/api/evaluations/{id}/content` | 평가 내용 조회 (해당 평가 참가자) |
@@ -106,6 +108,8 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | POST | `/api/evaluations/{id}/questions/{questionId}/ai/questions` | AI 질문 |
 | GET | `/api/evaluations/{id}/conversations` | 본인 대화 |
 | GET | `/api/evaluations/{id}/learning-events` | 본인 학습 기록 |
+| POST | `/api/evaluations/{id}/learning-events` | 창 이탈·캡처·복사 시도·붙여넣기·AI 답변 복사 기록 |
+| GET·PUT | `/api/evaluations/{id}/ai-disclosure` | 사용한 AI 도구·활용 부분·선택 이유 |
 | GET | `/api/evaluations/{id}/submission-preview` | 제출 내용 확인 |
 | POST | `/api/evaluations/{id}/submission` | 최종 제출 확정 |
 | GET | `/api/evaluations/{id}/submission` | 확정된 기록 조회 |
@@ -117,13 +121,43 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 참여 응답은 participantId·participantToken·lobby를 반환합니다.
 재접속은 `{"pin":"012345","participantToken":"기존 토큰"}`으로 호출하며 참가자 ID·답안·닉네임을 유지합니다.
 
+### 교사 채점 화면 (AI 활용 평가 기준, 100점)
+
+상세: [docs/AI_GRADING.md](docs/AI_GRADING.md), 프런트 요청 답변: [docs/FRONTEND_REQUESTS_2026-10-31.md](docs/FRONTEND_REQUESTS_2026-10-31.md)
+
+| 메서드 | 경로 (`/api/teacher/evaluations/{id}` 기준) | 기능 |
+|---|---|---|
+| GET | `/submissions` | 학생별 제출·경고·채점 상태·총점 |
+| GET | `/participants/{pid}/answers` | 답안과 문단별 출처(추정) |
+| GET | `/participants/{pid}/conversations` | AI 대화와 질문 유형 |
+| GET | `/participants/{pid}/analysis` | 규칙 기반 활용 분석(정책 점검·유사도 참고·질문 유형) |
+| POST | `/analysis/run` | 제출 학생 전체 재분석 |
+| GET·PUT·DELETE | `/rubric` | 평가 기준·배점 (채점 시작 전 변경) |
+| GET | `/participants/{pid}/rubric-scores` | AI 추천·교사 점수 |
+| PUT | `/participants/{pid}/rubric-scores/{criterionId}` | 기준 하나 저장 `{level,feedback}` |
+| GET | `/participants/{pid}/rubric-scores/history` | 점수 변경 이력 |
+| POST | `/participants/{pid}/grade/confirm` | 채점 확정 |
+| PUT | `/participants/{pid}/compliance-review` | 허용 범위 교사 판단(판단 보류 등) |
+
+### 알림·내 정보
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| GET | `/api/notifications?page=0&size=20&unreadOnly=false` | 알림 목록 |
+| GET | `/api/notifications/unread-count` | 읽지 않은 개수 |
+| PATCH | `/api/notifications/{id}/read` | 하나 읽음 |
+| POST | `/api/notifications/read-all` | 모두 읽음 |
+| GET·PUT | `/api/users/me/settings` | 알림 받기·소리 설정 |
+| GET·PATCH | `/api/users/me` | 내 정보·이름 변경 |
+| POST | `/api/users/me/password` | 비밀번호 변경 (다른 기기 로그인 해제) |
+
 ## 답안·AI·제출 정책
 
 - 답안 저장: `{"content":"답안","expectedVersion":0,"source":"DIRECT"}`.
 - content 입력 최대 UTF-8 1MiB, 표 HTML·빈 답안 허용. 현재 버전이 일치해야 저장되며 성공 시 version +1.
 - source는 DIRECT / AI_REFERENCED / AI_USED. AI 참고·사용은 같은 참가자·문항의 완료된 aiRequestId 필요.
 - 문항 전환 전 저장 성공을 확인하세요. 프런트의 미저장 입력 보존·실패 표시는 별도 구현 항목입니다.
-- AI 정책은 DISABLED / HINT_ONLY / FULL. HINT_ONLY는 모델에 지시하는 제한으로 정답 미노출을 보장하지는 않습니다.
+- AI 정책은 AIAS 5단계: DISABLED(1) / HINT_ONLY(2) / EDIT_ASSIST(3) / TASK_ASSIST(4) / FULL(5). 설정 시 aiPolicy 또는 aiLevel(1~5)을 보냅니다. HINT_ONLY·EDIT_ASSIST·TASK_ASSIST는 모델에 지시하는 제한으로 정답 미노출을 보장하지는 않습니다.
 - AI 질문: `{"requestId":"ask-001","text":"힌트를 주세요"}`. text 최대 4,000자.
 - requestId는 `[A-Za-z0-9_-]{1,64}`. 같은 요청 재시도는 같은 ID·본문, 새 질문은 새 ID.
 - 참가자당 동시 1건·분당 10건·평가당 100건. 실패도 기록되며 자동 재호출하지 않습니다.
@@ -131,6 +165,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 - 대화·학습 기록은 `afterId=0&limit=100` 커서 조회. limit은 1~200. 대화에는 선택적 questionId 필터가 있습니다.
 - 제출은 미리 확인 응답의 reviewToken을 `{"reviewToken":"..."}`으로 전달합니다. 내용 변경 시 409 REVIEW_CHANGED.
 - AI 진행 중에는 제출 불가. 빈 답안은 확인 후 제출 가능. 제출 후 답안·대화는 읽기 전용입니다.
+- 교사 종료·시간 만료 시 미제출자는 자동 제출되며, 종료 후 저장은 기본적으로 거절합니다. 선택 설정 `LIT_EVALUATION_END_GRACE_SECONDS`의 기본값은0이며, 별도 합의로 켜더라도 채점·리포트가 있는 답안은 변경하지 못합니다.
 - 평가 state는 WAITING / STARTED / ENDED. 학생 screen은 WAITING / SOLVING / SUBMITTED / ENDED / EXPIRED.
 - 연결 갱신이 30초 없으면 DISCONNECTED. 상태 조회를 3~5초 간격, 별도 heartbeat는 10초 간격으로 호출하세요.
 
@@ -227,11 +262,11 @@ if (!response.ok || result.state === 'FAILED') {
 
 ## 교사 검토·리포트
 
-학생 목록·상세, 기록 근거 기반 활용 분류, 교사 5개 영역 검토, 제출 리포트 버전 생성·조회, PDF 다운로드를 지원합니다. 자세한 요청·응답과 임시 평가 기준은 [docs/REPORTS.md](docs/REPORTS.md)를 참고하세요. 실제 점수는 교사만 입력하고 자동 채점하지 않습니다. POST reports는 제출 확정 이후에만 가능하며 백그라운드 생성 주기는30초입니다.
+학생 목록·상세, 기록 근거 기반 활용 분류, 교사 5개 영역 검토, 제출 리포트 버전 생성·조회, PDF 다운로드를 지원합니다. 자세한 요청·응답과 임시 평가 기준은 [docs/REPORTS.md](docs/REPORTS.md)를 참고하세요. 기존 리뷰 점수는 교사가 입력합니다. 새 Assessment API는 기록이 있는 항목의 규칙 기반 추천을 별도로 제공하며 최종 성적은 교사가 확정합니다. 기여도는 자동 추천하지 않습니다. POST reports는 제출 확정 이후에만 가능하며 백그라운드 생성 주기는30초입니다.
 
 ### Gemini 오류 진단
 
-현재 서버에서 `gemini-2.5-flash` 호출이 신규 사용자 모델 이용 제한으로404를 반환하는 것을 확인했습니다. API 키가 있어도 해당 모델을 사용할 수 없으면 실패합니다. 같은 키로 gemini-3.1-flash-lite는 실제200 응답을 확인했습니다. `export GEMINI_MODEL=gemini-3.1-flash-lite`로 변경한 같은 터미널에서 서버를 재시작하세요. 모델 목록에 표시되는 것만으로 호출 권한을 보장하지는 않습니다. 모델을 자동 교체하거나 유료 결제를 활성화하지 않습니다.
+2026-11-01 운영 확인에서는 `gemini-3.1-flash-lite`가 반복503을 반환했고, 같은 키로 `gemini-3.5-flash-lite`는200과 정상 텍스트를 반환했습니다. `GEMINI_MODEL=gemini-3.5-flash-lite`를 현재 운영 설정 예시로 사용합니다. 모델의 가용성·요금·프로젝트 한도는 변할 수 있으므로 실제 사용할 키로 호출해 검증하세요. 모델 목록 조회만으로 생성 호출 권한을 보장하지 않습니다. 모델을 자동 교체하거나 유료 결제를 활성화하지 않습니다.
 
 오류는 Turn(state=FAILED,errorCode=...)로 반환합니다. AI_MODEL_UNAVAILABLE(HTTP502): 모델404; AI_AUTHENTICATION_FAILED(502): 키·권한 오류; AI_INVALID_PROVIDER_REQUEST(502): 제공자 요청400; AI_PROVIDER_UNAVAILABLE(502): 제공자5xx; AI_PROVIDER_RATE_LIMITED(502): 제공자429; AI_NOT_CONFIGURED(503): 서버 키·모델 미설정; AI_TIMEOUT(504): 응답 제한 초과. 키 원문·제공자 원문 오류는 반환하거나 로그에 기록하지 않습니다.
 
