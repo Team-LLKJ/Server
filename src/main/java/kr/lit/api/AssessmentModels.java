@@ -62,7 +62,7 @@ public final class AssessmentModels {
     // ---- 제출 현황·답안·대화 ----
     public record SubmissionRow(String participantId,String name,String nickname,String status,boolean submitted,String submissionStatus,
                                 Instant submittedAt,String submissionMode,int warningCount,String gradingStatus,Double totalScore,
-                                Double totalAi,ComplianceResult compliance,String analysisStatus,int recommendedMaxScore) {}
+                                Double totalAi,ComplianceResult compliance,String analysisStatus,int recommendedMaxScore,Instant lastEventAt) {}
     public record SubmissionCounts(long submitted,long warning,long writing,long confirmed) {}
     public record Submissions(String evaluationId,List<SubmissionRow> items,int page,int size,long totalElements,long totalPages,SubmissionCounts counts) {}
     public record AnswerQuestion(String questionId,int position,String title,String content,String answerHtml,int version,Instant updatedAt,

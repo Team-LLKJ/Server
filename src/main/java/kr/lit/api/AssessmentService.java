@@ -279,9 +279,9 @@ public class AssessmentService {
         long warning=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+">0",Long.class,id,q);
         long submittedCount=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+"=0 AND EXISTS (SELECT 1 FROM submissions s WHERE s.participant_id=p.id)",Long.class,id,q);
         long confirmed=db.queryForObject("SELECT COUNT(*)"+filter+" AND EXISTS (SELECT 1 FROM grading_results g WHERE g.participant_id=p.id AND g.grading_status='CONFIRMED')",Long.class,id,q);
-        var rows=db.query("SELECT p.id,p.nickname,s.submitted_at,s.submission_mode,"+warn+" warnings FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id"
+        var rows=db.query("SELECT p.id,p.nickname,s.submitted_at,s.submission_mode,"+warn+" warnings,(SELECT MAX(e.created_at) FROM learning_events e WHERE e.participant_id=p.id) last_event_at FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id"
                         +" WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0 ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",
-                (r,n)->new Object[]{r.getString("id"),r.getString("nickname"),instant(r,"submitted_at"),r.getString("submission_mode"),r.getInt("warnings")},id,q,size,(long)page*size);
+                (r,n)->new Object[]{r.getString("id"),r.getString("nickname"),instant(r,"submitted_at"),r.getString("submission_mode"),r.getInt("warnings"),instant(r,"last_event_at")},id,q,size,(long)page*size);
         var items=new ArrayList<SubmissionRow>();
         for(var row:rows) {
             String pid=(String)row[0];Instant at=(Instant)row[2];int warnings=(Integer)row[4];boolean done=at!=null;
@@ -294,7 +294,7 @@ public class AssessmentService {
             Double totalScore="CONFIRMED".equals(view.status())?view.confirmedTotal():null;
             items.add(new SubmissionRow(pid,(String)row[1],(String)row[1],warnings>0?"WARNING":done?"SUBMITTED":"WRITING",done,
                     done?"SUBMITTED":"NOT_SUBMITTED",at,(String)row[3],warnings,view.status(),totalScore,view.totalAi(),
-                    analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),done?(analysis==null?"FAILED":analysis.status()):"NOT_SUBMITTED",view.recommendedMaxScore()));
+                    analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),done?(analysis==null?"FAILED":analysis.status()):"NOT_SUBMITTED",view.recommendedMaxScore(),(Instant)row[5]));
         }
         return new Submissions(id,items,page,size,total,(total+size-1)/size,new SubmissionCounts(submittedCount,warning,total-warning-submittedCount,confirmed));
     }

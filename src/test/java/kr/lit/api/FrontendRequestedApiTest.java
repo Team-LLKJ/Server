@@ -56,6 +56,17 @@ class FrontendRequestedApiTest extends AuthTestSupport {
         mvc.perform(body(request(post(url),newTeacher()),Map.of("additionalMinutes",10))).andExpect(status().isNotFound());
         as(teacher);evaluations.end(e.id());mvc.perform(body(request(post(url),teacher),Map.of("additionalMinutes",10))).andExpect(status().isConflict());
     }
+    @Test void studentsAndSubmissionsExposeWarningCountsAndLastReceivedEventTime() throws Exception {
+        var t=createTemplate();String id=t.path("id").asText(),c=add(id).path("classId").asText();var started=start(id,c);as(teacher);
+        var p=evaluations.join(started.path("pin").asText(),"학생",null);var occurred=Instant.now().minusSeconds(60);
+        mvc.perform(body(post("/api/student/evaluations/"+c+"/events").header("X-Participant-Token",p.participantToken()),Map.of("type","WINDOW_LEAVE","occurredAt",occurred))).andExpect(status().isCreated());
+        mvc.perform(body(post("/api/student/evaluations/"+c+"/events").header("X-Participant-Token",p.participantToken()),Map.of("type","SHORTCUT_CAPTURE","occurredAt",occurred))).andExpect(status().isCreated());
+        var students=ok(request(get("/api/teacher/evaluations/"+c+"/students"),teacher));var row=students.path("items").get(0);
+        assertThat(row.path("warningCount").asInt()).isEqualTo(2);assertThat(Instant.parse(row.path("lastEventAt").asText())).isAfter(occurred);
+        var submissions=ok(request(get("/api/teacher/evaluations/"+c+"/submissions"),teacher));
+        assertThat(submissions.path("items").get(0).path("warningCount").asInt()).isEqualTo(2);assertThat(submissions.path("items").get(0).path("lastEventAt").asText()).isEqualTo(row.path("lastEventAt").asText());
+        mvc.perform(request(get("/api/notifications/unread-count"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("unreadCount").value(1));
+    }
     @Test void selectionArraysRejectBlankDuplicateMixedAndUnsupportedCodes() throws Exception {
         for(var criteria:List.of(List.of(""),List.of("중복","중복"),List.of("제목",Map.of("name","상세","maxScore",100)))) {
             var v=templateInput();v.put("criteria",criteria);
