@@ -29,10 +29,17 @@ class WorkController {
     Workspace workspace(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token) {
         return work.workspace(id,token);
     }
-    @PostMapping({"/student/evaluations/{id}/events","/evaluations/{id}/events"})
+    @PostMapping({"/student/evaluations/{id}/events","/evaluations/{id}/events","/evaluations/{id}/learning-events","/student/evaluations/{id}/learning-events"})
     @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     Event recordEvent(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token,
                       @Valid @RequestBody ClientEvent input) { return work.recordClientEvent(id,token,input); }
+    @GetMapping({"/evaluations/{id}/ai-disclosure","/student/evaluations/{id}/ai-disclosure"})
+    DisclosureView disclosure(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token) {
+        return work.disclosure(id,token);
+    }
+    @PutMapping({"/evaluations/{id}/ai-disclosure","/student/evaluations/{id}/ai-disclosure"})
+    DisclosureView saveDisclosure(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token,
+                                  @Valid @RequestBody Disclosure input) { return work.saveDisclosure(id,token,input); }
     @GetMapping({"/evaluations/{id}/questions/{questionId}","/student/evaluations/{id}/questions/{questionId}"})
     QuestionAnswer select(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token) {
         return work.select(id,token,questionId);

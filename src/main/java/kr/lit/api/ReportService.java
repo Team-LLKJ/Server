@@ -40,14 +40,14 @@ public class ReportService {
      submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),activityWarning(pid)?"WARNING":submitted!=null?"SUBMITTED":"WRITING",activityWarning(pid));
   },pid,id).get(0);
  }
- private boolean activityWarning(String pid){return db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ('WINDOW_LEAVE','SHORTCUT_CAPTURE')",Integer.class,pid)>0;}
+ private boolean activityWarning(String pid){return db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",Integer.class,pid)>0;}
  public Students students(String id,int page,int size){return students(id,page,size,"");}
  public Students students(String id,int page,int size,String query){
   teacher(id);if(page<0||size<1||size>100||query==null||query.length()>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100, query는100자 이하입니다.");
   String filter=" FROM participants p WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0";
   String q=query.strip();
   long count=db.queryForObject("SELECT COUNT(*)"+filter,Long.class,id,q);
-  String warning="EXISTS (SELECT 1 FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ('WINDOW_LEAVE','SHORTCUT_CAPTURE'))";
+  String warning="EXISTS (SELECT 1 FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ("+WorkModels.ClientEventType.warningSql()+"))";
   long warnings=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warning,Long.class,id,q);
   long submitted=db.queryForObject("SELECT COUNT(*)"+filter+" AND NOT "+warning+" AND EXISTS (SELECT 1 FROM submissions s WHERE s.participant_id=p.id)",Long.class,id,q);
   var ids=db.queryForList("SELECT p.id"+filter+" ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",String.class,id,q,size,(long)page*size);

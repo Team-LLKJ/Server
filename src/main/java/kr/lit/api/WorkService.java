@@ -93,6 +93,8 @@ public class WorkService {
     }
     public Configuration configure(String id,Configure config) {
         var e=evaluation(id);
+        AiPolicy resolved=config.resolvedPolicy();
+        if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy 또는 aiLevel(1~5)이 필요하며 둘 다 보내면 같은 단계여야 합니다.");
         if(!e.state().equals("WAITING")) throw failure(HttpStatus.CONFLICT,"CONFIGURATION_LOCKED","시작 후에는 문항과 AI 정책을 변경할 수 없습니다.");
         if((config.guidelines()!=null||config.durationMinutes()!=null)&&!e.expiresAt().isAfter(Instant.now()))
             throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
@@ -100,15 +102,15 @@ public class WorkService {
             throw failure(HttpStatus.BAD_REQUEST,"DUPLICATE_POSITION","문항 순서는 중복될 수 없습니다.");
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions VALUES (?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content());
-        db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,config.aiPolicy().name());
+        db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
         if(config.guidelines()!=null) {
             db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(config.guidelines()),id);
         }
         if(config.durationMinutes()!=null) db.update("UPDATE evaluations SET duration_minutes=? WHERE id=?",config.durationMinutes(),id);
-        return new Configuration(id,config.aiPolicy(),questions(id),guidelines(id),durationMinutes(id));
+        return new Configuration(id,resolved,questions(id),guidelines(id),durationMinutes(id),resolved.level(),levelDescription(resolved));
     }
     public Configuration configuration(String id) {
-        evaluation(id);return new Configuration(id,policy(id),questions(id),guidelines(id),durationMinutes(id));
+        evaluation(id);var p=policy(id);return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p));
     }
     private int durationMinutes(String id) {return db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);}
     private String guidelines(String id) {
@@ -118,7 +120,8 @@ public class WorkService {
         var c=authenticate(id,token);started(c);
         finishEvaluation(id,true);c=authenticate(id,token);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),policy(id),answers(c),guidelines(id),guidelines(id));
+        var p=policy(id);
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p));
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);
@@ -154,11 +157,35 @@ public class WorkService {
         Instant now=Instant.now();
         if(input.occurredAt().isAfter(now.plusSeconds(300))||input.occurredAt().isBefore(now.minusSeconds(86400)))
             throw failure(HttpStatus.BAD_REQUEST,"INVALID_EVENT_TIME","이벤트 시각을 확인해주세요.");
-        int count=db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ('WINDOW_LEAVE','SHORTCUT_CAPTURE') AND created_at>=?",Integer.class,c.participantId(),OffsetDateTime.ofInstant(now.minusSeconds(60),ZoneOffset.UTC));
+        int count=db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ("+ClientEventType.clientSql()+") AND created_at>=?",Integer.class,c.participantId(),OffsetDateTime.ofInstant(now.minusSeconds(60),ZoneOffset.UTC));
         if(count>=60) throw failure(HttpStatus.TOO_MANY_REQUESTS,"EVENT_RATE_LIMITED","이벤트 요청이 많습니다. 잠시 후 다시 시도해주세요.");
-        var details=Map.of("occurredAt",input.occurredAt().toString(),"clientReported",true);
+        if(input.conversationId()!=null&&db.queryForObject("SELECT COUNT(*) FROM ai_turns WHERE id=? AND participant_id=?",Integer.class,input.conversationId(),c.participantId())==0)
+            throw failure(HttpStatus.NOT_FOUND,"CONVERSATION_NOT_FOUND","본인의 AI 대화가 아닙니다.");
+        var details=new LinkedHashMap<String,Object>();
+        details.put("occurredAt",input.occurredAt().toString());details.put("clientReported",true);
+        details.put("warning",input.type().warning());
+        if(input.length()!=null) details.put("length",input.length());
+        if(input.conversationId()!=null) details.put("conversationId",input.conversationId());
         long eventId=event(c,input.questionId(),input.type().name(),details);
+        if(input.type().warning()) notifications.notifyOwner(id,NotificationService.Type.WARNING,"경고 이벤트 기록",
+                nickname(c.participantId())+" 학생에게 창 이탈·캡처·복사 시도 등 경고 이벤트가 기록되었습니다. 신고 기록만으로 부정행위를 판단하지 않습니다.",
+                c.participantId(),"warning:"+c.participantId());
         return db.queryForObject("SELECT * FROM learning_events WHERE id=?",(r,n)->new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),eventId);
+    }
+    /** 투명성 영역 근거: 학생이 직접 적는 사용 AI 도구·활용 부분·선택 이유. 제출 전까지만 수정할 수 있습니다. */
+    public DisclosureView disclosure(String id,String token) {
+        var c=authenticate(id,token);started(c);
+        boolean editable=!submitted(c)&&c.state().equals("STARTED")&&c.expiresAt().isAfter(Instant.now());
+        var rows=db.query("SELECT * FROM ai_disclosures WHERE participant_id=?",(r,n)->new DisclosureView(id,c.participantId(),r.getString("tools"),
+                r.getString("used_parts"),r.getString("reason"),instant(r,"updated_at"),editable),c.participantId());
+        return rows.isEmpty()?new DisclosureView(id,c.participantId(),"","","",null,editable):rows.get(0);
+    }
+    public DisclosureView saveDisclosure(String id,String token,Disclosure input) {
+        var c=authenticate(id,token);editable(c);
+        db.update("MERGE INTO ai_disclosures(participant_id,evaluation_id,tools,used_parts,reason,updated_at) KEY(participant_id) VALUES (?,?,?,?,?,?)",
+                c.participantId(),id,input.tools().strip(),input.usedParts().strip(),input.reason().strip(),OffsetDateTime.now(ZoneOffset.UTC));
+        event(c,null,"AI_DISCLOSURE_SAVED",Map.of("toolsLength",input.tools().strip().length(),"usedPartsLength",input.usedParts().strip().length(),"reasonLength",input.reason().strip().length()));
+        return disclosure(id,token);
     }
     private Turn turn(ResultSet r,int n) throws SQLException {
         return new Turn(r.getLong("id"),r.getString("request_id"),r.getString("question_id"),r.getString("question_text"),
@@ -212,7 +239,8 @@ public class WorkService {
         var now=OffsetDateTime.now(ZoneOffset.UTC);
         db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(review.content()),now);
         event(c,null,"SUBMITTED",Map.of("reviewToken",reviewToken));
-        notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",c.participantId(),"submission:"+c.participantId());
+        notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",
+                c.participantId(),"submission:"+c.participantId());
         return submission(c);
     }
     private Submission submission(Context c) {
