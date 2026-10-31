@@ -98,6 +98,8 @@ public class ReportService {
   return new Analysis("KEYWORD_RULES_V1",classified.isEmpty()?"INSUFFICIENT_DATA":"REVIEW_REQUIRED",classified,missing,
     List.of("키워드 기반 분류이며 의미·정답 여부를 판정하지 않습니다.","답안 생성 요청 자체를 부정행위로 판단하지 않습니다. 교사 허용 정책과 함께 검토하세요.","외부 AI 이용, 미저장 입력과 실제 참고 여부는 관측할 수 없습니다.","분류는 복수 목적을 허용하며 점수를 자동 산출하지 않습니다."));
  }
+ /** 채점 화면용 원본: 제출 후에는 확정 snapshot, 제출 전에는 최신 저장본. 소유 교사만 조회할 수 있습니다. */
+ public JsonNode work(String id,String pid){teacher(id);person(id,pid);return source(id,pid);}
  public Detail detail(String id,String pid){teacher(id);person(id,pid);var src=source(id,pid);return new Detail(student(id,pid),src,classify(src),review(pid));}
  public TeacherReview saveReview(String id,String pid,ReviewInput input){
   teacher(id);person(id,pid);requireSubmitted(pid);

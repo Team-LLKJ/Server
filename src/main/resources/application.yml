@@ -23,6 +23,23 @@ lit:
     model: ${GEMINI_MODEL:${OPENAI_MODEL:}}
     endpoint: ${LIT_AI_ENDPOINT:}
     timeout-seconds: ${LIT_AI_TIMEOUT_SECONDS:45}
+  grading:
+    # AI 활용 채점 알고리즘 가중치·경계값 (docs/AI_GRADING.md 참고)
+    ai-used-threshold: ${LIT_GRADING_AI_USED_THRESHOLD:0.8}
+    ai-referenced-threshold: ${LIT_GRADING_AI_REFERENCED_THRESHOLD:0.4}
+    copy-event-bonus: ${LIT_GRADING_COPY_EVENT_BONUS:0.15}
+    drafting-penalty: ${LIT_GRADING_DRAFTING_PENALTY:1.0}
+    specific-question-min-length: ${LIT_GRADING_SPECIFIC_QUESTION_MIN_LENGTH:20}
+    usage-high-share: 0.5
+    usage-medium-share: 0.2
+    long-paste-length: 200
+    appropriate-types: CONCEPT_UNDERSTANDING,RESEARCH,IDEA_EXPLORATION
+    max-ai-used-share:
+      1: 0.0
+      2: 0.0
+      3: 0.3
+      4: 0.7
+      5: 1.0
   auth:
     bootstrap-teacher-invite: ${LIT_BOOTSTRAP_TEACHER_INVITE:}
     bootstrap-school: ${LIT_BOOTSTRAP_SCHOOL:}
