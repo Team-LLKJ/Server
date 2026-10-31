@@ -92,12 +92,14 @@ public class AssessmentService {
             list.add(new Criterion(n++,c.name().strip(),c.maxScore(),c.description()==null?"":c.description().strip(),levels,c.indicator(),"교사 지정"));
         }
         db.update("MERGE INTO evaluation_rubrics(evaluation_id,criteria_json,updated_at) KEY(evaluation_id) VALUES (?,?,?)",id,encode(list),now());
+        db.update("UPDATE evaluations SET criteria_json=?,criteria_kind='RUBRIC' WHERE id=? AND criteria_kind<>'TITLES'",encode(input.criteria()),id);
         return rubricView(id);
     }
     public Rubric resetRubric(String id) {
         teacher(id);
         if(rubricLocked(id)) throw fail(HttpStatus.CONFLICT,"RUBRIC_LOCKED","이미 채점이 시작된 평가는 기준을 바꿀 수 없습니다.");
         db.update("DELETE FROM evaluation_rubrics WHERE evaluation_id=?",id);
+        db.update("UPDATE evaluations SET criteria_json='[]',criteria_kind='LEGACY' WHERE id=? AND criteria_kind<>'TITLES'",id);
         return rubricView(id);
     }
 

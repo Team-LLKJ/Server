@@ -24,6 +24,7 @@ class SchemaUpgradeTest {
         assertThat(db.queryForObject("SELECT user_id FROM participants WHERE id='legacy-p'",String.class)).isNull();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM app_users",Integer.class)).isZero();
         assertThat(db.queryForObject("SELECT pin FROM evaluations WHERE id='legacy-e'",String.class)).isEqualTo("000001");
+        assertThat(db.queryForObject("SELECT anti_cheat_json FROM evaluations WHERE id='legacy-e'",String.class)).isEqualTo("{}");
         assertThat(db.queryForObject("SELECT content FROM questions WHERE id='legacy-q'",String.class)).isEqualTo("보존할 내용");
         assertThat(db.queryForObject("SELECT min_chars FROM questions WHERE id='legacy-q'",Integer.class)).isZero();
         assertThat(db.queryForObject("SELECT max_chars FROM questions WHERE id='legacy-q'",Integer.class)).isNull();

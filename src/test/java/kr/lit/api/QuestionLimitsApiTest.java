@@ -36,6 +36,16 @@ class QuestionLimitsApiTest extends AuthTestSupport {
         evaluations.end(f.id());var submitted=work.submission(f.id(),f.token());assertThat(submitted.submissionMode()).isEqualTo("AUTO_TEACHER_END");
         assertThat(submitted.snapshot().path("answers").get(0).path("answer").path("content").asText()).isEqualTo("짧은 초안");
     }
+    @Test void legacyConfigurationSavesCriteriaAndAntiCheatAndRubricChangesStayInSync() throws Exception {
+        var e=evaluations.create("기존 설정",60);String url="/api/teacher/evaluations/"+e.id();
+        var config=Map.of("aiPolicy","FULL","questions",List.of(Map.of("position",1,"title","q","content","c","minChars",2,"maxChars",20)),
+                "criteria",List.of(Map.of("name","내용 근거","maxScore",100)),"antiCheat",Map.of("windowLeave",false,"customFlag",true));
+        mvc.perform(body(request(put(url+"/configuration"),teacher),config)).andExpect(status().isOk()).andExpect(jsonPath("criteria[0].indicator").value("MANUAL"));
+        mvc.perform(request(get(url+"/configuration"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("antiCheat.windowLeave").value(false));
+        mvc.perform(request(get(url+"/rubric"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("criteria[0].name").value("내용 근거"));
+        mvc.perform(body(request(put(url+"/rubric"),teacher),Map.of("criteria",List.of(Map.of("name","새 기준","maxScore",100))))).andExpect(status().isOk());
+        mvc.perform(request(get(url+"/configuration"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("criteria[0].name").value("새 기준"));
+    }
     @Test void invalidLimitsDoNotReplaceExistingQuestions() throws Exception {
         var e=evaluations.create("검증",60);var original=work.configure(e.id(),new Configure(AiPolicy.FULL,List.of(new QuestionInput(1,"원본","본문"))));
         mvc.perform(body(request(put("/api/teacher/evaluations/"+e.id()+"/configuration"),teacher),new Configure(AiPolicy.FULL,List.of(new QuestionInput(1,"잘못된 문항","본문",50,10)))))
@@ -45,6 +55,14 @@ class QuestionLimitsApiTest extends AuthTestSupport {
     @Test void omittedLimitsKeepLegacyUnlimitedMaximumAndZeroMinimum() {
         var f=fixture(0,null);assertThat(work.configuration(f.id()).questions().get(0).maxChars()).isNull();
         var review=work.review(f.id(),f.token());assertThat(review.answerValidationErrors()).isEmpty();assertThat(review.canConfirm()).isTrue();
+    }
+    @Test void preExistingCustomRubricRemainsVisibleInConfiguration() {
+        var e=evaluations.create("기존 루브릭",60);
+        var criteria=List.of(new kr.lit.api.AssessmentModels.CriterionInput("기존 지정 기준",100,null,null,kr.lit.api.AssessmentModels.Indicator.MANUAL));
+        work.configure(e.id(),new Configure(AiPolicy.FULL,List.of(new QuestionInput(1,"질문","본문")),null,null,null,criteria,null));
+        // 새 criteria_json 컬럼이 없던 시점에 저장한 사용자 지정 루브릭을 재현합니다.
+        db.update("UPDATE evaluations SET criteria_json='[]',criteria_kind='LEGACY' WHERE id=?",e.id());
+        assertThat(json.valueToTree(work.configuration(e.id()).criteria()).get(0).path("name").asText()).isEqualTo("기존 지정 기준");
     }
 
 }

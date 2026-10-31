@@ -20,9 +20,10 @@ public class WorkService {
     private final ObjectMapper json;
     private final NotificationService notifications;
     private final int endGraceSeconds;
+    private final jakarta.validation.Validator validator;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds) {
-        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator) {
+        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;
     }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
@@ -103,6 +104,8 @@ public class WorkService {
         if((config.guidelines()!=null||config.durationMinutes()!=null)&&!e.expiresAt().isAfter(Instant.now()))
             throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
         QuestionLimits.validate(config.questions());
+        var criteria=CommonSettingsRules.criteria(json,validator,config.criteria());
+        if(config.antiCheat()!=null)CommonSettingsRules.antiCheat(json,config.antiCheat());
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
@@ -110,10 +113,33 @@ public class WorkService {
             db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(config.guidelines()),id);
         }
         if(config.durationMinutes()!=null) db.update("UPDATE evaluations SET duration_minutes=? WHERE id=?",config.durationMinutes(),id);
+        if(config.criteria()!=null) {
+            db.update("UPDATE evaluations SET criteria_json=?,criteria_kind=? WHERE id=?",encode(criteria),CommonSettingsRules.kind(criteria),id);
+            CommonSettingsRules.saveRubric(db,json,id,criteria);
+        }
+        if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(config.antiCheat()),id);
         return configuration(id);
     }
     public Configuration configuration(String id) {
-        evaluation(id);var p=policy(id);return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p));
+        evaluation(id);var p=policy(id);var shared=shared(id);
+        return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat());
+    }
+    private record Shared(List<?> criteria,JsonNode antiCheat) {}
+    private Shared shared(String id) {
+        return db.queryForObject("SELECT criteria_json,criteria_kind,anti_cheat_json FROM evaluations WHERE id=?",(r,n)->{
+            try {
+                List<?> criteria=json.readValue(r.getString("criteria_json"),new com.fasterxml.jackson.core.type.TypeReference<List<Object>>(){});
+                // 기존 사용자 지정 루브릭도 새 configuration 응답에서 읽을 수 있게 합니다.
+                if(criteria.isEmpty()&&r.getString("criteria_kind").equals("LEGACY")) {
+                    var old=db.queryForList("SELECT criteria_json FROM evaluation_rubrics WHERE evaluation_id=?",String.class,id);
+                    if(!old.isEmpty()) {
+                        List<AssessmentModels.Criterion> rubric=json.readValue(old.get(0),new com.fasterxml.jackson.core.type.TypeReference<List<AssessmentModels.Criterion>>(){});
+                        criteria=rubric.stream().map(c->new AssessmentModels.CriterionInput(c.name(),c.maxScore(),c.description(),c.levelDescriptions(),c.indicator())).toList();
+                    }
+                }
+                return new Shared(criteria,decode(r.getString("anti_cheat_json")));
+            }catch(JsonProcessingException ex){throw new IllegalStateException(ex);}
+        },id);
     }
     private int durationMinutes(String id) {return db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);}
     private String guidelines(String id) {
@@ -124,7 +150,8 @@ public class WorkService {
         finishEvaluation(id,true);c=authenticate(id,token);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         var p=policy(id);
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p));
+        var shared=shared(id);
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat());
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);

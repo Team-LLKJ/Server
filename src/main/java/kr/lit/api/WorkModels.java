@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.time.Instant;
 import java.util.List;
+import kr.lit.api.AssessmentModels.CriterionInput;
 
 public final class WorkModels {
     private WorkModels() {}
@@ -26,7 +27,10 @@ public final class WorkModels {
     }
     public record Configure(AiPolicy aiPolicy,
                             @NotEmpty @Size(max=100) List<@NotNull @Valid QuestionInput> questions, @Size(max=10000) String guidelines, @Min(1) @Max(1440) Integer durationMinutes,
-                            @Min(1) @Max(5) Integer aiLevel) {
+                            @Min(1) @Max(5) Integer aiLevel,
+                            @Size(max=10) List<?> criteria,
+                            com.fasterxml.jackson.databind.JsonNode antiCheat) {
+        public Configure(AiPolicy aiPolicy,List<QuestionInput> questions,String guidelines,Integer durationMinutes,Integer aiLevel) {this(aiPolicy,questions,guidelines,durationMinutes,aiLevel,null,null);}
         public Configure(AiPolicy aiPolicy,List<QuestionInput> questions,String guidelines,Integer durationMinutes) { this(aiPolicy,questions,guidelines,durationMinutes,null); }
         public Configure(AiPolicy aiPolicy,List<QuestionInput> questions,String guidelines) { this(aiPolicy,questions,guidelines,null,null); }
         public Configure(AiPolicy aiPolicy,List<QuestionInput> questions) { this(aiPolicy,questions,null,null,null); }
@@ -76,9 +80,11 @@ public final class WorkModels {
     public record QuestionAnswer(Question question, Answer answer) {}
     public record Workspace(String evaluationId, String participantId, String status, boolean readOnly,
                             AiPolicy aiPolicy, List<QuestionAnswer> questions, String evaluationContent, String guidelines,
-                            int aiLevel, String aiLevelDescription) {}
+                            int aiLevel, String aiLevelDescription,List<?> criteria,
+                            com.fasterxml.jackson.databind.JsonNode antiCheat) {}
     public record Configuration(String evaluationId, AiPolicy aiPolicy, List<Question> questions, String guidelines,int durationMinutes,
-                                int aiLevel, String aiLevelDescription) {}
+                                int aiLevel, String aiLevelDescription,List<?> criteria,
+                            com.fasterxml.jackson.databind.JsonNode antiCheat) {}
     public record Turn(long id, String requestId, String questionId, String questionText, String answerText,
                        String state, String errorCode, String provider, String model, AiPolicy aiPolicy,
                        int answerVersion, Instant createdAt, Instant completedAt) {}
