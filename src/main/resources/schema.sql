@@ -172,3 +172,27 @@ CREATE TABLE IF NOT EXISTS user_settings (
 
 -- HTML 정리 후 길이가 늘어날 수 있어 안내도 CLOB로 보존합니다. 입력 상한은 API에서 10,000자입니다.
 ALTER TABLE evaluations ALTER COLUMN evaluation_content CLOB DEFAULT '' NOT NULL;
+
+-- 수행평가 틀과 반별 회차. 기존 독립 evaluation은 assessment_id=NULL로 유지합니다.
+CREATE TABLE IF NOT EXISTS assessment_templates (
+ id VARCHAR(36) PRIMARY KEY, teacher_id VARCHAR(36) NOT NULL REFERENCES app_users(id),
+ title VARCHAR(100) NOT NULL, guidelines CLOB NOT NULL, ai_policy VARCHAR(20) NOT NULL,
+ criteria_json CLOB NOT NULL, anti_cheat_json CLOB NOT NULL, questions_json CLOB NOT NULL,
+ duration_minutes INT NOT NULL DEFAULT 60, revision INT NOT NULL DEFAULT 1,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_templates_teacher ON assessment_templates(teacher_id,updated_at,id);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS assessment_id VARCHAR(36) REFERENCES assessment_templates(id);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS class_name VARCHAR(100);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS class_name_key VARCHAR(100);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS template_revision INT;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS criteria_json CLOB NOT NULL DEFAULT '[]';
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS anti_cheat_json CLOB NOT NULL DEFAULT '{}';
+ALTER TABLE evaluations ALTER COLUMN pin DROP NOT NULL;
+ALTER TABLE evaluations ALTER COLUMN expires_at DROP NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assessment_class ON evaluations(assessment_id,class_name_key);
+CREATE INDEX IF NOT EXISTS idx_evaluations_assessment ON evaluations(assessment_id,id);
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS min_chars INT NOT NULL DEFAULT 0;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS max_chars INT;
+
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS criteria_kind VARCHAR(10) NOT NULL DEFAULT 'LEGACY';

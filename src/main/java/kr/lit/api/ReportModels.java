@@ -21,7 +21,7 @@ public final class ReportModels {
   public TeacherReview(int version,Compliance compliance,List<Rating> ratings,String comment,String teacherId,Instant reviewedAt){this(version,compliance,ratings,comment,teacherId,reviewedAt,4);}
  }
  public record Student(String participantId,String nickname,String presence,String submissionStatus,
-                       String workStatus,boolean warning,Instant submittedAt,Integer reportVersion,String reviewStatus,String status,boolean activityWarning) {}
+                       String workStatus,boolean warning,Instant submittedAt,Integer reportVersion,String reviewStatus,String status,boolean activityWarning,int warningCount,Instant lastEventAt) {}
  public record Counts(long submitted,long warning,long writing) {}
  public record Students(List<Student> items,int page,int size,long totalElements,long totalPages,Counts counts,List<Student> students) {}
  public record ScoreInput(@com.fasterxml.jackson.annotation.JsonProperty(required=true) @Min(0) @Max(20) Integer score,

@@ -30,6 +30,7 @@ public class EvaluationContentService {
     public Content update(String id,String value) {
         AccountAccess.require(Role.TEACHER);
         var evaluation=evaluations.details(id);
+        ClassSnapshots.requireStandalone(db,id);
         if(!evaluation.state().equals("WAITING"))
             throw new ApiError.Failure(HttpStatus.CONFLICT,"EVALUATION_CONTENT_LOCKED","평가 시작 후에는 평가 내용을 수정할 수 없습니다.");
         if(!evaluation.expiresAt().isAfter(Instant.now()))

@@ -31,16 +31,16 @@ public class ReportService {
  private Instant instant(java.sql.ResultSet r,String column)throws java.sql.SQLException{var t=r.getObject(column,OffsetDateTime.class);return t==null?null:t.toInstant();}
  private Student student(String id,String pid){
   var e=evaluations.details(id);
-  return db.query("SELECT p.*,s.submitted_at,(SELECT MAX(version) FROM usage_reports u WHERE u.participant_id=p.id) report_version FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id WHERE p.id=? AND p.evaluation_id=?",(r,n)->{
+  return db.query("SELECT p.*,s.submitted_at,(SELECT MAX(e.created_at) FROM learning_events e WHERE e.participant_id=p.id) last_event_at,(SELECT COUNT(*) FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ("+WorkModels.ClientEventType.warningSql()+")) warning_count,(SELECT MAX(version) FROM usage_reports u WHERE u.participant_id=p.id) report_version FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id WHERE p.id=? AND p.evaluation_id=?",(r,n)->{
    boolean active=r.getBoolean("active");boolean connected=active&&r.getObject("last_seen",OffsetDateTime.class).toInstant().isAfter(Instant.now().minusSeconds(30));
-   Instant submitted=instant(r,"submitted_at");boolean closed=e.state().equals("ENDED")||!e.expiresAt().isAfter(Instant.now());
+   int warningCount=r.getInt("warning_count");Instant lastEventAt=instant(r,"last_event_at");
+   Instant submitted=instant(r,"submitted_at");boolean closed=e.state().equals("ENDED")||e.expiresAt()!=null&&!e.expiresAt().isAfter(Instant.now());
    String status=submitted!=null?"SUBMITTED":closed?"CLOSED_UNSUBMITTED":"NOT_SUBMITTED";
    return new Student(pid,r.getString("nickname"),!active?"LEFT":connected?"CONNECTED":"DISCONNECTED",status,
      submitted!=null?"SUBMITTED":e.state().equals("ENDED")?"ENDED":closed?"EXPIRED":e.state().equals("STARTED")?"IN_PROGRESS":"WAITING",
-     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),activityWarning(pid)?"WARNING":submitted!=null?"SUBMITTED":"WRITING",activityWarning(pid));
+     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),warningCount>0?"WARNING":submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt);
   },pid,id).get(0);
  }
- private boolean activityWarning(String pid){return db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",Integer.class,pid)>0;}
  public Students students(String id,int page,int size){return students(id,page,size,"");}
  public Students students(String id,int page,int size,String query){
   teacher(id);if(page<0||size<1||size>100||query==null||query.length()>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100, query는100자 이하입니다.");
@@ -63,7 +63,10 @@ public class ReportService {
   root.put("aiPolicy",policy.isEmpty()?"DISABLED":policy.get(0));
   var answers=root.putArray("answers");
   db.query("SELECT q.*,a.content draft,a.version answer_version,a.updated_at FROM questions q LEFT JOIN answers a ON a.question_id=q.id AND a.participant_id=? WHERE q.evaluation_id=? ORDER BY q.position,q.id",r->{
-   var item=answers.addObject();item.putObject("question").put("id",r.getString("id")).put("position",r.getInt("position")).put("title",r.getString("title")).put("content",r.getString("content"));
+   var item=answers.addObject();var question=item.putObject("question");
+   question.put("id",r.getString("id")).put("position",r.getInt("position")).put("title",r.getString("title")).put("content",r.getString("content"));
+   question.set("minChars",json.valueToTree(r.getInt("min_chars")==0?null:r.getInt("min_chars")));
+   question.set("maxChars",json.valueToTree(r.getObject("max_chars")));
    var a=item.putObject("answer");a.put("questionId",r.getString("id")).put("content",Objects.toString(r.getString("draft"),"")).put("version",r.getInt("answer_version"));
    var updated=instant(r,"updated_at");a.put("updatedAt",updated==null?null:updated.toString());
   },pid,id);

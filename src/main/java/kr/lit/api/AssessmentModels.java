@@ -26,7 +26,9 @@ public final class AssessmentModels {
     public record Criterion(int criterionId,String name,int maxScore,String description,List<String> levelDescriptions,Indicator indicator,String basis) {}
     public record Rubric(String evaluationId,List<Criterion> criteria,int totalScore,boolean custom,boolean locked,List<Level> levels,String model,boolean provisional) {}
     public record CriterionInput(@NotBlank @Size(max=100) String name,@Min(1) @Max(100) int maxScore,@Size(max=1000) String description,
-                                 @Size(min=5,max=5) List<@NotNull @Size(max=500) String> levelDescriptions,@NotNull Indicator indicator) {}
+                                 @Size(min=5,max=5) List<@NotNull @Size(max=500) String> levelDescriptions,@NotNull Indicator indicator) {
+        public CriterionInput {if(indicator==null)indicator=Indicator.MANUAL;}
+    }
     public record RubricInput(@NotEmpty @Size(max=10) List<@NotNull @Valid CriterionInput> criteria) {}
 
     // ---- 분석 ----
@@ -60,7 +62,7 @@ public final class AssessmentModels {
     // ---- 제출 현황·답안·대화 ----
     public record SubmissionRow(String participantId,String name,String nickname,String status,boolean submitted,String submissionStatus,
                                 Instant submittedAt,String submissionMode,int warningCount,String gradingStatus,Double totalScore,
-                                Double totalAi,ComplianceResult compliance,String analysisStatus,int recommendedMaxScore) {}
+                                Double totalAi,ComplianceResult compliance,String analysisStatus,int recommendedMaxScore,Instant lastEventAt) {}
     public record SubmissionCounts(long submitted,long warning,long writing,long confirmed) {}
     public record Submissions(String evaluationId,List<SubmissionRow> items,int page,int size,long totalElements,long totalPages,SubmissionCounts counts) {}
     public record AnswerQuestion(String questionId,int position,String title,String content,String answerHtml,int version,Instant updatedAt,

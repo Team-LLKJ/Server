@@ -32,10 +32,12 @@ class ApiController {
  @DeleteMapping("/teacher/evaluations/{id}") ResponseEntity<Void> delete(@PathVariable String id){service.delete(id);return ResponseEntity.noContent().build();}
  @GetMapping("/teacher/evaluations/{id}/participants") Object list(@PathVariable String id){return service.lobby(id);}
  @PostMapping("/teacher/evaluations/{id}/start") Object start(@PathVariable String id){return service.start(id);}
+ record Extend(@Min(1) @Max(600) int additionalMinutes){}
+ @PostMapping("/teacher/evaluations/{id}/extend") Object extend(@PathVariable String id,@Valid @RequestBody Extend input){return service.extend(id,input.additionalMinutes());}
  @PostMapping("/teacher/evaluations/{id}/end") Object end(@PathVariable String id){return service.end(id);}
  @GetMapping(value="/teacher/evaluations/{id}/qr",produces=MediaType.IMAGE_PNG_VALUE)
  byte[] qr(@PathVariable String id) throws Exception {
-  var e=service.details(id); var matrix=new QRCodeWriter().encode(baseUrl+"?pin="+e.pin(),BarcodeFormat.QR_CODE,300,300);
+  var e=service.details(id); if(e.pin()==null)throw new ApiError.Failure(HttpStatus.CONFLICT,"CLASS_NOT_STARTED","반 시작 후 QR이 발급됩니다."); var matrix=new QRCodeWriter().encode(baseUrl+"?pin="+e.pin(),BarcodeFormat.QR_CODE,300,300);
   var out=new ByteArrayOutputStream();MatrixToImageWriter.writeToStream(matrix,"PNG",out);return out.toByteArray();
  }
  @GetMapping("/participation/verify") Object verify(@RequestParam String pin){return service.verify(pin);}

@@ -89,6 +89,14 @@
       "key": "notificationId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "assessmentId",
+      "value": ""
+    },
+    {
+      "key": "classId",
+      "value": ""
     }
   ],
   "item": [
@@ -2090,6 +2098,254 @@
               "mode": "raw",
               "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"새-비밀번호-10자이상\"\n}"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "수행평가 틀·반별 회차 (로컬 구현·미배포)",
+      "description": "틀 ID와 회차 ID를 구분하세요. 회차 classId=evaluationId로 기존 학생·채점 API를 재사용합니다.",
+      "item": [
+        {
+          "name": "틀 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('assessmentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "내 틀 목록",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments?page=0&size=20"
+          }
+        },
+        {
+          "name": "틀 상세",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
+          }
+        },
+        {
+          "name": "틀 전체 수정 (대기 반만 반영)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "1반 추가",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"className\": \"1반\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) { const r=pm.response.json(); pm.collectionVariables.set('classId', r.classId); pm.collectionVariables.set('evaluationId', r.evaluationId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "반 목록",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes"
+          }
+        },
+        {
+          "name": "반 시작 및 PIN 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/start",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresInMinutes\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const r=pm.response.json(); pm.collectionVariables.set('pin', r.pin); pm.collectionVariables.set('evaluationId', r.evaluationId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "진행 중 시간10분 연장",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/extend",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"additionalMinutes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "반 종료 (미제출 자동 제출)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/end"
+          }
+        },
+        {
+          "name": "시작 전 반 삭제",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}"
+          }
+        },
+        {
+          "name": "틀 전체 삭제 (모든 하위 기록 삭제)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
           }
         }
       ]

@@ -20,9 +20,10 @@ public class WorkService {
     private final ObjectMapper json;
     private final NotificationService notifications;
     private final int endGraceSeconds;
+    private final jakarta.validation.Validator validator;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds) {
-        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator) {
+        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;
     }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
@@ -71,7 +72,7 @@ public class WorkService {
     }
     private List<Question> questions(String id) {
         return db.query("SELECT * FROM questions WHERE evaluation_id=? ORDER BY position,id",(r,n)->
-                new Question(r.getString("id"),r.getInt("position"),r.getString("title"),r.getString("content")),id);
+                new Question(r.getString("id"),r.getInt("position"),r.getString("title"),r.getString("content"),r.getInt("min_chars")==0?null:r.getInt("min_chars"),(Integer)r.getObject("max_chars")),id);
     }
     private Question question(String id,String questionId) {
         return questions(id).stream().filter(q->q.id().equals(questionId)).findFirst()
@@ -97,24 +98,49 @@ public class WorkService {
     }
     public Configuration configure(String id,Configure config) {
         var e=evaluation(id);
+        ClassSnapshots.requireStandalone(db,id);
         AiPolicy resolved=config.resolvedPolicy();
         if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy 또는 aiLevel(1~5)이 필요하며 둘 다 보내면 같은 단계여야 합니다.");
         if(!e.state().equals("WAITING")) throw failure(HttpStatus.CONFLICT,"CONFIGURATION_LOCKED","시작 후에는 문항과 AI 정책을 변경할 수 없습니다.");
         if((config.guidelines()!=null||config.durationMinutes()!=null)&&!e.expiresAt().isAfter(Instant.now()))
             throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
-        if(config.questions().stream().map(QuestionInput::position).distinct().count()!=config.questions().size())
-            throw failure(HttpStatus.BAD_REQUEST,"DUPLICATE_POSITION","문항 순서는 중복될 수 없습니다.");
+        QuestionLimits.validate(config.questions());
+        var criteria=CommonSettingsRules.criteria(json,validator,config.criteria());
+        if(config.antiCheat()!=null)CommonSettingsRules.antiCheat(json,config.antiCheat());
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
-        for(var q:config.questions()) db.update("INSERT INTO questions VALUES (?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content());
+        for(var q:config.questions()) db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
         if(config.guidelines()!=null) {
             db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(config.guidelines()),id);
         }
         if(config.durationMinutes()!=null) db.update("UPDATE evaluations SET duration_minutes=? WHERE id=?",config.durationMinutes(),id);
-        return new Configuration(id,resolved,questions(id),guidelines(id),durationMinutes(id),resolved.level(),levelDescription(resolved));
+        if(config.criteria()!=null) {
+            db.update("UPDATE evaluations SET criteria_json=?,criteria_kind=? WHERE id=?",encode(criteria),CommonSettingsRules.kind(criteria),id);
+            CommonSettingsRules.saveRubric(db,json,id,criteria);
+        }
+        if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(config.antiCheat()),id);
+        return configuration(id);
     }
     public Configuration configuration(String id) {
-        evaluation(id);var p=policy(id);return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p));
+        evaluation(id);var p=policy(id);var shared=shared(id);
+        return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
+    }
+    private record Shared(List<?> criteria,JsonNode antiCheat,String assessmentId,String className) {}
+    private Shared shared(String id) {
+        return db.queryForObject("SELECT criteria_json,criteria_kind,anti_cheat_json,assessment_id,class_name FROM evaluations WHERE id=?",(r,n)->{
+            try {
+                List<?> criteria=json.readValue(r.getString("criteria_json"),new com.fasterxml.jackson.core.type.TypeReference<List<Object>>(){});
+                // 기존 사용자 지정 루브릭도 새 configuration 응답에서 읽을 수 있게 합니다.
+                if(criteria.isEmpty()&&r.getString("criteria_kind").equals("LEGACY")) {
+                    var old=db.queryForList("SELECT criteria_json FROM evaluation_rubrics WHERE evaluation_id=?",String.class,id);
+                    if(!old.isEmpty()) {
+                        List<AssessmentModels.Criterion> rubric=json.readValue(old.get(0),new com.fasterxml.jackson.core.type.TypeReference<List<AssessmentModels.Criterion>>(){});
+                        criteria=rubric.stream().map(c->new AssessmentModels.CriterionInput(c.name(),c.maxScore(),c.description(),c.levelDescriptions(),c.indicator())).toList();
+                    }
+                }
+                return new Shared(criteria,decode(r.getString("anti_cheat_json")),r.getString("assessment_id"),r.getString("class_name"));
+            }catch(JsonProcessingException ex){throw new IllegalStateException(ex);}
+        },id);
     }
     private int durationMinutes(String id) {return db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);}
     private String guidelines(String id) {
@@ -125,7 +151,8 @@ public class WorkService {
         finishEvaluation(id,true);c=authenticate(id,token);
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         var p=policy(id);
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p));
+        var shared=shared(id);
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);
@@ -137,8 +164,10 @@ public class WorkService {
         if(endGraceSeconds>0&&c.state().equals("STARTED")&&!c.expiresAt().isAfter(Instant.now())) { finishEvaluation(id,true);c=authenticate(id,token); }
         boolean late=lateSaveAllowed(c);
         if(!late) editable(c);
-        question(id,questionId);
+        var selected=question(id,questionId);
         String safeContent=AnswerHtml.clean(input.content());
+        if(selected.maxChars()!=null&&QuestionLimits.count(safeContent)>selected.maxChars())
+            throw failure(HttpStatus.BAD_REQUEST,"ANSWER_TOO_LONG","답안이 문항의 최대 글자 수를 초과했습니다.");
         var old=answer(c.participantId(),questionId);
         if(old.version()!=input.expectedVersion()) throw failure(HttpStatus.CONFLICT,"ANSWER_VERSION_CONFLICT","답안이 변경되었습니다. 최신 답안을 조회한 후 다시 저장해주세요.");
         if(input.source()!=AnswerSource.DIRECT) {
@@ -262,8 +291,9 @@ public class WorkService {
         String digest;
         try { digest=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(encode(content).getBytes(StandardCharsets.UTF_8))); }
         catch(NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
-        return new Review(digest,content.conversations().stream().noneMatch(t->t.state().equals("PENDING")),
-                content.answers().stream().filter(a->a.answer().content().isBlank()).map(a->a.question().id()).toList(),content);
+        var errors=content.answers().stream().map(a->QuestionLimits.error(a.question(),a.answer())).filter(Objects::nonNull).toList();
+        return new Review(digest,errors.isEmpty()&&content.conversations().stream().noneMatch(t->t.state().equals("PENDING")),
+                content.answers().stream().filter(a->a.answer().content().isBlank()).map(a->a.question().id()).toList(),content,errors);
     }
     public Review review(String id,String token) {
         var c=authenticate(id,token);editable(c);return review(c);
@@ -276,6 +306,7 @@ public class WorkService {
             return submission(c);
         }
         editable(c);var review=review(c);
+        if(!review.answerValidationErrors().isEmpty())throw failure(HttpStatus.BAD_REQUEST,"ANSWER_LENGTH_INVALID","문항별 최소·최대 글자 수를 확인해주세요.");
         if(!review.canConfirm()) throw failure(HttpStatus.CONFLICT,"AI_IN_PROGRESS","AI 응답 완료 후 제출해주세요.");
         if(!review.reviewToken().equals(reviewToken)) throw failure(HttpStatus.CONFLICT,"REVIEW_CHANGED","답안 또는 대화가 변경되었습니다. 제출 내용을 다시 확인해주세요.");
         var now=OffsetDateTime.now(ZoneOffset.UTC);

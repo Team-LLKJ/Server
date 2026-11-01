@@ -27,7 +27,7 @@ class FrontendContractApiTest extends AuthTestSupport {
         var old=new org.springframework.jdbc.core.JdbcTemplate(source);
         old.update("INSERT INTO evaluations(id,title,pin,state,expires_at) VALUES ('e','기존','000555','WAITING',CURRENT_TIMESTAMP)");
         old.update("INSERT INTO participants(id,evaluation_id,nickname,token,active,last_seen) VALUES ('p','e','기존 학생','token',TRUE,CURRENT_TIMESTAMP)");
-        old.update("INSERT INTO questions VALUES ('q','e',1,'기존 문항','본문')");
+        old.update("INSERT INTO questions(id,evaluation_id,position,title,content) VALUES ('q','e',1,'기존 문항','본문')");
         old.update("INSERT INTO answers VALUES ('p','q','기존 답안',3,CURRENT_TIMESTAMP)");
         new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(schema).execute(source);
         assertThat(old.queryForObject("SELECT content FROM answers WHERE participant_id='p'",String.class)).isEqualTo("기존 답안");
