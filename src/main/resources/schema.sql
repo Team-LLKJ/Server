@@ -209,3 +209,11 @@ CREATE INDEX IF NOT EXISTS idx_collaborators_teacher ON assessment_collaborators
 -- 알림은 기존 evaluation_id처럼 외래키 없이 보관하고, 삭제/공유 해제 시 정리·현재 접근권한으로 조회합니다.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS assessment_id VARCHAR(36);
 CREATE INDEX IF NOT EXISTS idx_notifications_assessment ON notifications(assessment_id,user_id);
+
+CREATE TABLE IF NOT EXISTS user_policy_consents (
+ user_id VARCHAR(36) NOT NULL REFERENCES app_users(id),
+ policy_type VARCHAR(30) NOT NULL CHECK (policy_type IN ('TERMS_OF_SERVICE','PRIVACY_POLICY')),
+ policy_version VARCHAR(64) NOT NULL,
+ accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ PRIMARY KEY(user_id,policy_type,policy_version)
+);
