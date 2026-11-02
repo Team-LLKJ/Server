@@ -42,11 +42,11 @@ public class WorkService {
         return value==null?null:value.toInstant();
     }
     private Context evaluation(String id) {
+        kr.lit.auth.AssessmentAccess.beforeEvaluation(db,id);
         var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->
                 new Context(id,null,r.getString("state"),instant(r,r.getObject("ends_at")==null?"expires_at":"ends_at")),id);
         if(rows.isEmpty()) throw failure(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
-        kr.lit.auth.AccountAccess.checkTeacherOwner(db.queryForObject("SELECT teacher_id FROM evaluations WHERE id=?",String.class,id));
-        return rows.get(0);
+              return rows.get(0);
     }
     private Context authenticate(String id,String token) {
         var e=evaluation(id);

@@ -26,9 +26,10 @@ public class AssessmentService {
     private final EvaluationService evaluations;
     private final ReportService reports;
     private final AssessmentAnalyzer analyzer;
+    private final NotificationService notifications;
 
-    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;
+    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;
     }
 
     // ===== 공통 =====
@@ -248,9 +249,15 @@ public class AssessmentService {
         var view=scoresView(id,pid,analysis);
         var missing=view.criteria().stream().filter(c->c.teacher()==null).map(CriterionScore::name).toList();
         if(!missing.isEmpty()) throw fail(HttpStatus.CONFLICT,"GRADING_INCOMPLETE","모든 기준을 채점해야 확정할 수 있습니다. 미입력: "+String.join(", ",missing));
+        boolean alreadyConfirmed="CONFIRMED".equals(view.status());
         setStatus(pid,id,"CONFIRMED");
         db.update("UPDATE grading_results SET total_score=?,confirmed_by=?,confirmed_at=?,updated_at=? WHERE participant_id=?",
                 BigDecimal.valueOf(view.totalTeacher()),teacherId,now(),now(),pid);
+        if(!alreadyConfirmed) {
+            Long revision=db.queryForObject("SELECT COALESCE(MAX(id),0) FROM grading_score_changes WHERE participant_id=?",Long.class,pid);
+            String nickname=db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,pid);
+            notifications.notifyOwner(id,NotificationService.Type.GRADING_CONFIRMED,"채점 확정",nickname+" 학생의 채점이 확정되었습니다.",pid,"grading-confirmed:"+pid+":"+revision);
+        }
         return scoresView(id,pid,analysis);
     }
     public Scores reviewCompliance(String id,String pid,ComplianceInput input) {
