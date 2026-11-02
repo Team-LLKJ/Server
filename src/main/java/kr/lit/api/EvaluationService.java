@@ -24,9 +24,9 @@ public class EvaluationService {
  public record Joined(String participantId,String participantToken,Lobby lobby){}
  private Failure fail(HttpStatus status,String code,String message){return new Failure(status,code,message);}
  private Evaluation read(String id){
+        kr.lit.auth.AssessmentAccess.beforeEvaluation(db,id);
   var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class)==null?null:r.getObject("expires_at",OffsetDateTime.class).toInstant(),r.getString("assessment_id"),r.getString("class_name")),id);
   if(rows.isEmpty())throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
-  kr.lit.auth.AccountAccess.checkTeacherOwner(db.queryForObject("SELECT teacher_id FROM evaluations WHERE id=?",String.class,id));
   return rows.get(0);
  }
  private Evaluation byPin(String pin){

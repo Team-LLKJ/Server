@@ -3,6 +3,7 @@ package kr.lit.api;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.*;
 import kr.lit.auth.AccountAccess;
+import kr.lit.auth.AssessmentAccess;
 import kr.lit.auth.AuthModels.Role;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -24,11 +25,12 @@ public class TemplateService {
     private final ObjectMapper json;
     private final EvaluationService evaluations;
     private final String joinBase;
+    private final NotificationService notifications;
     private final jakarta.validation.Validator validator;
-    public TemplateService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,@Value("${lit.join-base-url}") String joinBase,jakarta.validation.Validator validator) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.joinBase=joinBase;this.validator=validator;
+    public TemplateService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,@Value("${lit.join-base-url}") String joinBase,jakarta.validation.Validator validator,NotificationService notifications) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.joinBase=joinBase;this.validator=validator;this.notifications=notifications;
     }
-    private record Stored(String id,Input input,int revision,Instant createdAt,Instant updatedAt) {}
+    private record Stored(String id,Input input,int revision,Instant createdAt,Instant updatedAt,Owner owner,String role) {}
     private ApiError.Failure fail(HttpStatus status,String code,String message) {return new ApiError.Failure(status,code,message);}
     private String encode(Object value) {try{return json.writeValueAsString(value);}catch(Exception e){throw new IllegalStateException(e);}}
     private <T> T decode(String value,TypeReference<T> type) {try{return json.readValue(value,type);}catch(Exception e){throw new IllegalStateException(e);}}
@@ -38,14 +40,12 @@ public class TemplateService {
         var input=new Input(r.getString("title"),r.getString("guidelines"),AiPolicy.valueOf(r.getString("ai_policy")),
                 decode(r.getString("criteria_json"),new TypeReference<List<Object>>(){}),node(r.getString("anti_cheat_json")),
                 decode(r.getString("questions_json"),new TypeReference<List<QuestionInput>>(){}),r.getInt("duration_minutes"));
-        return new Stored(r.getString("id"),input,r.getInt("revision"),time(r,"created_at"),time(r,"updated_at"));
+        return new Stored(r.getString("id"),input,r.getInt("revision"),time(r,"created_at"),time(r,"updated_at"),new Owner(r.getString("teacher_id"),r.getString("owner_name")),r.getString("teacher_id").equals(AccountAccess.require(Role.TEACHER).userId())?"OWNER":"EDITOR");
     }
     /** 모든 공통 수정/시작/삭제는 부모를 먼저 잠그고 회차를 잠급니다. */
-    private Stored owned(String id) {
-        String teacher=AccountAccess.require(Role.TEACHER).userId();
-        var rows=db.query("SELECT * FROM assessment_templates WHERE id=? AND teacher_id=? FOR UPDATE",this::row,id,teacher);
-        if(rows.isEmpty())throw fail(HttpStatus.NOT_FOUND,"ASSESSMENT_NOT_FOUND","수행평가 틀을 찾을 수 없습니다.");
-        return rows.get(0);
+    private Stored accessible(String id) {
+        AssessmentAccess.requireTemplate(db,id,false);
+        return db.queryForObject("SELECT t.*,u.display_name owner_name FROM assessment_templates t JOIN app_users u ON u.id=t.teacher_id WHERE t.id=?",this::row,id);
     }
     private Input normalize(Input input) {
         QuestionLimits.validate(input.questions());
@@ -61,22 +61,29 @@ public class TemplateService {
                 id,teacher,v.title(),v.guidelines(),v.aiPolicy().name(),encode(v.criteria()),encode(v.antiCheat()),encode(v.questions()),v.durationMinutes(),now,now);
         return detail(id);
     }
-    public View detail(String id) {var s=owned(id);return view(s);}
+    public View detail(String id) {var s=accessible(id);return view(s);}
     private View view(Stored s) {
         var v=s.input();var classes=classViews(s.id());
-        return new View(s.id(),v.title(),v.guidelines(),v.aiPolicy(),v.criteria(),v.antiCheat(),v.questions(),v.durationMinutes(),s.revision(),v.questions().size(),classes.size(),classes,s.createdAt(),s.updatedAt());
+        return new View(s.id(),v.title(),v.guidelines(),v.aiPolicy(),v.criteria(),v.antiCheat(),v.questions(),v.durationMinutes(),s.revision(),v.questions().size(),classes.size(),classes,s.createdAt(),s.updatedAt(),s.owner(),s.role());
     }
+    public Page list(int page,int size) {return list(page,size,"mine");}
     @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
-    public Page list(int page,int size) {
+    public Page list(int page,int size,String scope) {
         String teacher=AccountAccess.require(Role.TEACHER).userId();
         if(page<0||size<1||size>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100이어야 합니다.");
-        long count=db.queryForObject("SELECT COUNT(*) FROM assessment_templates WHERE teacher_id=?",Long.class,teacher);
-        var templates=db.query("SELECT * FROM assessment_templates WHERE teacher_id=? ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?",this::row,teacher,size,(long)page*size);
-        var summaries=templates.stream().map(s->{var classes=classViews(s.id());return new Summary(s.id(),s.input().title(),s.input().questions().size(),classes.size(),classes,s.revision(),s.updatedAt());}).toList();
-        return new Page(summaries,page,size,count,(count+size-1)/size);
+        if(!scope.equals("mine")&&!scope.equals("shared"))throw fail(HttpStatus.BAD_REQUEST,"INVALID_SCOPE","scope는 mine 또는 shared여야 합니다.");
+        String filter=scope.equals("mine")?"t.teacher_id=?":"t.teacher_id<>? AND EXISTS (SELECT 1 FROM assessment_collaborators c WHERE c.assessment_id=t.id AND c.teacher_id=?)";
+        Object[] args=scope.equals("mine")?new Object[]{teacher}:new Object[]{teacher,teacher};
+        long count=db.queryForObject("SELECT COUNT(*) FROM assessment_templates t WHERE "+filter,Long.class,args);
+        var queryArgs=new ArrayList<Object>(List.of(args));queryArgs.add(size);queryArgs.add((long)page*size);
+        var templates=db.query("SELECT t.*,u.display_name owner_name FROM assessment_templates t JOIN app_users u ON u.id=t.teacher_id WHERE "+filter+" ORDER BY t.updated_at DESC,t.id DESC LIMIT ? OFFSET ?",this::row,queryArgs.toArray());
+        var summaries=templates.stream().map(s->{var classes=classViews(s.id());String text=org.jsoup.Jsoup.parseBodyFragment(s.input().guidelines()).text();
+            String summary=text.codePointCount(0,text.length())>200?text.substring(0,text.offsetByCodePoints(0,200)):text;
+            return new Summary(s.id(),s.input().title(),s.input().questions().size(),classes.size(),classes,s.revision(),s.updatedAt(),s.owner(),s.role(),s.input().aiPolicy(),summary);}).toList();
+        return new Page(summaries,page,size,count,(count+size-1)/size,scope);
     }
     public View update(String id,Input input) {
-        var previous=owned(id);var v=normalize(input);int revision=previous.revision()+1;
+        var previous=accessible(id);var v=normalize(input);int revision=previous.revision()+1;
         db.update("UPDATE assessment_templates SET title=?,guidelines=?,ai_policy=?,criteria_json=?,anti_cheat_json=?,questions_json=?,duration_minutes=?,revision=?,updated_at=? WHERE id=?",
                 v.title(),v.guidelines(),v.aiPolicy().name(),encode(v.criteria()),encode(v.antiCheat()),encode(v.questions()),v.durationMinutes(),revision,OffsetDateTime.now(ZoneOffset.UTC),id);
         var waiting=db.queryForList("SELECT id FROM evaluations WHERE assessment_id=? AND state='WAITING' ORDER BY id FOR UPDATE",String.class,id);
@@ -98,18 +105,58 @@ public class TemplateService {
     }
 
     public ClassView addClass(String id,String className) {
-        var s=owned(id);String name=Normalizer.normalize(className.strip(),Normalizer.Form.NFKC);
-        if(name.isBlank()||name.codePointCount(0,name.length())>30)throw fail(HttpStatus.BAD_REQUEST,"INVALID_CLASS_NAME","반 이름은1~30자여야 합니다.");
+        var s=accessible(id);String name=className(className);
         String key=name.toLowerCase(Locale.ROOT);
         if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE assessment_id=? AND class_name_key=?",Integer.class,id,key)>0)
             throw fail(HttpStatus.CONFLICT,"CLASS_NAME_TAKEN","같은 수행평가 안에서 반 이름은 중복될 수 없습니다.");
         String classId=UUID.randomUUID().toString();
         try {db.update("INSERT INTO evaluations(id,title,state,teacher_id,assessment_id,class_name,class_name_key,duration_minutes) VALUES (?,?,'WAITING',?,?,?,?,?)",
-                classId,s.input().title(),AccountAccess.require(Role.TEACHER).userId(),id,name,key,s.input().durationMinutes());}
+                classId,s.input().title(),s.owner().teacherId(),id,name,key,s.input().durationMinutes());}
         catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"CLASS_NAME_TAKEN","이미 있는 반 이름입니다.");}
         snapshot(classId,s.input(),s.revision());return classView(id,classId);
     }
-    public List<ClassView> classes(String id) {owned(id);return classViews(id);}
+    private String className(String value) {
+        String name=Normalizer.normalize(value.strip(),Normalizer.Form.NFKC);
+        if(name.isBlank()||name.codePointCount(0,name.length())>30)throw fail(HttpStatus.BAD_REQUEST,"INVALID_CLASS_NAME","반 이름은1~30자여야 합니다.");
+        return name;
+    }
+    public ClassView renameClass(String id,String classId,String value) {
+        accessible(id);classView(id,classId);evaluations.details(classId);
+        String name=className(value),key=name.toLowerCase(Locale.ROOT);
+        if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE assessment_id=? AND class_name_key=? AND id<>?",Integer.class,id,key,classId)>0)
+            throw fail(HttpStatus.CONFLICT,"CLASS_NAME_TAKEN","같은 수행평가 안에서 반 이름은 중복될 수 없습니다.");
+        try {db.update("UPDATE evaluations SET class_name=?,class_name_key=? WHERE id=? AND assessment_id=?",name,key,classId,id);}
+        catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"CLASS_NAME_TAKEN","이미 있는 반 이름입니다.");}
+        return classView(id,classId);
+    }
+    public Collaborator share(String id,String email) {
+        var access=AssessmentAccess.requireTemplate(db,id,true);
+        String normalized=email.strip().toLowerCase(Locale.ROOT);
+        var users=db.query("SELECT id,display_name,email FROM app_users WHERE email=? AND user_role='TEACHER' AND user_status='ACTIVE'",(r,n)->new String[]{r.getString("id"),r.getString("display_name"),r.getString("email")},normalized);
+        if(users.isEmpty())throw fail(HttpStatus.NOT_FOUND,"TEACHER_NOT_FOUND","공유할 수 있는 교사 계정을 찾을 수 없습니다.");
+        var target=users.get(0);
+        if(target[0].equals(access.ownerId()))throw fail(HttpStatus.CONFLICT,"CANNOT_SHARE_WITH_SELF","본인에게는 공유할 수 없습니다.");
+        if(db.queryForObject("SELECT COUNT(*) FROM assessment_collaborators WHERE assessment_id=? AND teacher_id=?",Integer.class,id,target[0])>0)
+            throw fail(HttpStatus.CONFLICT,"COLLABORATOR_ALREADY_EXISTS","이미 공유한 교사입니다.");
+        var now=OffsetDateTime.now(ZoneOffset.UTC);
+        try {db.update("INSERT INTO assessment_collaborators(assessment_id,teacher_id,shared_by,shared_at) VALUES (?,?,?,?)",id,target[0],access.ownerId(),now);}
+        catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"COLLABORATOR_ALREADY_EXISTS","이미 공유한 교사입니다.");}
+        String title=db.queryForObject("SELECT title FROM assessment_templates WHERE id=?",String.class,id);
+        notifications.assessmentShared(id,target[0],title);
+        return new Collaborator(target[0],target[1],target[2],now.toInstant());
+    }
+    public List<Collaborator> collaborators(String id) {
+        AssessmentAccess.requireTemplate(db,id,true);
+        return db.query("SELECT c.teacher_id,u.display_name,u.email,c.shared_at FROM assessment_collaborators c JOIN app_users u ON u.id=c.teacher_id WHERE c.assessment_id=? ORDER BY c.shared_at,c.teacher_id",
+                (r,n)->new Collaborator(r.getString("teacher_id"),r.getString("display_name"),r.getString("email"),time(r,"shared_at")),id);
+    }
+    public void unshare(String id,String teacherId) {
+        AssessmentAccess.requireTemplate(db,id,true);
+        if(db.update("DELETE FROM assessment_collaborators WHERE assessment_id=? AND teacher_id=?",id,teacherId)==0)
+            throw fail(HttpStatus.NOT_FOUND,"COLLABORATOR_NOT_FOUND","공유된 교사를 찾을 수 없습니다.");
+        db.update("DELETE FROM notifications WHERE assessment_id=? AND user_id=?",id,teacherId);
+    }
+    public List<ClassView> classes(String id) {accessible(id);return classViews(id);}
     private List<ClassView> classViews(String id) {
         return db.query("SELECT e.*,(SELECT COUNT(*) FROM participants p WHERE p.evaluation_id=e.id) participant_count,(SELECT COUNT(*) FROM submissions s WHERE s.evaluation_id=e.id) submitted_count FROM evaluations e WHERE assessment_id=? ORDER BY class_name_key,id",
                 (r,n)->{
@@ -123,26 +170,28 @@ public class TemplateService {
                 .orElseThrow(()->fail(HttpStatus.NOT_FOUND,"CLASS_NOT_FOUND","해당 수행평가의 반이 아닙니다."));
     }
     public ClassView start(String id,String classId,int minutes) {
-        owned(id);var c=classView(id,classId);
+        accessible(id);var c=classView(id,classId);
         if(!c.state().equals("READY"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","이미 시작했거나 종료된 반입니다.");
         evaluations.activateClass(classId,minutes);return classView(id,classId);
     }
     public ClassView end(String id,String classId) {
-        owned(id);var c=classView(id,classId);
+        accessible(id);var c=classView(id,classId);
         if(c.state().equals("READY"))throw fail(HttpStatus.CONFLICT,"EVALUATION_NOT_STARTED","시작 전인 반은 종료할 수 없습니다.");
         evaluations.end(classId);return classView(id,classId);
     }
     public void deleteClass(String id,String classId) {
-        owned(id);var c=classView(id,classId);
+        accessible(id);var c=classView(id,classId);
         if(!c.state().equals("READY"))throw fail(HttpStatus.CONFLICT,"CLASS_DELETE_REQUIRES_WAITING","시작 전인 반만 삭제할 수 있습니다.");
         evaluations.deleteFromAssessment(classId);
     }
     public void delete(String id) {
-        owned(id);
+        AssessmentAccess.requireTemplate(db,id,true);
         var ids=db.queryForList("SELECT id FROM evaluations WHERE assessment_id=? ORDER BY id FOR UPDATE",String.class,id);
         if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE assessment_id=? AND state='STARTED'",Integer.class,id)>0)
             throw fail(HttpStatus.CONFLICT,"ASSESSMENT_IN_PROGRESS","진행 중인 반을 모두 종료한 뒤 틀을 삭제해주세요.");
         for(String classId:ids)evaluations.deleteFromAssessment(classId);
+        db.update("DELETE FROM notifications WHERE assessment_id=?",id);
+        db.update("DELETE FROM assessment_collaborators WHERE assessment_id=?",id);
         db.update("DELETE FROM assessment_templates WHERE id=?",id);
     }
 }
