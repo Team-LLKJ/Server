@@ -50,7 +50,7 @@ class CollaborationApiTest extends AuthTestSupport {
         assertThat(row.path("aiPolicy").asText()).isEqualTo("FULL");
         var collaborators=ok(request(get(base(f.id())+"/collaborators"),teacher));assertThat(collaborators.get(0).path("teacherId").asText()).isEqualTo(f.editor().user().id());
         assertThat(collaborators.get(0).path("email").asText()).isEqualTo(f.editor().user().email());assertThat(collaborators.get(0).path("sharedAt").asText()).isNotBlank();
-        mvc.perform(request(get("/api/teacher/assessments?scope=all"),teacher)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_SCOPE"));
+        mvc.perform(request(get("/api/teacher/assessments?scope=invalid"),teacher)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_SCOPE"));
     }
     @Test void shareValidatesMissingDisabledStudentSelfDuplicateAndNormalizedEmail() throws Exception {
         as(teacher);var t=templates.create(input("공유 검사"));String url=base(t.id())+"/collaborators";
@@ -67,8 +67,8 @@ class CollaborationApiTest extends AuthTestSupport {
     @Test void editorCannotManageSharingOrDeleteTemplateButUnrelatedTeacherStillGets404() throws Exception {
         var f=fixture();var other=newTeacher();
         mvc.perform(body(request(post(base(f.id())+"/collaborators"),f.editor()),Map.of("email",other.user().email()))).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("ASSESSMENT_OWNER_REQUIRED"));
-        mvc.perform(request(get(base(f.id())+"/collaborators"),f.editor())).andExpect(status().isForbidden());
-        mvc.perform(request(delete(base(f.id())+"/collaborators/"+f.editor().user().id()),f.editor())).andExpect(status().isForbidden());
+        mvc.perform(request(get(base(f.id())+"/collaborators"),f.editor())).andExpect(status().isOk());
+        mvc.perform(request(delete(base(f.id())+"/collaborators/"+teacher.user().id()),f.editor())).andExpect(status().isForbidden());
         mvc.perform(request(delete(base(f.id())),f.editor())).andExpect(status().isForbidden());
         mvc.perform(request(get(base(f.id())),other)).andExpect(status().isNotFound());
         mvc.perform(request(get(eval(f.classId())+"/students"),other)).andExpect(status().isNotFound());
@@ -169,5 +169,48 @@ class CollaborationApiTest extends AuthTestSupport {
         Callable<String> action=()->{as(teacher);try{gate.await();return templates.share(t.id(),editor.user().email()).teacherId();}catch(ApiError.Failure ex){return ex.code;}finally{clear();}};
         try {var a=executor.submit(action);var b=executor.submit(action);gate.countDown();assertThat(List.of(a.get(10,TimeUnit.SECONDS),b.get(10,TimeUnit.SECONDS))).contains("COLLABORATOR_ALREADY_EXISTS");assertThat(notices(editor.user().id(),"ASSESSMENT_SHARED",t.id())).isEqualTo(1);}
         finally{executor.shutdownNow();}
+    }
+
+    @Test void listAllIncludesOwnedAndSharedWithoutDuplicatesAndReturnsSharingMetadata() throws Exception {
+        var f=fixture();as(f.editor());templates.create(input("편집자 소유"));
+        var all=ok(request(get("/api/teacher/assessments?scope=all"),f.editor()));
+        assertThat(all.path("totalElements").asInt()).isEqualTo(2);
+        for(var row:all.path("items")) {
+            assertThat(row.path("myRole").asText()).isEqualTo(row.path("role").asText());
+            assertThat(row.path("collaboratorCount").asInt()).isEqualTo(row.path("id").asText().equals(f.id())?1:0);
+        }
+        var detail=ok(request(get(base(f.id())),f.editor()));
+        assertThat(detail.path("myRole").asText()).isEqualTo("EDITOR");assertThat(detail.path("shared").asBoolean()).isTrue();
+    }
+    @Test void editorCanLeaveOnlyTheirOwnShareAndLosesAccessImmediately() throws Exception {
+        var f=fixture();var second=newTeacher();
+        ok(body(request(post(base(f.id())+"/collaborators"),teacher),Map.of("email",second.user().email(),"role","EDITOR")));
+        var list=ok(request(get(base(f.id())+"/collaborators"),f.editor()));
+        assertThat(list.get(0).path("role").asText()).isEqualTo("EDITOR");
+        assertThat(list.get(0).path("userId").asText()).isNotBlank();
+        mvc.perform(request(delete(base(f.id())+"/collaborators/"+second.user().id()),f.editor())).andExpect(status().isForbidden());
+        mvc.perform(request(delete(base(f.id())+"/collaborators/"+f.editor().user().id()),f.editor())).andExpect(status().isNoContent());
+        mvc.perform(request(get(base(f.id())),f.editor())).andExpect(status().isNotFound());
+        assertThat(notices(f.editor().user().id(),"ASSESSMENT_SHARED",f.id())).isZero();
+        assertThat(ok(request(get(base(f.id())),teacher)).path("collaboratorCount").asInt()).isEqualTo(1);
+    }
+    @Test void sharingRejectsInvalidRolesAndSeparatesMissingNonTeacherInactiveTargets() throws Exception {
+        as(teacher);var t=templates.create(input("대상 검증"));String url=base(t.id())+"/collaborators";
+        var target=newTeacher();
+        mvc.perform(body(request(post(url),teacher),Map.of("email",target.user().email(),"role","OWNER"))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_COLLABORATOR_ROLE"));
+        db.update("UPDATE app_users SET user_role='STUDENT' WHERE id=?",target.user().id());
+        mvc.perform(body(request(post(url),teacher),Map.of("email",target.user().email(),"role","EDITOR"))).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("SHARE_TARGET_NOT_TEACHER"));
+        db.update("UPDATE app_users SET user_role='TEACHER',user_status='DISABLED' WHERE id=?",target.user().id());
+        mvc.perform(body(request(post(url),teacher),Map.of("email",target.user().email()))).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("SHARE_TARGET_INACTIVE"));
+    }
+    @Test void staleRevisionCannotOverwriteTemplateOrWaitingClassSnapshot() throws Exception {
+        var f=fixture();var first=json.valueToTree(input("먼저 저장"));((com.fasterxml.jackson.databind.node.ObjectNode)first).put("revision",1);
+        var saved=ok(body(request(put(base(f.id())),f.editor()),first));assertThat(saved.path("revision").asInt()).isEqualTo(2);
+        var stale=json.valueToTree(input("덮어쓰기"));((com.fasterxml.jackson.databind.node.ObjectNode)stale).put("revision",1);
+        mvc.perform(body(request(put(base(f.id())),teacher),stale)).andExpect(status().isConflict()).andExpect(jsonPath("code").value("ASSESSMENT_REVISION_CONFLICT"));
+        assertThat(ok(request(get(base(f.id())),teacher)).path("title").asText()).isEqualTo("먼저 저장");
+        assertThat(db.queryForObject("SELECT template_revision FROM evaluations WHERE id=?",Integer.class,f.classId())).isEqualTo(2);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)stale).put("revision",2);
+        mvc.perform(body(request(put(base(f.id())),teacher),stale)).andExpect(status().isOk()).andExpect(jsonPath("revision").value(3));
     }
 }
