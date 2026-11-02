@@ -22,13 +22,14 @@ import static kr.lit.api.AssessmentModels.*;
 @Transactional
 public class TemplateService {
     private final JdbcTemplate db;
+    private final AssessmentCollaborationRepository collaborationRepository;
     private final ObjectMapper json;
     private final EvaluationService evaluations;
     private final String joinBase;
     private final NotificationService notifications;
     private final jakarta.validation.Validator validator;
-    public TemplateService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,@Value("${lit.join-base-url}") String joinBase,jakarta.validation.Validator validator,NotificationService notifications) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.joinBase=joinBase;this.validator=validator;this.notifications=notifications;
+    public TemplateService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,@Value("${lit.join-base-url}") String joinBase,jakarta.validation.Validator validator,NotificationService notifications,AssessmentCollaborationRepository collaborationRepository) {
+        this.db=db;this.collaborationRepository=collaborationRepository;this.json=json;this.evaluations=evaluations;this.joinBase=joinBase;this.validator=validator;this.notifications=notifications;
     }
     private record Stored(String id,Input input,int revision,Instant createdAt,Instant updatedAt,Owner owner,String role) {}
     private ApiError.Failure fail(HttpStatus status,String code,String message) {return new ApiError.Failure(status,code,message);}
@@ -64,26 +65,30 @@ public class TemplateService {
     public View detail(String id) {var s=accessible(id);return view(s);}
     private View view(Stored s) {
         var v=s.input();var classes=classViews(s.id());
-        return new View(s.id(),v.title(),v.guidelines(),v.aiPolicy(),v.criteria(),v.antiCheat(),v.questions(),v.durationMinutes(),s.revision(),v.questions().size(),classes.size(),classes,s.createdAt(),s.updatedAt(),s.owner(),s.role());
+        return new View(s.id(),v.title(),v.guidelines(),v.aiPolicy(),v.criteria(),v.antiCheat(),v.questions(),v.durationMinutes(),s.revision(),v.questions().size(),classes.size(),classes,s.createdAt(),s.updatedAt(),s.owner(),s.role(),collaborationRepository.countCollaborators(s.id()));
     }
     public Page list(int page,int size) {return list(page,size,"mine");}
     @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public Page list(int page,int size,String scope) {
         String teacher=AccountAccess.require(Role.TEACHER).userId();
         if(page<0||size<1||size>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100이어야 합니다.");
-        if(!scope.equals("mine")&&!scope.equals("shared"))throw fail(HttpStatus.BAD_REQUEST,"INVALID_SCOPE","scope는 mine 또는 shared여야 합니다.");
-        String filter=scope.equals("mine")?"t.teacher_id=?":"t.teacher_id<>? AND EXISTS (SELECT 1 FROM assessment_collaborators c WHERE c.assessment_id=t.id AND c.teacher_id=?)";
+        if(!scope.equals("mine")&&!scope.equals("shared")&&!scope.equals("all"))throw fail(HttpStatus.BAD_REQUEST,"INVALID_SCOPE","scope는 mine, shared 또는 all이어야 합니다.");
+        String membership="EXISTS (SELECT 1 FROM assessment_collaborators c WHERE c.assessment_id=t.id AND c.teacher_id=?)";
+        String filter=switch(scope) {case "mine"->"t.teacher_id=?";case "shared"->"t.teacher_id<>? AND "+membership;default->"(t.teacher_id=? OR "+membership+")";};
         Object[] args=scope.equals("mine")?new Object[]{teacher}:new Object[]{teacher,teacher};
         long count=db.queryForObject("SELECT COUNT(*) FROM assessment_templates t WHERE "+filter,Long.class,args);
         var queryArgs=new ArrayList<Object>(List.of(args));queryArgs.add(size);queryArgs.add((long)page*size);
         var templates=db.query("SELECT t.*,u.display_name owner_name FROM assessment_templates t JOIN app_users u ON u.id=t.teacher_id WHERE "+filter+" ORDER BY t.updated_at DESC,t.id DESC LIMIT ? OFFSET ?",this::row,queryArgs.toArray());
         var summaries=templates.stream().map(s->{var classes=classViews(s.id());String text=org.jsoup.Jsoup.parseBodyFragment(s.input().guidelines()).text();
             String summary=text.codePointCount(0,text.length())>200?text.substring(0,text.offsetByCodePoints(0,200)):text;
-            return new Summary(s.id(),s.input().title(),s.input().questions().size(),classes.size(),classes,s.revision(),s.updatedAt(),s.owner(),s.role(),s.input().aiPolicy(),summary);}).toList();
+            return new Summary(s.id(),s.input().title(),s.input().questions().size(),classes.size(),classes,s.revision(),s.updatedAt(),s.owner(),s.role(),s.input().aiPolicy(),summary,collaborationRepository.countCollaborators(s.id()));}).toList();
         return new Page(summaries,page,size,count,(count+size-1)/size,scope);
     }
     public View update(String id,Input input) {
-        var previous=accessible(id);var v=normalize(input);int revision=previous.revision()+1;
+        var previous=accessible(id);
+        if(input.revision()!=null&&input.revision()!=previous.revision())
+            throw fail(HttpStatus.CONFLICT,"ASSESSMENT_REVISION_CONFLICT","다른 교사가 수정했습니다. 최신 평가를 불러온 후 다시 저장해주세요.");
+        var v=normalize(input);int revision=previous.revision()+1;
         db.update("UPDATE assessment_templates SET title=?,guidelines=?,ai_policy=?,criteria_json=?,anti_cheat_json=?,questions_json=?,duration_minutes=?,revision=?,updated_at=? WHERE id=?",
                 v.title(),v.guidelines(),v.aiPolicy().name(),encode(v.criteria()),encode(v.antiCheat()),encode(v.questions()),v.durationMinutes(),revision,OffsetDateTime.now(ZoneOffset.UTC),id);
         var waiting=db.queryForList("SELECT id FROM evaluations WHERE assessment_id=? AND state='WAITING' ORDER BY id FOR UPDATE",String.class,id);
@@ -129,12 +134,19 @@ public class TemplateService {
         catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"CLASS_NAME_TAKEN","이미 있는 반 이름입니다.");}
         return classView(id,classId);
     }
+    public Collaborator addCollaborator(String id,String email,String role) {
+        AssessmentAccess.requireTemplate(db,id,true);
+        if(!"EDITOR".equals(role))throw fail(HttpStatus.BAD_REQUEST,"INVALID_COLLABORATOR_ROLE","공유 역할은 EDITOR만 지정할 수 있습니다.");
+        return share(id,email);
+    }
     public Collaborator share(String id,String email) {
         var access=AssessmentAccess.requireTemplate(db,id,true);
         String normalized=email.strip().toLowerCase(Locale.ROOT);
-        var users=db.query("SELECT id,display_name,email FROM app_users WHERE email=? AND user_role='TEACHER' AND user_status='ACTIVE'",(r,n)->new String[]{r.getString("id"),r.getString("display_name"),r.getString("email")},normalized);
-        if(users.isEmpty())throw fail(HttpStatus.NOT_FOUND,"TEACHER_NOT_FOUND","공유할 수 있는 교사 계정을 찾을 수 없습니다.");
-        var target=users.get(0);
+        var user=collaborationRepository.findUserByEmail(normalized)
+                .orElseThrow(()->fail(HttpStatus.NOT_FOUND,"TEACHER_NOT_FOUND","해당 이메일의 계정이 없습니다."));
+        if(!user.role().equals("TEACHER"))throw fail(HttpStatus.NOT_FOUND,"SHARE_TARGET_NOT_TEACHER","교사 계정에만 공유할 수 있습니다.");
+        if(!user.status().equals("ACTIVE"))throw fail(HttpStatus.NOT_FOUND,"SHARE_TARGET_INACTIVE","사용 중인 교사 계정에만 공유할 수 있습니다.");
+        String[] target={user.id(),user.name(),user.email()};
         if(target[0].equals(access.ownerId()))throw fail(HttpStatus.CONFLICT,"CANNOT_SHARE_WITH_SELF","본인에게는 공유할 수 없습니다.");
         if(db.queryForObject("SELECT COUNT(*) FROM assessment_collaborators WHERE assessment_id=? AND teacher_id=?",Integer.class,id,target[0])>0)
             throw fail(HttpStatus.CONFLICT,"COLLABORATOR_ALREADY_EXISTS","이미 공유한 교사입니다.");
@@ -146,12 +158,15 @@ public class TemplateService {
         return new Collaborator(target[0],target[1],target[2],now.toInstant());
     }
     public List<Collaborator> collaborators(String id) {
-        AssessmentAccess.requireTemplate(db,id,true);
+        AssessmentAccess.requireTemplate(db,id,false);
         return db.query("SELECT c.teacher_id,u.display_name,u.email,c.shared_at FROM assessment_collaborators c JOIN app_users u ON u.id=c.teacher_id WHERE c.assessment_id=? ORDER BY c.shared_at,c.teacher_id",
                 (r,n)->new Collaborator(r.getString("teacher_id"),r.getString("display_name"),r.getString("email"),time(r,"shared_at")),id);
     }
     public void unshare(String id,String teacherId) {
-        AssessmentAccess.requireTemplate(db,id,true);
+        var access=AssessmentAccess.requireTemplate(db,id,false);
+        String actor=AccountAccess.require(Role.TEACHER).userId();
+        if(!access.role().equals("OWNER")&&!actor.equals(teacherId))
+            throw fail(HttpStatus.FORBIDDEN,"ASSESSMENT_OWNER_REQUIRED","편집자는 본인의 공유만 해제할 수 있습니다.");
         if(db.update("DELETE FROM assessment_collaborators WHERE assessment_id=? AND teacher_id=?",id,teacherId)==0)
             throw fail(HttpStatus.NOT_FOUND,"COLLABORATOR_NOT_FOUND","공유된 교사를 찾을 수 없습니다.");
         db.update("DELETE FROM notifications WHERE assessment_id=? AND user_id=?",id,teacherId);

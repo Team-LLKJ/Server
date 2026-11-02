@@ -26,7 +26,7 @@ class TemplateController {
         return templates.renameClass(id,classId,input.className());
     }
     @PostMapping("/{id}/collaborators") @ResponseStatus(HttpStatus.CREATED)
-    Collaborator share(@PathVariable String id,@Valid @RequestBody ShareInput input) {return templates.share(id,input.email());}
+    Collaborator addCollaborator(@PathVariable String id,@Valid @RequestBody ShareInput input) {return templates.addCollaborator(id,input.email(),input.role());}
     @GetMapping("/{id}/collaborators") java.util.List<Collaborator> collaborators(@PathVariable String id) {return templates.collaborators(id);}
     @DeleteMapping("/{id}/collaborators/{teacherId}") ResponseEntity<Void> unshare(@PathVariable String id,@PathVariable String teacherId) {
         templates.unshare(id,teacherId);return ResponseEntity.noContent().build();
