@@ -291,3 +291,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ## 수행평가 공동 편집
 
 [공유 API 명세](docs/ASSESSMENT_COLLABORATION.md): 교사 이메일과 `role: "EDITOR"`로 공유하고, `scope=mine|shared|all`로 목록을 조회합니다. 응답의 `owner.name`, `myRole`, `collaboratorCount`, `shared`로 카드 표시를 구성할 수 있습니다. EDITOR는 본인의 공유에서 나갈 수 있으며, 평가 삭제와 타인 공유 관리는 OWNER만 가능합니다. 공동 수정 시 PUT에 GET 응답의 `revision`을 보내면 오래된 버전은 409로 거절됩니다. 기존 PIN·QR·반 운영·채점·공유 알림도 EDITOR에게 제공됩니다. Postman의 ‘수행평가 공동 편집’ 폴더에서 요청 예시를 확인하세요.
+
+## 약관·개인정보 처리방침 동의
+
+[동의 API 명세](docs/CONSENTS.md): 교사 로그인 후 `GET /api/users/me/consents`로 현재 버전과 동의 상태를 조회하고, `POST`에 두 동의 값과 버전을 보내 DB에 저장합니다. `/history`로 본인의 과거 동의 이력을 확인할 수 있습니다. 문서 버전은 `LIT_TERMS_VERSION`·`LIT_PRIVACY_VERSION`(각 기본 v1)로 설정하며 실제 프런트 문서와 맞춰야 합니다. 같은 버전의 재요청은 최초 동의 시각을 유지합니다. 기존 가입·로그인 및 학생 PIN 참여 흐름은 바꾸지 않으며 회원가입 시 자동 동의 처리도 하지 않습니다.

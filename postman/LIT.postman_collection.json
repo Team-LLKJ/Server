@@ -112,6 +112,16 @@
       "key": "assessmentRevision",
       "value": "1",
       "type": "string"
+    },
+    {
+      "key": "termsVersion",
+      "value": "v1",
+      "type": "string"
+    },
+    {
+      "key": "privacyVersion",
+      "value": "v1",
+      "type": "string"
     }
   ],
   "item": [
@@ -2497,6 +2507,79 @@
                 }
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "약관·개인정보 처리방침 동의",
+      "description": "교사 로그인 후 현재 버전 조회 → 실제 문서 확인과 동의 선택 → POST → 이력 조회. 기존 회원가입과 별도이며 자동 동의하지 않습니다.",
+      "item": [
+        {
+          "name": "현재 버전과 본인 동의 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/me/consents"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  pm.collectionVariables.set(\"termsVersion\", data.terms.version);",
+                  "  pm.collectionVariables.set(\"privacyVersion\", data.privacy.version);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "두 문서 동의 저장",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/me/consents",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "본인 동의 이력 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/me/consents/history"
           }
         }
       ]
