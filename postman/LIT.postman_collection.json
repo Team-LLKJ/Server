@@ -97,6 +97,21 @@
     {
       "key": "classId",
       "value": ""
+    },
+    {
+      "key": "collaboratorEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "collaboratorUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assessmentRevision",
+      "value": "1",
+      "type": "string"
     }
   ],
   "item": [
@@ -2346,6 +2361,142 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "수행평가 공동 편집",
+      "description": "OWNER와 EDITOR 토큰을 번갈아 teacherAccessToken에 넣어 권한을 검증합니다. DELETE의 collaboratorUserId는 OWNER일 때 대상 ID, EDITOR일 때 자신의 ID입니다. PUT revision은 최신 상세 조회 값으로 설정하세요.",
+      "item": [
+        {
+          "name": "공유 추가 (OWNER)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/collaborators",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{collaboratorEmail}}\",\n  \"role\": \"EDITOR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "공유 대상 조회 (OWNER / EDITOR)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/collaborators"
+          }
+        },
+        {
+          "name": "공유 해제 / 본인 나가기",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/collaborators/{{collaboratorUserId}}"
+          }
+        },
+        {
+          "name": "목록 mine",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments?scope=mine"
+          }
+        },
+        {
+          "name": "목록 shared",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments?scope=shared"
+          }
+        },
+        {
+          "name": "목록 all",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments?scope=all"
+          }
+        },
+        {
+          "name": "상세·myRole·공유 수·revision 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
+          }
+        },
+        {
+          "name": "revision 비교하여 공동 수정",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"공동 편집 수행평가\",\n  \"guidelines\": \"평가 안내\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거 제시\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항 1\",\n      \"content\": \"근거를 설명하세요.\"\n    }\n  ],\n  \"durationMinutes\": 60,\n  \"revision\": {{assessmentRevision}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]

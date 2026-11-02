@@ -287,3 +287,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ## 수행평가 틀과 반별 회차
 
 공통 문제를 한 번 정의하고 반별 PIN·시작·제출·채점을 분리하는 API는 [docs/ASSESSMENT_CLASSES.md](docs/ASSESSMENT_CLASSES.md)를 참고하세요. 이 변경은 로컬 커밋에 포함되어 있으며 아직 푸시·운영 배포하지 않았습니다.
+
+## 수행평가 공동 편집
+
+[공유 API 명세](docs/ASSESSMENT_COLLABORATION.md): 교사 이메일과 `role: "EDITOR"`로 공유하고, `scope=mine|shared|all`로 목록을 조회합니다. 응답의 `owner.name`, `myRole`, `collaboratorCount`, `shared`로 카드 표시를 구성할 수 있습니다. EDITOR는 본인의 공유에서 나갈 수 있으며, 평가 삭제와 타인 공유 관리는 OWNER만 가능합니다. 공동 수정 시 PUT에 GET 응답의 `revision`을 보내면 오래된 버전은 409로 거절됩니다. 기존 PIN·QR·반 운영·채점·공유 알림도 EDITOR에게 제공됩니다. Postman의 ‘수행평가 공동 편집’ 폴더에서 요청 예시를 확인하세요.
