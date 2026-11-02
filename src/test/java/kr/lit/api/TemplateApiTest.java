@@ -36,6 +36,8 @@ class TemplateApiTest extends AuthTestSupport {
         mvc.perform(request(get("/api/teacher/evaluations/"+c+"/qr"),teacher)).andExpect(status().isConflict());
         var started=ok(body(request(post("/api/teacher/assessments/"+t.id()+"/classes/"+c+"/start"),teacher),Map.of("expiresInMinutes",45)));
         String pin=started.path("pin").asText();assertThat(pin).matches("[0-9]{6}");assertThat(started.path("state").asText()).isEqualTo("STARTED");
+        mvc.perform(get("/api/participation/verify").param("pin",pin)).andExpect(status().isOk())
+                .andExpect(jsonPath("id").value(c)).andExpect(jsonPath("pin").value(pin));
         mvc.perform(request(get(started.path("qrUrl").asText()),teacher)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
         var p=ok(body(request(post("/api/participation/join"),null),Map.of("pin",pin,"nickname","학생")));
         String token=p.path("participantToken").asText();
