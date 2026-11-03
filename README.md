@@ -1,21 +1,21 @@
-# LIT 평가 참여 API
+# LIT Server
 
-평가 참여, 문항별 답안, AI 대화, 학습 과정 기록 및 최종 제출을 구현한 Spring Boot 3.5.16 / Java 17+ 프로젝트입니다.
-Maven Wrapper가 포함되어 Maven을 별도로 설치할 필요가 없습니다. 최초 실행 시 인터넷이 필요합니다.
+Spring Boot 3.5.16 / Java 17+ 기반 평가 참여·풀이·제출 및 교사 Auth·학생 비회원 참여 API입니다.
+화면 UI와 채점 기능은 포함하지 않습니다.
 
-## 실행
+## 로컬 실행
+
+Java 17 이상이 필요하며 Maven Wrapper가 포함되어 있습니다.
 
 ```sh
 cd /Users/dgsw10/Desktop/LIT
-export LIT_TEACHER_KEY='replace-with-a-long-random-secret'
-export LIT_JOIN_BASE_URL='http://localhost:3000/join'
+export LIT_AI_PROVIDER='stub'
 ./mvnw spring-boot:run
 ```
 
-기본 API 주소는 `http://localhost:8080`입니다. Java 17 이상을 사용하세요.
-교사 키를 설정하지 않으면 교사 API가 503을 반환합니다. 키는 서버/교사 측에서만 보관하세요.
-교사 계정별 로그인/소유권 요구사항이 제공되지 않아, 하나의 서버 교사 키를 사용합니다.
-실제 운영 전에는 사용자 인증 및 교사별 평가 접근 제어를 연동해야 합니다.
+API 주소는 `http://localhost:5174`입니다. 신규 가입에는 이메일 인증이 필요합니다.
+[이메일 인증 설정](docs/EMAIL_SIGNUP.md)에 따라 SMTP와 발신 주소를 설정하세요. 설정 전에도 기존 계정 로그인은 가능하지만 신규 인증메일 발송은 503으로 거절됩니다.
+`LIT_AI_PROVIDER=stub`은 실제 AI를 호출하지 않고 명시적으로 `[테스트 응답]`을 반환합니다.
 
 ```sh
 ./mvnw test
@@ -23,321 +23,276 @@ export LIT_JOIN_BASE_URL='http://localhost:3000/join'
 java -jar target/lit-api-0.0.1-SNAPSHOT.jar
 ```
 
-기본 데이터는 `data/lit.mv.db`에 저장되어 재시작 후에도 유지됩니다.
-DB 접속 설정은 `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` 환경변수로 변경할 수 있습니다.
-현재 스키마와 검증은 H2 기준입니다. 다른 DB를 사용하려면 드라이버와 스키마를 맞춰야 합니다.
+## DB
 
-## API
+기본값은 별도 DB 서버가 필요 없는 파일형 H2입니다.
+프로젝트 디렉터리에서 실행하면 `data/lit.mv.db`에 저장되며 재시작 후 유지됩니다.
+DB·빌드 결과·환경변수 파일은 Git에 포함하지 않습니다.
+테스트는 별도의 메모리 DB를 사용하므로 로컬 파일 DB를 변경하지 않습니다.
 
-교사 API는 `Authorization: Bearer <LIT_TEACHER_KEY>` 헤더가 필요합니다.
-학생 API의 상태/하트비트/나가기는 `X-Participant-Token: <participantToken>` 헤더가 필요합니다.
-모든 요청/응답 JSON은 UTF-8입니다. QR 응답은 PNG입니다.
-
-| 메서드 | 경로 | 기능 |
-|---|---|---|
-| POST | `/api/teacher/evaluations` | 평가 및 PIN 생성 |
-| GET | `/api/teacher/evaluations/{id}` | 평가 정보 및 PIN 조회 |
-| GET | `/api/teacher/evaluations/{id}/qr` | 참여 URL이 담긴 300×300 QR PNG |
-| GET | `/api/teacher/evaluations/{id}/participants` | 참가자 목록, 연결 상태, 평가 상태 |
-| POST | `/api/teacher/evaluations/{id}/start` | 평가 시작 |
-| POST | `/api/teacher/evaluations/{id}/end` | 평가 종료 |
-| GET | `/api/participation/verify?pin=000001` | PIN 확인 |
-| POST | `/api/participation/join` | 닉네임 등록 또는 토큰으로 재접속 |
-| GET | `/api/evaluations/{id}/state` | 학생 화면 상태 조회 및 연결 갱신 |
-| POST | `/api/evaluations/{id}/heartbeat` | 학생 연결 갱신 및 상태 조회 |
-| POST | `/api/evaluations/{id}/leave` | 대기실/평가 이탈 |
-
-### 평가 생성
-
-```sh
-curl -X POST http://localhost:8080/api/teacher/evaluations \
-  -H "Authorization: Bearer $LIT_TEACHER_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"수학 1차 평가","expiresInMinutes":60}'
-```
-
-`id`, `title`, `pin`, `state`, `expiresAt`, `joinUrl`, `qrUrl`을 반환합니다.
-`expiresInMinutes`는 필수이며 1~1440분입니다. 제목은 공백 제외 1~100자입니다.
-QR의 URL과 PIN은 같은 평가를 가리킵니다. QR URL은 교사 인증을 요구하므로 프런트에서는
-인증 헤더로 fetch한 후 Blob URL을 만들어 표시하세요. 생성 실패 시 동일 요청을 다시 할 수 있습니다.
-`joinUrl`의 웹 페이지는 별도 프런트엔드가 구현해야 합니다.
-
-### 참여 확인 → 닉네임 등록
-
-```sh
-curl 'http://localhost:8080/api/participation/verify?pin=000001'
-curl -X POST http://localhost:8080/api/participation/join \
-  -H 'Content-Type: application/json' \
-  -d '{"pin":"000001","nickname":"학생1"}'
-```
-
-위 PIN은 형식 예시입니다. 생성 응답의 실제 PIN을 사용하세요.
-참여 응답은 `participantId`, `participantToken`, `lobby`를 반환합니다.
-토큰은 클라이언트에 보관하고 재접속/상태 조회 시 사용하세요. 닉네임으로 참가자를 인증하지 않습니다.
-PIN 앞뒤 공백은 제거하며 숫자형 JSON 대신 문자열로 전달해 앞자리 0을 보존하세요.
-
-### 화면 동기화
-
-교사는 참가자 목록을, 학생은 상태 API를 3~5초 간격으로 조회하세요.
-학생 상태 조회 자체가 하트비트 역할을 합니다. 별도 heartbeat를 사용한다면 10초 간격을 권장합니다.
-
-```sh
-curl "http://localhost:8080/api/evaluations/EVALUATION_ID/state" \
-  -H 'X-Participant-Token: PARTICIPANT_TOKEN'
-curl -X POST "http://localhost:8080/api/teacher/evaluations/EVALUATION_ID/start" \
-  -H "Authorization: Bearer $LIT_TEACHER_KEY"
-```
-
-`lobby`/상태 응답 예시:
-
-```json
-{
-  "evaluationId":"uuid",
-  "title":"수학 1차 평가",
-  "state":"WAITING",
-  "screen":"WAITING",
-  "participantCount":1,
-  "participants":[{"id":"uuid","nickname":"학생1","presence":"CONNECTED"}]
-}
-```
-
-`state`: `WAITING → STARTED → ENDED`.
-`screen`: `WAITING`, `SOLVING`, `SUBMITTED`, `ENDED`, `EXPIRED` 중 하나입니다.
-제출한 학생의 상태 조회와 재접속 응답은 `SUBMITTED` 화면을 반환합니다.
-학생 화면은 `screen`에 맞춰 이동하세요. 만료 상태는 종료 상태보다 우선하지 않습니다.
-0명일 때 `participants: []` 및 `participantCount: 0`을 반환합니다.
-`participantCount`는 이탈하지 않은 참가자 수이며, 연결 끊긴 참가자도 포함합니다.
-연결된 참가자가 0명이면 시작할 수 없습니다.
-
-### 이탈과 재접속
-
-```sh
-curl -X POST http://localhost:8080/api/evaluations/EVALUATION_ID/leave \
-  -H 'X-Participant-Token: PARTICIPANT_TOKEN'
-curl -X POST http://localhost:8080/api/participation/join \
-  -H 'Content-Type: application/json' \
-  -d '{"pin":"000001","participantToken":"PARTICIPANT_TOKEN"}'
-```
-
-재접속은 기존 참가자 ID와 닉네임을 유지합니다. 새 행을 만들지 않습니다.
-재접속 시 전달한 nickname은 무시합니다. 이탈 후에는 재접속할 때까지 상태 조회를 허용하지 않습니다.
-
-## 이미지에서 확정되지 않은 정책에 적용한 기본값
-
-- PIN: 6자리 숫자 문자열, DB 전체 고유, 만료/종료 PIN 재사용 및 재발급 없음.
-- 만료: 생성 시 지정한 시각 이후에는 신규 참여, 재접속, 시작 불가. 이미 참여한 학생의 화면은 `EXPIRED`.
-- 종료: PIN 확인/신규 참여/재접속 불가. 기존 학생은 `ENDED` 화면 조회 가능.
-- 시작: 연결된 참가자가 1명 이상일 때만 가능. 중복 시작은 409. 평가 행 잠금으로 동시 시작/참여를 직렬화.
-- 지연 참여: 시작 후 새 참가자는 참여 불가. 기존 토큰 소유자는 재접속 가능.
-- 닉네임: 앞뒤 공백 제거, 공백만 입력 불가, Unicode 코드포인트 기준 1~20자, 같은 평가에서 대소문자를 구분하여 중복 금지.
-- 이탈 후 닉네임은 기존 참가자에게 예약. 닉네임 변경 API 없음.
-- 연결 끊김: 30초 동안 상태 조회/하트비트가 없으면 `DISCONNECTED`, 재접속 시 `CONNECTED`.
-- PIN 확인과 참여 요청은 IP당 합산 분당 30회 제한. 단일 서버 메모리 기반이며 재시작 시 초기화.
-  프록시 뒤에서는 remoteAddr가 프록시 IP일 수 있으므로 운영 시 게이트웨이 제한 정책으로 대체하세요.
-- 서버 push 대신 폴링 사용. 아래 추가 기능에서 문항 등록·답안 제출을 지원합니다. 화면 UI와 채점은 별도 구현 범위입니다.
-
-## 오류 형식
-
-```json
-{"code":"PIN_EXPIRED","message":"만료된 평가입니다."}
-```
-
-| 상태 | 대표 code |
+| 환경변수 | 기본값 |
 |---|---|
-| 400 | INVALID_REQUEST, INVALID_PIN, INVALID_NICKNAME |
-| 401 | TEACHER_UNAUTHORIZED, PARTICIPANT_TOKEN_REQUIRED, INVALID_PARTICIPANT_TOKEN |
-| 404 | PIN_NOT_FOUND, EVALUATION_NOT_FOUND |
-| 409 | EVALUATION_ENDED, ALREADY_STARTED, NO_PARTICIPANTS, NICKNAME_TAKEN, PIN_COLLISION |
-| 410 | PIN_EXPIRED |
-| 429 | RATE_LIMITED |
-| 503 | TEACHER_KEY_NOT_CONFIGURED, PIN_UNAVAILABLE |
+| DATABASE_URL | `jdbc:h2:file:./data/lit` |
+| DATABASE_USER | `sa` |
+| DATABASE_PASSWORD | 빈 값 |
 
-테스트는 HTTP 전체 참여 흐름, QR 생성, 재접속 중복 방지, 연결 상태, 이탈, 종료,
-입력 검증, 인증, 만료, 앞자리 0 보존, 동시 시작을 검증합니다.
+현재 스키마의 `MERGE`, `DATEADD`, `IF NOT EXISTS` 등은 H2 기준입니다.
+MySQL/PostgreSQL 이전에는 드라이버, DB별 SQL과 버전형 마이그레이션을 맞춰야 합니다.
+기존 DB에는 테이블·nullable 소유자 컬럼을 추가하고 기존 기록을 삭제하지 않습니다.
+기존 평가/참가 기록을 새 계정에 자동 귀속하지 않습니다.
 
-## 추가 기능: Postman으로 전체 흐름 실행
+## 인증
 
-기존 서버가 켜져 있으면 종료한 후, 변경된 코드로 다시 실행하세요.
-
-```sh
-cd /Users/dgsw10/Desktop/LIT
-export LIT_TEACHER_KEY='test'
-export LIT_AI_PROVIDER='stub'
-./mvnw spring-boot:run
-```
-
-Postman → Import → `postman/LIT.postman_collection.json`을 선택하고 **01번부터 순서대로** 실행하세요.
-컬렉션의 `baseUrl`은 `http://localhost:8080`, `teacherKey`는 위의 `test`로 지정되어 있습니다.
-평가 ID, PIN, 참가자 토큰, 문항 ID, AI 요청 ID와 제출 확인 토큰을 응답에서 자동 저장합니다.
-컬렉션 전체를 다시 실행할 때도 01번부터 실행해 새 평가를 생성하세요.
-개별 저장 요청만 재실행한다면 최신 답안의 `version`을 먼저 조회해 `expectedVersion`을 수정해야 합니다.
-
-`stub`은 **실제 AI를 호출하지 않는 테스트 응답**입니다. 응답에 `[테스트 응답]`을 표시하고
-기록에도 `provider: stub`, `model: local-stub`을 남깁니다.
-
-### 실제 AI 연결
-
-```sh
-export LIT_AI_PROVIDER='openai'
-export OPENAI_API_KEY='본인의-OpenAI-API-키'
-export OPENAI_MODEL='본인 계정에서 사용할 모델 ID'
-./mvnw spring-boot:run
-```
-
-별도 모델 ID를 고정하지 않았습니다. 키와 모델은 서버 환경변수에만 설정하며 학생에게 전달하지 않습니다.
-키/모델 미설정 시 AI 요청만 503 `AI_NOT_CONFIGURED`로 실패하고 나머지 기능은 사용할 수 있습니다.
-서버에서 [OpenAI 공식 Responses API](https://developers.openai.com/api/docs/guides/text)를 호출합니다.
-서버에 현재 문항, 학생의 저장된 초안, 해당 문항의 최근 완료 대화 최대 20회를 전달하고 `store: false`로 요청합니다.
-기본 URL은 `https://api.openai.com/v1/responses`, 연결 제한은 5초, 요청 제한은 45초입니다.
-`OPENAI_RESPONSES_URL`, `LIT_AI_TIMEOUT_SECONDS`로 서버 설정을 변경할 수 있습니다.
-타임아웃은 1~60초만 허용합니다. 테스트는 로컬 HTTP 서버로 요청/응답 형식, 오류, 타임아웃을 검증하며 실제 유료 API를 호출하지 않습니다.
-
-## 문항 및 AI 설정 API
-
-교사 인증은 기존과 같습니다. 평가 시작 **이전**에만 문항·AI 정책을 설정할 수 있습니다.
-문항은 1~100개, 순서 `position`은 양수이며 평가 내에서 유일해야 합니다.
-제목은 1~200자, 본문은 1~10,000자입니다. 제목 중복은 허용하며 문항은 UUID로 구분합니다.
-설정 PUT은 문항 목록을 전체 교체하므로 문항 ID가 다시 발급됩니다.
+이메일 소유를 인증한 사용자가 가입합니다. 학교·초대 코드·교사 신분 확인·관리자 승인은 요구하지 않습니다. `TEACHER`는 교사 신분 보증이 아니라 평가 생성·운영용 서비스 역할입니다.
+교사는 `/api/auth/login`으로 로그인하고 교사용 API에 다음 헤더를 사용합니다.
 
 ```http
-PUT /api/teacher/evaluations/{id}/questions
-Authorization: Bearer test
-Content-Type: application/json
+Authorization: Bearer {accessToken}
 ```
 
-```json
-{
-  "aiPolicy": "HINT_ONLY",
-  "questions": [
-    {"position": 1, "title": "문항 1", "content": "2+2의 값과 이유를 설명하세요."},
-    {"position": 2, "title": "문항 2", "content": "풀이 과정을 설명하세요."}
-  ]
-}
-```
+학생은 가입·로그인 없이 PIN과 닉네임으로 참여합니다. 참여 응답의 participantToken을 학생 API의 `X-Participant-Token` 헤더에 사용하세요.
+교사 공통 키는 사용하지 않습니다.
+Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
+토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
-`GET /api/teacher/evaluations/{id}/questions`로 문항 ID와 설정을 조회할 수 있습니다.
+[Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 이메일 인증·오류 정책을 정리했습니다.
 
-| aiPolicy | 허용 범위 |
-|---|---|
-| DISABLED | AI 질문 불가. 미설정 평가의 기본값 |
-| HINT_ONLY | 개념 설명, 유도 질문, 힌트만 허용하도록 모델에 지시 |
-| FULL | 풀이 설명과 답안 예시 허용 |
+## API 목록
 
-정책은 서버가 적용하며 학생 요청에서 변경할 수 없습니다.
-`HINT_ONLY`는 모델 지시로 적용하는 정책으로, 출력에 정답이 절대 포함되지 않는다는 보장은 아닙니다.
-이번 구현의 ‘단계’는 평가 전체 AI 허용 수준입니다. 시간별/문항별 단계 전환은 추가 정책이 필요합니다.
-
-## 학생 풀이 API
-
-이하 모든 요청은 `X-Participant-Token` 헤더를 사용합니다.
-평가 시작 전에는 문항/대화를 열람할 수 없습니다. 종료·만료 후에는 본인 기록 조회만 가능합니다.
+### Auth
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
-| GET | `/api/evaluations/{id}/questions` | 문항·저장 답안·AI 정책·읽기 전용 상태 |
-| GET | `/api/evaluations/{id}/questions/{questionId}` | 문항 전환 시 해당 문제와 본인 저장 답안 |
-| PUT | `/api/evaluations/{id}/questions/{questionId}/answer` | 문항별 답안 저장 및 수정 |
-| POST | `/api/evaluations/{id}/questions/{questionId}/ai/questions` | 문항별 AI 질문 |
-| GET | `/api/evaluations/{id}/conversations` | 본인의 AI 질문·응답 기록 |
-| GET | `/api/evaluations/{id}/learning-events` | 본인의 학습 과정 기록 |
-| GET | `/api/evaluations/{id}/submission-preview` | 제출 확인용 내용·미작성 문항·확인 토큰 |
+| POST | `/api/auth/signup/teacher` | 이메일 인증 완료 후 가입 |
+| POST | `/api/auth/login` | 공통 로그인 |
+| POST | `/api/auth/refresh` | 토큰 교체 |
+| GET | `/api/auth/me` | 본인 계정 |
+| POST | `/api/auth/logout` | 현재 로그인 세션 폐기 |
+| GET | `/api/auth/username-availability?username=...` | 아이디 중복 확인 |
+| POST | `/api/auth/email-verifications` | 가입 인증메일 발송 |
+| POST | `/api/auth/email-verifications/confirm` | 인증번호 확인·가입용 토큰 발급 |
+| POST | `/api/auth/teacher-invitations` | 종료된 기능(410) |
+
+### 평가·참여
+
+교사용 `/api/teacher/**`는 교사 로그인 및 평가 소유권을 검사합니다.
+PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평가별 참가자 토큰이 필요합니다.
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/teacher/evaluations` | 평가 생성 |
+| GET | `/api/teacher/evaluations?page=0&size=20` | 내가 만든 평가 목록 |
+| GET | `/api/teacher/evaluations/{id}` | 평가 정보·PIN |
+| PATCH | `/api/teacher/evaluations/{id}` | 제목·풀이 시간·PIN 유효 시간 수정 (WAITING만) |
+| DELETE | `/api/teacher/evaluations/{id}` | 평가와 관련 기록 삭제 (진행 중 불가) |
+| PUT | `/api/teacher/evaluations/{id}/content` | 평가 기준·규칙 저장 (대기 중 소유 교사) |
+| GET | `/api/teacher/evaluations/{id}/content` | 저장한 평가 내용 조회 (소유 교사) |
+| GET | `/api/evaluations/{id}/content` | 평가 내용 조회 (해당 평가 참가자) |
+| GET | `/api/teacher/evaluations/{id}/qr` | 참여 URL QR PNG |
+| GET | `/api/teacher/evaluations/{id}/participants` | 참가자 목록 |
+| POST | `/api/teacher/evaluations/{id}/start` | 평가 시작 |
+| POST | `/api/teacher/evaluations/{id}/end` | 평가 종료 |
+| PUT | `/api/teacher/evaluations/{id}/questions` | 시작 전 문항·AI 정책 전체 설정 |
+| GET | `/api/teacher/evaluations/{id}/questions` | 문항·AI 정책 조회 |
+| GET | `/api/teacher/evaluations/{id}/participants/{participantId}/learning-events` | 학생 학습 기록 |
+| GET | `/api/participation/verify?pin=000001` | PIN 확인 |
+| POST | `/api/participation/join` | 비회원 학생의 참여·재접속 |
+| GET | `/api/evaluations/{id}/state` | 학생 상태 및 연결 갱신 |
+| POST | `/api/evaluations/{id}/heartbeat` | 연결 갱신 |
+| POST | `/api/evaluations/{id}/leave` | 이탈 |
+| GET | `/api/evaluations/{id}/questions` | 문항·본인 답안 목록 |
+| GET | `/api/evaluations/{id}/questions/{questionId}` | 문항·본인 답안 조회 |
+| PUT | `/api/evaluations/{id}/questions/{questionId}/answer` | 문항별 답안 임시저장·수정 |
+| GET | `/api/evaluations/{id}/questions/{questionId}/answer` | 해당 문항의 저장 답안·버전·저장 시각 조회 |
+| POST | `/api/evaluations/{id}/questions/{questionId}/ai/questions` | AI 질문 |
+| GET | `/api/evaluations/{id}/conversations` | 본인 대화 |
+| GET | `/api/evaluations/{id}/learning-events` | 본인 학습 기록 |
+| POST | `/api/evaluations/{id}/learning-events` | 창 이탈·캡처·복사 시도·붙여넣기·AI 답변 복사 기록 |
+| GET·PUT | `/api/evaluations/{id}/ai-disclosure` | 사용한 AI 도구·활용 부분·선택 이유 |
+| GET | `/api/evaluations/{id}/submission-preview` | 제출 내용 확인 |
 | POST | `/api/evaluations/{id}/submission` | 최종 제출 확정 |
-| GET | `/api/evaluations/{id}/submission` | 제출 확정 시점의 고정된 기록 |
+| GET | `/api/evaluations/{id}/submission` | 확정된 기록 조회 |
 
-문항 목록은 순서대로 반환됩니다. 각 문항은 `question`과 `answer`로 구성됩니다.
-저장 전 답안은 `content: ""`, `version: 0`, `updatedAt: null`입니다.
-`status`는 `IN_PROGRESS`, `SUBMITTED`, `ENDED`, `EXPIRED`이며 `readOnly`를 함께 반환합니다.
+평가 생성: `{"title":"수학 평가","expiresInMinutes":60}`. 제목 1~100자, PIN 유효 시간 1~1440분. `durationMinutes`(1~1440, 생략 시 expiresInMinutes)는 시작 시점부터 적용되는 제한 시간입니다.
+문항 설정: `{"aiPolicy":"HINT_ONLY","questions":[{"position":1,"title":"문항1","content":"2+2는?"}]}`.
+문항 1~100개, 양수 순서 중복 불가. 제목 최대 200자, 본문 최대 10,000자.
+참여: `{"pin":"012345","nickname":"학생1"}`. PIN은 6자리 문자열, 닉네임은 1~20자.
+참여 응답은 participantId·participantToken·lobby를 반환합니다.
+재접속은 `{"pin":"012345","participantToken":"기존 토큰"}`으로 호출하며 참가자 ID·답안·닉네임을 유지합니다.
 
-### 답안 저장과 문항 전환
+### 교사 채점 화면 (AI 활용 평가 기준, 100점)
+
+상세: [docs/AI_GRADING.md](docs/AI_GRADING.md), 프런트 요청 답변: [docs/FRONTEND_REQUESTS_2026-10-31.md](docs/FRONTEND_REQUESTS_2026-10-31.md)
+
+| 메서드 | 경로 (`/api/teacher/evaluations/{id}` 기준) | 기능 |
+|---|---|---|
+| GET | `/submissions` | 학생별 제출·경고·채점 상태·총점 |
+| GET | `/participants/{pid}/answers` | 답안과 문단별 출처(추정) |
+| GET | `/participants/{pid}/conversations` | AI 대화와 질문 유형 |
+| GET | `/participants/{pid}/analysis` | 규칙 기반 활용 분석(정책 점검·유사도 참고·질문 유형) |
+| POST | `/analysis/run` | 제출 학생 전체 재분석 |
+| GET·PUT·DELETE | `/rubric` | 평가 기준·배점 (채점 시작 전 변경) |
+| GET | `/participants/{pid}/rubric-scores` | AI 추천·교사 점수 |
+| PUT | `/participants/{pid}/rubric-scores/{criterionId}` | 기준 하나 저장 `{level,feedback}` |
+| GET | `/participants/{pid}/rubric-scores/history` | 점수 변경 이력 |
+| POST | `/participants/{pid}/grade/confirm` | 채점 확정 |
+| PUT | `/participants/{pid}/compliance-review` | 허용 범위 교사 판단(판단 보류 등) |
+
+### 알림·내 정보
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| GET | `/api/notifications?page=0&size=20&unreadOnly=false` | 알림 목록 |
+| GET | `/api/notifications/unread-count` | 읽지 않은 개수 |
+| PATCH | `/api/notifications/{id}/read` | 하나 읽음 |
+| POST | `/api/notifications/read-all` | 모두 읽음 |
+| GET·PUT | `/api/users/me/settings` | 알림 받기·소리 설정 |
+| GET·PATCH | `/api/users/me` | 내 정보·이름 변경 |
+| POST | `/api/users/me/password` | 비밀번호 변경 (다른 기기 로그인 해제) |
+
+## 답안·AI·제출 정책
+
+- 답안 저장: `{"content":"답안","expectedVersion":0,"source":"DIRECT"}`.
+- content 입력 최대 UTF-8 1MiB, 표 HTML·빈 답안 허용. 현재 버전이 일치해야 저장되며 성공 시 version +1.
+- source는 DIRECT / AI_REFERENCED / AI_USED. AI 참고·사용은 같은 참가자·문항의 완료된 aiRequestId 필요.
+- 문항 전환 전 저장 성공을 확인하세요. 프런트의 미저장 입력 보존·실패 표시는 별도 구현 항목입니다.
+- AI 정책은 AIAS 5단계: DISABLED(1) / HINT_ONLY(2) / EDIT_ASSIST(3) / TASK_ASSIST(4) / FULL(5). 설정 시 aiPolicy 또는 aiLevel(1~5)을 보냅니다. HINT_ONLY·EDIT_ASSIST·TASK_ASSIST는 모델에 지시하는 제한으로 정답 미노출을 보장하지는 않습니다.
+- AI 질문: `{"requestId":"ask-001","text":"힌트를 주세요"}`. text 최대 4,000자.
+- requestId는 `[A-Za-z0-9_-]{1,64}`. 같은 요청 재시도는 같은 ID·본문, 새 질문은 새 ID.
+- 참가자당 동시 1건·분당 10건·평가당 100건. 실패도 기록되며 자동 재호출하지 않습니다.
+- AI 상태 PENDING / COMPLETED / FAILED. 진행 중 중복 요청은 202, 완료는 200, 제공자 실패는 502/503/504 및 Turn.errorCode.
+- 대화·학습 기록은 `afterId=0&limit=100` 커서 조회. limit은 1~200. 대화에는 선택적 questionId 필터가 있습니다.
+- 제출은 미리 확인 응답의 reviewToken을 `{"reviewToken":"..."}`으로 전달합니다. 내용 변경 시 409 REVIEW_CHANGED.
+- AI 진행 중에는 제출 불가. 빈 답안은 확인 후 제출 가능. 제출 후 답안·대화는 읽기 전용입니다.
+- 교사 종료·시간 만료 시 미제출자는 자동 제출되며, 종료 후 저장은 기본적으로 거절합니다. 선택 설정 `LIT_EVALUATION_END_GRACE_SECONDS`의 기본값은0이며, 별도 합의로 켜더라도 채점·리포트가 있는 답안은 변경하지 못합니다.
+- 평가 state는 WAITING / STARTED / ENDED. 학생 screen은 WAITING / SOLVING / SUBMITTED / ENDED / EXPIRED.
+- 연결 갱신이 30초 없으면 DISCONNECTED. 상태 조회를 3~5초 간격, 별도 heartbeat는 10초 간격으로 호출하세요.
+
+## Postman
+
+`postman/LIT.postman_collection.json`을 Import하고 먼저 **이메일 인증 회원가입** 폴더에서 실수신 가능한 이메일로 인증을 완료하세요.
+**전체 흐름 (테스트)** 폴더를 순서대로 실행하면 교사 가입·로그인·학생 비회원 참여·평가·답안·AI·제출·교사 토큰 갱신·로그아웃까지 진행합니다.
+계정 이름·비밀번호는 첫 요청에서 테스트용으로 생성하고 토큰·ID는 응답에서 자동 저장합니다.
+가입 API는 일회용 이메일 인증 토큰을 소비합니다. 인증번호는 메일에서 직접 입력하며 API 응답에는 포함되지 않습니다.
+가입 이후의 개별 요청은 저장된 변수로 재실행할 수 있으나 답안 expectedVersion과 제출 상태를 확인하세요.
+
+## 외부 서비스 설정
+
+실제 AI 기본 제공자는 Gemini입니다. 백엔드를 실행하는 터미널에 `LIT_AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`을 설정합니다. 모델 이름은 Google AI Studio에서 프로젝트에 사용 가능한 모델로 지정하세요. 키는 프런트엔드의 `VITE_` 변수나 Git에 넣지 않습니다.
+
+```sh
+export LIT_AI_PROVIDER=gemini
+read -s 'GEMINI_API_KEY?Gemini API key: '
+export GEMINI_API_KEY
+export GEMINI_MODEL='<AI Studio에서 선택한 모델 ID>'
+./mvnw spring-boot:run
+```
+
+위 키 입력 명령은 macOS zsh 기준이며 입력값을 화면에 표시하지 않습니다. 기존 서버는 해당 터미널에서 Ctrl+C로 종료한 후 한 번만 실행합니다. 이미 실행 중인 서버에는 새 환경변수가 적용되지 않습니다.
+
+학생의 `POST /api/evaluations/{id}/questions/{questionId}/ai/questions` 요청은 `X-Participant-Token` 헤더와 `{ "requestId": "고유한 요청 ID", "text": "질문 내용" }`를 사용합니다. 같은 요청 재시도에는 같은 requestId를 사용합니다. 서버가 문항, 현재 답안과 최근 대화를 Gemini에 전달하며 질문·응답·제공자·모델·시각·실패 상태를 DB에 남깁니다. `GET /api/evaluations/{id}/conversations`로 본인 대화를 다시 조회합니다. 교사는 기존 학습 이벤트 조회 API로 기록을 확인합니다. 제출 후 신규 AI 질문은 차단합니다.
+
+키나 모델이 없으면 실제 호출 없이 `AI_NOT_CONFIGURED`, 무료 할당량 초과 시 `AI_PROVIDER_RATE_LIMITED`를 기록합니다. 무료 등급에서 한도에 도달해도 자동으로 유료 모델로 전환하지 않습니다.
+
+기존 OpenAI 제공자도 지원합니다. `LIT_AI_PROVIDER=openai`, `GEMINI_API_KEY` 대신 `OPENAI_API_KEY`, `GEMINI_MODEL` 대신 `OPENAI_MODEL`을 사용하며, 커스텀 URL은 `LIT_AI_ENDPOINT`로 지정합니다.
+Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
+`LIT_JOIN_BASE_URL` 기본값은 `http://localhost:3000/join`이며 참여 웹 페이지는 별도로 필요합니다.
+
+
+## 검증
+
+인증·역할·소유권·이메일 인증·갱신 재사용·로그아웃·계정 제한,
+전체 평가 흐름·답안 충돌·AI 대화 격리·제출 고정·이전 스키마 보존을 자동 테스트합니다.
+
+기술 참고: [Spring Security 구조](https://docs.spring.io/spring-security/reference/servlet/architecture.html),
+[비밀번호 저장](https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html).
+
+학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
+
+비밀번호 찾기·재설정 기능은 제외했습니다. SMTP나 메일 발송 환경변수는 필요하지 않습니다.
+
+
+### 내가 만든 수행평가 조회
+
+`GET /api/teacher/evaluations?page=0&size=20`에 교사 로그인 응답의 `Authorization: Bearer {accessToken}`을 전달합니다. 학생 참가자 토큰으로는 조회할 수 없습니다. 본인이 만든 평가만 포함하며 종료·만료된 평가도 반환합니다. 페이지는 0부터, size는 1~100(기본20)입니다. 만료 시각 내림차순, 같은 만료 시각은 id 내림차순입니다. 현재 스키마에 생성 시각이 없어 생성순을 의미하지 않습니다.
 
 ```json
 {
-  "content": "내 답안",
-  "expectedVersion": 0,
-  "source": "DIRECT"
+  "items": [
+    {
+      "id": "평가 UUID",
+      "title": "수학 수행평가",
+      "pin": "012345",
+      "state": "WAITING",
+      "expiresAt": "2026-10-28T03:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
 }
 ```
 
-본문은 일반 텍스트이며 최대 10,000자입니다. 빈 답안 저장도 허용합니다.
-성공 시 `questionId`, `content`, 증가한 `version`, `updatedAt`을 반환합니다.
-`expectedVersion`은 마지막 조회/저장 응답의 버전을 전달하세요.
-버전이 다르면 409 `ANSWER_VERSION_CONFLICT`이며 최신 답안을 다시 조회해야 합니다.
-같은 저장 요청의 재전송은 버전 충돌로 차단되어 이벤트가 중복 저장되거나 최신 답안이 역전되지 않습니다.
+평가가 없거나 페이지 범위를 넘으면 items는 빈 배열입니다. 잘못된 page/size는400, 인증 누락·만료는401입니다. 프런트는 선택한 items[].id로 기존 평가 상세·문항·참가자 조회 API를 호출합니다.
 
-문항 전환은 별도 서버 선택 상태를 만들지 않고 문항 ID로 조회합니다.
-프런트에서는 전환 **전에 저장 성공을 확인**하고, 저장 실패 시 현재 입력을 유지한 채 재시도해야 합니다.
-서버가 받지 못한 클라이언트 입력은 보존할 수 없습니다. 웹 화면의 저장 중/실패 표시와 브라우저 초안 보관은 프런트 구현 항목입니다.
+### 프런트에서 Gemini 대화 연결
 
-`source` 값은 `DIRECT`, `AI_REFERENCED`, `AI_USED`입니다.
-AI 사용/참고인 경우 같은 학생·같은 문항의 완료된 AI 대화 `aiRequestId`를 함께 전달해야 합니다.
-예: `{"content":"수정 답안","expectedVersion":1,"source":"AI_REFERENCED","aiRequestId":"ask-001"}`.
-이 분류는 학생의 명시적 신고이며 서버가 외부 AI 사용을 자동으로 감지하지 않습니다.
+학생은 가입 없이 PIN 참여 후 받은 participantToken을 사용합니다. Gemini 키는 서버에만 설정하며 아래 요청에는 넣지 않습니다. 프런트·백엔드가 다른 컴퓨터라면 프런트의 Vite `/api` 프록시 대상을 백엔드 IP:5174로 설정해야 합니다.
 
-### AI 질문과 대화 이력
-
-```json
-{"requestId":"ask-001","text":"이 문제의 접근 방법을 알려주세요."}
+```js
+const response = await fetch(`/api/evaluations/${evaluationId}/questions/${questionId}/ai/questions`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Participant-Token': participantToken,
+  },
+  body: JSON.stringify({ requestId: crypto.randomUUID(), text: questionText }),
+});
+const result = await response.json();
+if (!response.ok || result.state === 'FAILED') {
+  throw new Error(result.errorCode || result.code || 'AI_REQUEST_FAILED');
+}
+// COMPLETED이면 result.answerText 표시. PENDING이면 대화 조회로 상태 확인.
 ```
 
-`requestId`는 클라이언트에서 새 질문마다 생성하는 영문·숫자·`_`·`-`의 1~64자 식별자입니다.
-질문은 공백 제외 1~4,000자입니다.
-같은 질문을 네트워크 재시도할 때는 **같은 requestId와 본문**을 사용하세요.
-완료된 요청은 기존 응답을 돌려주며 진행 중인 중복 요청은 202와 `PENDING`을 반환합니다.
-같은 ID에 다른 문항/본문을 보내면 409 `IDEMPOTENCY_KEY_REUSED`입니다.
+질문 버튼 처리의 finally에서 로딩을 해제하고 실패 메시지를 표시하세요. 새 질문마다 새 requestId, 네트워크 재시도는 원래 requestId·본문을 그대로 사용합니다. 대화는 같은 참가자 헤더로 `GET /api/evaluations/{id}/conversations?questionId={questionId}`에서 조회합니다. 평가가 STARTED이고 aiPolicy가 HINT_ONLY 또는 FULL이어야 질문할 수 있습니다.
 
-한 참가자당 동시에 1개, 분당 최대 10개, 평가당 최대 100개의 새 AI 요청을 허용합니다.
-다른 질문을 중복 전송하면 409 `AI_IN_PROGRESS`입니다.
-상태는 `PENDING`, `COMPLETED`, `FAILED`이며 실패 시 `errorCode`를 반환합니다.
-외부 응답이 실패해도 질문과 실패 이벤트를 DB에 남깁니다.
-실패한 요청의 동일 ID 재시도는 실패 기록을 그대로 반환합니다. 사용자가 명시적으로 다시 질문할 경우 새 requestId를 사용하세요.
-타임아웃/서버 중단 시 외부 제공자가 요청을 이미 처리했을 수 있어 자동 재호출하지 않습니다.
-서버 중단으로 120초 이상 남은 PENDING은 30초 주기 작업에서 FAILED로 복구합니다.
 
-- 완료: HTTP 200
-- 진행 중인 동일 요청: HTTP 202
-- 키/모델 미설정: HTTP 503, `AI_NOT_CONFIGURED`
-- 응답 시간 초과: HTTP 504, `AI_TIMEOUT`
-- 제공자 오류/제한/불완전 응답: HTTP 502, 각각의 `errorCode`
+## 교사 검토·리포트
 
-이 AI 처리 결과 응답은 일반 오류 envelope 대신 `Turn` 객체에 `state`, `errorCode`, `requestId`를 포함합니다.
-각 Turn은 질문/응답 원문, 문항 ID, 모델/도구 정보, 허용 정책, 질문 시점 답안 버전, 생성/완료 시각을 포함합니다.
-제공자가 지원하는 웹 검색 등 별도 도구를 켜지 않으며 provider는 호출한 AI 서비스 식별자입니다.
+학생 목록·상세, 기록 근거 기반 활용 분류, 교사 5개 영역 검토, 제출 리포트 버전 생성·조회, PDF 다운로드를 지원합니다. 자세한 요청·응답과 임시 평가 기준은 [docs/REPORTS.md](docs/REPORTS.md)를 참고하세요. 기존 리뷰 점수는 교사가 입력합니다. 새 Assessment API는 기록이 있는 항목의 규칙 기반 추천을 별도로 제공하며 최종 성적은 교사가 확정합니다. 기여도는 자동 추천하지 않습니다. POST reports는 제출 확정 이후에만 가능하며 백그라운드 생성 주기는30초입니다.
 
-대화 조회는 `?questionId=...&afterId=0&limit=100`을 지원합니다. questionId는 선택입니다.
-시간순 정렬은 서버 발급 증가 ID로 보장합니다. 다음 조회는 마지막 ID를 `afterId`로 전달하세요.
-`limit`은 1~200입니다. 새 메시지 스크롤 처리는 프런트에서 담당합니다.
+### Gemini 오류 진단
 
-### 학습 과정 자동 기록
+2026-11-01 운영 확인에서는 `gemini-3.1-flash-lite`가 반복503을 반환했고, 같은 키로 `gemini-3.5-flash-lite`는200과 정상 텍스트를 반환했습니다. `GEMINI_MODEL=gemini-3.5-flash-lite`를 현재 운영 설정 예시로 사용합니다. 모델의 가용성·요금·프로젝트 한도는 변할 수 있으므로 실제 사용할 키로 호출해 검증하세요. 모델 목록 조회만으로 생성 호출 권한을 보장하지 않습니다. 모델을 자동 교체하거나 유료 결제를 활성화하지 않습니다.
 
-답안 변경과 이벤트 기록을 하나의 DB 트랜잭션으로 처리합니다.
-답안의 변경 전/후 원문·버전, 직접 작성/AI 참고·사용 분류, 참조한 AI 요청 ID,
-AI 질문/응답 원문·모델·실패 원인·발생 시각, 제출 확정을 기록합니다.
-기록은 서버 발급 ID 순서로 조회하며 `afterId`, `limit`을 지원합니다.
-교사는 다음 인증 경로로 평가에 속한 참가자 기록을 조회할 수 있습니다.
+오류는 Turn(state=FAILED,errorCode=...)로 반환합니다. AI_MODEL_UNAVAILABLE(HTTP502): 모델404; AI_AUTHENTICATION_FAILED(502): 키·권한 오류; AI_INVALID_PROVIDER_REQUEST(502): 제공자 요청400; AI_PROVIDER_UNAVAILABLE(502): 제공자5xx; AI_PROVIDER_RATE_LIMITED(502): 제공자429; AI_NOT_CONFIGURED(503): 서버 키·모델 미설정; AI_TIMEOUT(504): 응답 제한 초과. 키 원문·제공자 원문 오류는 반환하거나 로그에 기록하지 않습니다.
 
-`GET /api/teacher/evaluations/{id}/participants/{participantId}/learning-events`
+Gemini 일시적 HTTP500/502/503/504는 같은 질문 처리 안에서 최대3회(최초1회+재시도2회), 기본1초·2초 간격으로 재시도합니다. 숫자 Retry-After가 더 길면 해당 간격을 따르되 전체 LIT_AI_TIMEOUT_SECONDS(기본45초)를 넘기지 않습니다. 키 오류·모델 오류·429·네트워크 시간 초과는 자동 재시도하지 않습니다. 모델 자동 전환도 하지 않습니다. 재시도는 새 대화 기록을 만들지 않으며 최종 결과만 기존 Turn에 반영합니다.
 
-학생 요청에는 타인의 participantId를 지정하는 기능이 없으며 서버가 토큰에서 신원을 확인합니다.
-외부 AI 사용이나 저장되지 않은 키 입력은 자동 기록 대상이 아닙니다.
+## CI/CD 배포
 
-## 제출 미리 확인 → 최종 확정
+GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배포 설정은 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)를 참고하세요. 서버와 production 환경 Secrets를 설정한 뒤 develop 변경으로 배포합니다. 실제 EC2 연결은 별도 설정이 필요합니다.
 
-1. `GET /submission-preview`로 저장된 문항별 답안, 대화, 학습 과정, `blankQuestionIds`, `reviewToken`을 받습니다.
-2. 프런트에서 내용과 미작성 안내를 보여주세요. 취소는 창만 닫으며 API 호출/서버 상태 변경이 없습니다.
-3. 확정 시 아래 요청을 보냅니다.
+종료 시각·서버 시계·자동 제출은 [제한 시간 API](docs/TIME_LIMITS.md)를 참고하세요.
 
-```json
-{"reviewToken":"미리보기에서 받은 64자리 확인 토큰"}
-```
+프런트 guidelines·창 이탈 이벤트·1MiB HTML 자동 저장 계약은 [프런트 연동 API](docs/FRONTEND_CONTRACT.md)를 참고하세요.
 
-미리보기 후 답안이나 대화가 바뀌면 409 `REVIEW_CHANGED`입니다. 내용을 다시 확인하세요.
-AI 처리가 진행 중이면 `canConfirm: false`이며 제출 확정은 409 `AI_IN_PROGRESS`로 거절합니다.
-미작성 문항도 안내 후 제출할 수 있도록 했습니다. 문항이 0개인 평가는 제출할 수 없습니다.
-최종 제출은 답안·대화·학습 과정의 JSON snapshot을 같은 트랜잭션에서 저장합니다.
-응답은 `status: SUBMITTED`, `submittedAt`, `snapshot`입니다.
-제출 후에는 답안 수정/새 AI 질문/재제출을 차단하고 기존 기록 조회만 허용합니다.
-같은 reviewToken으로 재시도한 제출 확정은 저장된 제출 결과를 그대로 반환합니다.
-제출 완료 화면은 기존 `/state`, `/heartbeat`, 재접속에서도 `SUBMITTED`로 안내합니다.
+평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.
 
-기존 데이터는 삭제하지 않고 `CREATE TABLE IF NOT EXISTS`로 추가 테이블을 생성합니다.
-기존 평가에는 기본적으로 문항이 없고 AI가 비활성화됩니다. 새 풀이 흐름은 문항을 설정한 평가로 테스트하세요.
+교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요.
+
+## 수행평가 틀과 반별 회차
+
+공통 문제를 한 번 정의하고 반별 PIN·시작·제출·채점을 분리하는 API는 [docs/ASSESSMENT_CLASSES.md](docs/ASSESSMENT_CLASSES.md)를 참고하세요. 이 변경은 로컬 커밋에 포함되어 있으며 아직 푸시·운영 배포하지 않았습니다.
+
+## 수행평가 공동 편집
+
+[공유 API 명세](docs/ASSESSMENT_COLLABORATION.md): 교사 이메일과 `role: "EDITOR"`로 공유하고, `scope=mine|shared|all`로 목록을 조회합니다. 응답의 `owner.name`, `myRole`, `collaboratorCount`, `shared`로 카드 표시를 구성할 수 있습니다. EDITOR는 본인의 공유에서 나갈 수 있으며, 평가 삭제와 타인 공유 관리는 OWNER만 가능합니다. 공동 수정 시 PUT에 GET 응답의 `revision`을 보내면 오래된 버전은 409로 거절됩니다. 기존 PIN·QR·반 운영·채점·공유 알림도 EDITOR에게 제공됩니다. Postman의 ‘수행평가 공동 편집’ 폴더에서 요청 예시를 확인하세요.
+
+## 약관·개인정보 처리방침 동의
+
+[동의 API 명세](docs/CONSENTS.md): 교사 로그인 후 `GET /api/users/me/consents`로 현재 버전과 동의 상태를 조회하고, `POST`에 두 동의 값과 버전을 보내 DB에 저장합니다. `/history`로 본인의 과거 동의 이력을 확인할 수 있습니다. 문서 버전은 `LIT_TERMS_VERSION`·`LIT_PRIVACY_VERSION`(각 기본 v1)로 설정하며 실제 프런트 문서와 맞춰야 합니다. 같은 버전의 재요청은 최초 동의 시각을 유지합니다. 기존 가입·로그인 및 학생 PIN 참여 흐름은 바꾸지 않으며 회원가입 시 자동 동의 처리도 하지 않습니다.
+
+문항별 임시저장과 다시 불러오기 요청·응답 및 충돌 처리는 [문항별 임시저장 API](docs/ANSWER_DRAFTS.md)를 참고하세요. 기존 PUT 답안 저장을 사용하며 GET 같은 경로로 복원합니다.

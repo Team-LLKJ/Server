@@ -3,20 +3,74 @@ spring:
     url: ${DATABASE_URL:jdbc:h2:file:./data/lit}
     username: ${DATABASE_USER:sa}
     password: ${DATABASE_PASSWORD:}
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   sql:
     init:
       mode: always
   jackson:
     time-zone: UTC
 server:
+  forward-headers-strategy: native
+  port: ${SERVER_PORT:${PORT:5174}}
   error:
     include-message: never
 lit:
-  teacher-key: ${LIT_TEACHER_KEY:}
+  policies:
+    terms-version: ${LIT_TERMS_VERSION:v1}
+    privacy-version: ${LIT_PRIVACY_VERSION:v1}
+  cors:
+    allowed-origins: ${LIT_CORS_ALLOWED_ORIGINS:}
   join-base-url: ${LIT_JOIN_BASE_URL:http://localhost:3000/join}
   ai:
-    provider: ${LIT_AI_PROVIDER:openai}
-    api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:}
-    endpoint: ${OPENAI_RESPONSES_URL:https://api.openai.com/v1/responses}
+    provider: ${LIT_AI_PROVIDER:gemini}
+    api-key: ${GEMINI_API_KEY:${OPENAI_API_KEY:}}
+    model: ${GEMINI_MODEL:${OPENAI_MODEL:}}
+    endpoint: ${LIT_AI_ENDPOINT:}
     timeout-seconds: ${LIT_AI_TIMEOUT_SECONDS:45}
+  evaluation:
+    # 평가 종료(교사 종료·시간 만료) 후 자동 제출된 학생의 마지막 답안 저장을 받아 주는 유예 시간(초). 0이면 유예 없음.
+    end-grace-seconds: ${LIT_EVALUATION_END_GRACE_SECONDS:0}
+  grading:
+    # AI 활용 채점 알고리즘 가중치·경계값 (docs/AI_GRADING.md 참고)
+    ai-used-threshold: ${LIT_GRADING_AI_USED_THRESHOLD:0.8}
+    ai-referenced-threshold: ${LIT_GRADING_AI_REFERENCED_THRESHOLD:0.4}
+    copy-event-bonus: ${LIT_GRADING_COPY_EVENT_BONUS:0.15}
+    drafting-penalty: ${LIT_GRADING_DRAFTING_PENALTY:1.0}
+    specific-question-min-length: ${LIT_GRADING_SPECIFIC_QUESTION_MIN_LENGTH:20}
+    usage-high-share: 0.5
+    usage-medium-share: 0.2
+    long-paste-length: 200
+    appropriate-types: CONCEPT_UNDERSTANDING,RESEARCH,IDEA_EXPLORATION
+    max-ai-used-share:
+      1: 0.0
+      2: 0.0
+      3: 0.3
+      4: 0.7
+      5: 1.0
+  auth:
+    mail-from: ${LIT_MAIL_FROM:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
