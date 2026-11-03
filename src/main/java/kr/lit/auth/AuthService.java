@@ -22,9 +22,11 @@ public class AuthService {
     private final JdbcTemplate db;
     private final PasswordEncoder encoder;
     private final SignupEmailService signupEmail;
+    private final PasswordChangeService passwordChangeService;
     private final String dummyHash;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail) {
+    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail,PasswordChangeService passwordChangeService) {
+        this.passwordChangeService=passwordChangeService;
         this.db=db;this.encoder=encoder;this.signupEmail=signupEmail;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
     }
     public static String hash(String value) {
@@ -107,12 +109,7 @@ public class AuthService {
         return me(p.userId());
     }
     /** 현재 비밀번호 확인 후 변경하고, 지금 로그인한 세션을 제외한 다른 기기의 세션을 모두 폐기합니다. */
-    @Transactional(noRollbackFor=ApiError.Failure.class)
     public void changePassword(Principal p,String current,String next) {
-        var rows=db.queryForList("SELECT password_hash FROM app_users WHERE id=? FOR UPDATE",String.class,p.userId());
-        if(rows.isEmpty()||!encoder.matches(current,rows.get(0))) throw fail(HttpStatus.BAD_REQUEST,"INVALID_CURRENT_PASSWORD","현재 비밀번호가 올바르지 않습니다.");
-        if(next.equals(current)) throw fail(HttpStatus.BAD_REQUEST,"PASSWORD_UNCHANGED","새 비밀번호가 현재 비밀번호와 같습니다.");
-        db.update("UPDATE app_users SET password_hash=?,updated_at=? WHERE id=?",encoder.encode(next),now(),p.userId());
-        db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND family_id<>(SELECT family_id FROM auth_sessions WHERE id=?)",now(),p.userId(),p.sessionId());
+        passwordChangeService.changePassword(p,current,next);
     }
 }
