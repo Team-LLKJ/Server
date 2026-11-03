@@ -225,3 +225,10 @@ CREATE TABLE IF NOT EXISTS signup_email_verifications (
  verified_at TIMESTAMP WITH TIME ZONE, token_hash VARCHAR(64),
  token_expires_at TIMESTAMP WITH TIME ZONE, used_at TIMESTAMP WITH TIME ZONE
 );
+
+CREATE TABLE IF NOT EXISTS email_change_verifications (
+ user_id VARCHAR(36) PRIMARY KEY REFERENCES app_users(id),
+ email VARCHAR(254) NOT NULL, code_hash VARCHAR(255) NOT NULL,
+ password_hash VARCHAR(255) NOT NULL, last_sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ expires_at TIMESTAMP WITH TIME ZONE NOT NULL, attempts INT NOT NULL DEFAULT 0
+);

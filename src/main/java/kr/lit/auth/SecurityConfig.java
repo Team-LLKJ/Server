@@ -74,8 +74,8 @@ public class SecurityConfig {
         }
         protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain) throws ServletException,IOException {
             res.setHeader("Cache-Control","no-store");String path=req.getRequestURI().substring(req.getContextPath().length());
-            int max=path.equals("/api/users/me/password")?10:path.contains("signup")?20:30;
-            boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/")||path.equals("/api/users/me/password");
+            int max=(path.equals("/api/users/me/password")||path.startsWith("/api/users/me/email/"))?10:path.contains("signup")?20:30;
+            boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/")||path.equals("/api/users/me/password")||path.startsWith("/api/users/me/email/");
             String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path;
             if(limited&&!limit(req.getRemoteAddr(),group,max)) {error(res,json,429,"RATE_LIMITED","요청이 많습니다. 잠시 후 다시 시도해주세요.");return;}
             boolean studentPath=path.startsWith("/api/student/evaluations/");
