@@ -22,9 +22,11 @@ public class AuthService {
     private final JdbcTemplate db;
     private final PasswordEncoder encoder;
     private final SignupEmailService signupEmail;
+    private final NicknameService nicknameService;
     private final String dummyHash;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail) {
+    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail,NicknameService nicknameService) {
+        this.nicknameService=nicknameService;
         this.db=db;this.encoder=encoder;this.signupEmail=signupEmail;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
     }
     public static String hash(String value) {
@@ -101,9 +103,7 @@ public class AuthService {
         db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=(SELECT family_id FROM auth_sessions WHERE id=? AND user_id=?)",now(),p.sessionId(),p.userId());
     }
     public User updateName(Principal p,String name) {
-        String value=name==null?"":name.strip();
-        if(value.isEmpty()||value.length()>50) throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이름은 1~50자여야 합니다.");
-        db.update("UPDATE app_users SET display_name=?,updated_at=? WHERE id=?",value,now(),p.userId());
+        nicknameService.updateNickname(p,name);
         return me(p.userId());
     }
     /** 현재 비밀번호 확인 후 변경하고, 지금 로그인한 세션을 제외한 다른 기기의 세션을 모두 폐기합니다. */
