@@ -555,7 +555,7 @@
           ]
         },
         {
-          "name": "10 첫 문항 답안 저장",
+          "name": "10 첫 문항 답안 임시저장",
           "request": {
             "method": "PUT",
             "header": [
@@ -580,7 +580,36 @@
             },
             "auth": {
               "type": "noauth"
+            },
+            "description": "최종 제출 전 문항별 임시저장. 재저장은 최신 version을 expectedVersion으로 전송합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"요청 성공\", function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+                ]
+              }
             }
+          ]
+        },
+        {
+          "name": "10-1 첫 문항 임시저장 불러오기",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "본인 해당 문항의 content, version, updatedAt 조회. 저장 전에는 빈 문자열, 0, null."
           },
           "event": [
             {

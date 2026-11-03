@@ -39,6 +39,43 @@ class WorkApiTest extends AuthTestSupport {
         if(start) evaluations.start(e.id());
         return new Fixture(e.id(),e.pin(),p.participantToken(),p.participantId(),c.questions().get(0).id(),c.questions().get(1).id());
     }
+    @Test void reloadsDraftsPerQuestionAndParticipantWithoutSubmitting() throws Exception {
+        var f=fixture(AiPolicy.DISABLED,false);
+        var classmate=evaluations.join(f.pin(),"다른 학생",null);
+        evaluations.start(f.id());
+        for(String prefix:List.of("/api/evaluations/","/api/student/evaluations/")) {
+            mvc.perform(student(get(prefix+f.id()+"/questions/"+f.q1()+"/answer"),f))
+                    .andExpect(status().isOk()).andExpect(jsonPath("questionId").value(f.q1()))
+                    .andExpect(jsonPath("content").value("")).andExpect(jsonPath("version").value(0))
+                    .andExpect(jsonPath("updatedAt").isEmpty());
+        }
+        var saved=ok(student(payload(put(answerPath(f)),direct("문항 1 초안",0)),f));
+        ok(student(payload(put(root(f)+"/questions/"+f.q2()+"/answer"),direct("문항 2 초안",0)),f));
+        assertThat(ok(student(get(answerPath(f)),f))).isEqualTo(saved);
+        assertThat(ok(student(get("/api/student/evaluations/"+f.id()+"/questions/"+f.q1()+"/answer"),f))).isEqualTo(saved);
+        assertThat(saved.path("updatedAt").asText()).isNotBlank();
+        mvc.perform(student(payload(put(answerPath(f)),direct("오래된 초안",0)),f))
+                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("ANSWER_VERSION_CONFLICT"));
+        assertThat(ok(student(get(answerPath(f)),f))).isEqualTo(saved);
+        var cleared=ok(student(payload(put(answerPath(f)),direct("",1)),f));
+        assertThat(cleared.path("version").asInt()).isEqualTo(2);
+        assertThat(ok(student(get(answerPath(f)),f))).isEqualTo(cleared);
+        mvc.perform(student(get(root(f)+"/questions/"+f.q2()+"/answer"),f))
+                .andExpect(jsonPath("content").value("문항 2 초안")).andExpect(jsonPath("version").value(1));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,f.participantId())).isZero();
+        var other=fixture(AiPolicy.DISABLED,true);
+        mvc.perform(get(answerPath(f))).andExpect(status().isUnauthorized());
+        mvc.perform(get(answerPath(f)).header("X-Participant-Token",other.token())).andExpect(status().isUnauthorized());
+        mvc.perform(student(get(root(f)+"/questions/"+other.q1()+"/answer"),f)).andExpect(status().isNotFound());
+        mvc.perform(get(answerPath(f)).header("X-Participant-Token",classmate.participantToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("content").value("")).andExpect(jsonPath("version").value(0));
+        var waiting=fixture(AiPolicy.DISABLED,false);
+        mvc.perform(student(get(answerPath(waiting)),waiting)).andExpect(status().isConflict());
+        var review=work.review(f.id(),f.token());work.submit(f.id(),f.token(),review.reviewToken());
+        assertThat(ok(student(get(answerPath(f)),f))).isEqualTo(cleared);
+        mvc.perform(student(payload(put(answerPath(f)),direct("제출 후 수정",2)),f))
+                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("ALREADY_SUBMITTED"));
+    }
     @Test void fullAnswerConversationAndFinalSubmissionFlow() throws Exception {
         var f=fixture(AiPolicy.HINT_ONLY,true);
         ok(student(get(root(f)+"/questions"),f));

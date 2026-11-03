@@ -102,7 +102,8 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | POST | `/api/evaluations/{id}/leave` | 이탈 |
 | GET | `/api/evaluations/{id}/questions` | 문항·본인 답안 목록 |
 | GET | `/api/evaluations/{id}/questions/{questionId}` | 문항·본인 답안 조회 |
-| PUT | `/api/evaluations/{id}/questions/{questionId}/answer` | 답안 저장·수정 |
+| PUT | `/api/evaluations/{id}/questions/{questionId}/answer` | 문항별 답안 임시저장·수정 |
+| GET | `/api/evaluations/{id}/questions/{questionId}/answer` | 해당 문항의 저장 답안·버전·저장 시각 조회 |
 | POST | `/api/evaluations/{id}/questions/{questionId}/ai/questions` | AI 질문 |
 | GET | `/api/evaluations/{id}/conversations` | 본인 대화 |
 | GET | `/api/evaluations/{id}/learning-events` | 본인 학습 기록 |
@@ -293,3 +294,5 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ## 약관·개인정보 처리방침 동의
 
 [동의 API 명세](docs/CONSENTS.md): 교사 로그인 후 `GET /api/users/me/consents`로 현재 버전과 동의 상태를 조회하고, `POST`에 두 동의 값과 버전을 보내 DB에 저장합니다. `/history`로 본인의 과거 동의 이력을 확인할 수 있습니다. 문서 버전은 `LIT_TERMS_VERSION`·`LIT_PRIVACY_VERSION`(각 기본 v1)로 설정하며 실제 프런트 문서와 맞춰야 합니다. 같은 버전의 재요청은 최초 동의 시각을 유지합니다. 기존 가입·로그인 및 학생 PIN 참여 흐름은 바꾸지 않으며 회원가입 시 자동 동의 처리도 하지 않습니다.
+
+문항별 임시저장과 다시 불러오기 요청·응답 및 충돌 처리는 [문항별 임시저장 API](docs/ANSWER_DRAFTS.md)를 참고하세요. 기존 PUT 답안 저장을 사용하며 GET 같은 경로로 복원합니다.
