@@ -296,3 +296,9 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 [동의 API 명세](docs/CONSENTS.md): 교사 로그인 후 `GET /api/users/me/consents`로 현재 버전과 동의 상태를 조회하고, `POST`에 두 동의 값과 버전을 보내 DB에 저장합니다. `/history`로 본인의 과거 동의 이력을 확인할 수 있습니다. 문서 버전은 `LIT_TERMS_VERSION`·`LIT_PRIVACY_VERSION`(각 기본 v1)로 설정하며 실제 프런트 문서와 맞춰야 합니다. 같은 버전의 재요청은 최초 동의 시각을 유지합니다. 기존 가입·로그인 및 학생 PIN 참여 흐름은 바꾸지 않으며 회원가입 시 자동 동의 처리도 하지 않습니다.
 
 문항별 임시저장과 다시 불러오기 요청·응답 및 충돌 처리는 [문항별 임시저장 API](docs/ANSWER_DRAFTS.md)를 참고하세요. 기존 PUT 답안 저장을 사용하며 GET 같은 경로로 복원합니다.
+
+## 회원탈퇴
+
+[API 명세](docs/ACCOUNT_DELETION.md)
+
+`DELETE /api/users/me`로 현재 비밀번호를 확인한 뒤 탈퇴하고 본인 소유 수행평가 틀·반별 회차·독립 평가 및 학생 답안·대화·이벤트·제출·채점·리포트·관련 알림을 모두 삭제합니다. 공유 편집자도 삭제된 평가에 접근할 수 없습니다.
