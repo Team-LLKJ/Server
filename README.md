@@ -10,16 +10,11 @@ Java 17 이상이 필요하며 Maven Wrapper가 포함되어 있습니다.
 ```sh
 cd /Users/dgsw10/Desktop/LIT
 export LIT_AI_PROVIDER='stub'
-export LIT_BOOTSTRAP_SCHOOL='테스트학교'
-export LIT_BOOTSTRAP_TEACHER_INVITE="$(openssl rand -hex 24)"
-# 아래 값을 Postman의 bootstrapInviteCode 변수에 입력하세요. 초대 코드는 외부에 공개하지 마세요.
-printf '%s\n' "$LIT_BOOTSTRAP_TEACHER_INVITE"
 ./mvnw spring-boot:run
 ```
 
-API 주소는 `http://localhost:5174`입니다. 부트스트랩 초대 코드는 24시간 유효한 일회용 코드입니다.
-최초 교사 가입에만 사용하며, 이후에는 로그인한 교사가 `/api/auth/teacher-invitations`로 초대 코드를 발급할 수 있습니다.
-초기 코드가 필요 없다면 부트스트랩 환경변수를 생략해도 서버는 실행됩니다.
+API 주소는 `http://localhost:5174`입니다. 신규 가입에는 이메일 인증이 필요합니다.
+[이메일 인증 설정](docs/EMAIL_SIGNUP.md)에 따라 SMTP와 발신 주소를 설정하세요. 설정 전에도 기존 계정 로그인은 가능하지만 신규 인증메일 발송은 503으로 거절됩니다.
 `LIT_AI_PROVIDER=stub`은 실제 AI를 호출하지 않고 명시적으로 `[테스트 응답]`을 반환합니다.
 
 ```sh
@@ -48,7 +43,7 @@ MySQL/PostgreSQL 이전에는 드라이버, DB별 SQL과 버전형 마이그레�
 
 ## 인증
 
-교사만 일회용 학교별 초대 코드로 가입합니다.
+이메일 소유를 인증한 사용자가 가입합니다. 학교·초대 코드·교사 신분 확인·관리자 승인은 요구하지 않습니다. `TEACHER`는 교사 신분 보증이 아니라 평가 생성·운영용 서비스 역할입니다.
 교사는 `/api/auth/login`으로 로그인하고 교사용 API에 다음 헤더를 사용합니다.
 
 ```http
@@ -60,7 +55,7 @@ Authorization: Bearer {accessToken}
 Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
 토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
-[Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 초대·오류 정책을 정리했습니다.
+[Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 이메일 인증·오류 정책을 정리했습니다.
 
 ## API 목록
 
@@ -68,12 +63,15 @@ Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이�
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
-| POST | `/api/auth/signup/teacher` | 교사 초대 코드 가입 |
+| POST | `/api/auth/signup/teacher` | 이메일 인증 완료 후 가입 |
 | POST | `/api/auth/login` | 공통 로그인 |
 | POST | `/api/auth/refresh` | 토큰 교체 |
 | GET | `/api/auth/me` | 본인 계정 |
 | POST | `/api/auth/logout` | 현재 로그인 세션 폐기 |
-| POST | `/api/auth/teacher-invitations` | 같은 학교 교사 초대 코드 발급 |
+| GET | `/api/auth/username-availability?username=...` | 아이디 중복 확인 |
+| POST | `/api/auth/email-verifications` | 가입 인증메일 발송 |
+| POST | `/api/auth/email-verifications/confirm` | 인증번호 확인·가입용 토큰 발급 |
+| POST | `/api/auth/teacher-invitations` | 종료된 기능(410) |
 
 ### 평가·참여
 
@@ -171,10 +169,10 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 
 ## Postman
 
-`postman/LIT.postman_collection.json`을 Import하고 `bootstrapInviteCode`에 최초 교사 초대 코드를 입력하세요.
+`postman/LIT.postman_collection.json`을 Import하고 먼저 **이메일 인증 회원가입** 폴더에서 실수신 가능한 이메일로 인증을 완료하세요.
 **전체 흐름 (테스트)** 폴더를 순서대로 실행하면 교사 가입·로그인·학생 비회원 참여·평가·답안·AI·제출·교사 토큰 갱신·로그아웃까지 진행합니다.
 계정 이름·비밀번호는 첫 요청에서 테스트용으로 생성하고 토큰·ID는 응답에서 자동 저장합니다.
-가입 API는 일회용 초대 코드를 소비하므로 전체 재실행에는 새 초대 코드가 필요합니다.
+가입 API는 일회용 이메일 인증 토큰을 소비합니다. 인증번호는 메일에서 직접 입력하며 API 응답에는 포함되지 않습니다.
 가입 이후의 개별 요청은 저장된 변수로 재실행할 수 있으나 답안 expectedVersion과 제출 상태를 확인하세요.
 
 ## 외부 서비스 설정
@@ -202,7 +200,7 @@ Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 
 ## 검증
 
-인증·역할·소유권·초대 코드·갱신 재사용·로그아웃·계정 제한,
+인증·역할·소유권·이메일 인증·갱신 재사용·로그아웃·계정 제한,
 전체 평가 흐름·답안 충돌·AI 대화 격리·제출 고정·이전 스키마 보존을 자동 테스트합니다.
 
 기술 참고: [Spring Security 구조](https://docs.spring.io/spring-security/reference/servlet/architecture.html),

@@ -217,3 +217,11 @@ CREATE TABLE IF NOT EXISTS user_policy_consents (
  accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
  PRIMARY KEY(user_id,policy_type,policy_version)
 );
+
+CREATE TABLE IF NOT EXISTS signup_email_verifications (
+ email VARCHAR(254) PRIMARY KEY,
+ code_hash VARCHAR(255), code_expires_at TIMESTAMP WITH TIME ZONE,
+ last_sent_at TIMESTAMP WITH TIME ZONE, attempts INT NOT NULL DEFAULT 0,
+ verified_at TIMESTAMP WITH TIME ZONE, token_hash VARCHAR(64),
+ token_expires_at TIMESTAMP WITH TIME ZONE, used_at TIMESTAMP WITH TIME ZONE
+);

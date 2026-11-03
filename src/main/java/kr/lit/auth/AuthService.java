@@ -21,10 +21,11 @@ import static kr.lit.auth.AuthModels.*;
 public class AuthService {
     private final JdbcTemplate db;
     private final PasswordEncoder encoder;
+    private final SignupEmailService signupEmail;
     private final String dummyHash;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,PasswordEncoder encoder) {
-        this.db=db;this.encoder=encoder;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
+    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail) {
+        this.db=db;this.encoder=encoder;this.signupEmail=signupEmail;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
     }
     public static String hash(String value) {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}
@@ -48,19 +49,8 @@ public class AuthService {
         return me(id);
     }
     public User signupTeacher(TeacherSignup s) {
-        var invites=db.queryForList("SELECT * FROM teacher_invites WHERE code_hash=? FOR UPDATE",hash(s.inviteCode()));
-        if(invites.isEmpty()) throw fail(HttpStatus.BAD_REQUEST,"INVALID_INVITE","유효하지 않은 교사 초대 코드입니다.");
-        var invite=invites.get(0);
-        if(invite.get("USED_BY")!=null||!((OffsetDateTime)invite.get("EXPIRES_AT")).isAfter(now())||!s.school().strip().equals(invite.get("SCHOOL")))
-            throw fail(HttpStatus.BAD_REQUEST,"INVALID_INVITE","만료·사용된 코드이거나 학교가 일치하지 않습니다.");
-        var user=signup(s.username(),s.password(),s.email(),s.name(),s.school(),Role.TEACHER,null,null,null);
-        db.update("UPDATE teacher_invites SET used_by=? WHERE code_hash=?",user.id(),hash(s.inviteCode()));return user;
-    }
-    public Invitation invite(int hours) {
-        var actor=AccountAccess.require(Role.TEACHER);var u=me(actor.userId());
-        String code=secret();var expires=now().plusHours(hours);
-        db.update("INSERT INTO teacher_invites VALUES (?,?,?,?,NULL,?)",hash(code),u.school(),u.id(),expires,now());
-        return new Invitation(code,u.school(),expires.toInstant());
+        signupEmail.consumeVerification(s.email(),s.emailVerificationToken());
+        return signup(s.username(),s.password(),s.email(),s.name(),"",Role.TEACHER,null,null,null);
     }
     private Tokens issue(String userId,String familyId,OffsetDateTime familyExpiry) {
         String access=secret(),refresh=secret(),id=UUID.randomUUID().toString();var timestamp=now();
@@ -124,11 +114,5 @@ public class AuthService {
         if(next.equals(current)) throw fail(HttpStatus.BAD_REQUEST,"PASSWORD_UNCHANGED","새 비밀번호가 현재 비밀번호와 같습니다.");
         db.update("UPDATE app_users SET password_hash=?,updated_at=? WHERE id=?",encoder.encode(next),now(),p.userId());
         db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND family_id<>(SELECT family_id FROM auth_sessions WHERE id=?)",now(),p.userId(),p.sessionId());
-    }
-    public void bootstrap(String code,String school) {
-        if(code.isBlank())return;
-        if(code.length()<32||code.length()>128||school.isBlank()||school.length()>100)throw new IllegalStateException("Bootstrap invitation requires a 32..128 character code and a school name");
-        if(db.queryForObject("SELECT COUNT(*) FROM teacher_invites WHERE code_hash=?",Integer.class,hash(code))==0)
-            db.update("INSERT INTO teacher_invites VALUES (?,?,NULL,?,NULL,?)",hash(code),school.strip(),now().plusHours(24),now());
     }
 }

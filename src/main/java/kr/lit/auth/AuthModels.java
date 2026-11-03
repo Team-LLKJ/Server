@@ -11,8 +11,8 @@ public final class AuthModels {
         @NotBlank @Pattern(regexp="[A-Za-z0-9_]{4,30}") String username,
         @NotBlank @Size(min=10,max=128) String password,
         @NotBlank @Email @Size(max=254) String email,
-        @NotBlank @Size(max=50) String name, @NotBlank @Size(max=100) String school,
-        @NotBlank @Size(min=32,max=128) String inviteCode) {}
+        @NotBlank @Size(max=50) String name,
+        @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String emailVerificationToken) {}
     public record Login(@NotBlank @Size(max=100) String username, @NotBlank @Size(max=128) String password) {}
     public record Refresh(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String refreshToken) {}
     public record Invite(@Min(1) @Max(168) int expiresInHours) {}

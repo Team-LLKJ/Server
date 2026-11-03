@@ -32,9 +32,17 @@ abstract class AuthTestSupport {
     @BeforeEach void accounts() {remote="test-"+unique();teacher=newTeacher();as(teacher);}
     @AfterEach void clear() {SecurityContextHolder.clearContext();}
     Tokens newTeacher() {
-        String suffix=unique(),code=UUID.randomUUID().toString()+UUID.randomUUID();auth.bootstrap(code,"테스트학교");
-        var u=auth.signupTeacher(new TeacherSignup("t_"+suffix,PASSWORD,suffix+"@example.test","교사","테스트학교",code));
+        String suffix=unique(),email=suffix+"@example.test";
+        String token=createVerifiedEmail(email);
+        var u=auth.signupTeacher(new TeacherSignup("t_"+suffix,PASSWORD,email,"교사",token));
         return auth.login(new Login(u.username(),PASSWORD));
+    }
+    // 인증 API 자체는 SignupEmailApiTest에서 메일 대역으로 검증합니다.
+    String createVerifiedEmail(String email) {
+        byte[] bytes=new byte[32];new java.security.SecureRandom().nextBytes(bytes);
+        String token=Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        db.update("INSERT INTO signup_email_verifications(email,verified_at,token_hash,token_expires_at) VALUES (?,CURRENT_TIMESTAMP,?,DATEADD('MINUTE',15,CURRENT_TIMESTAMP))",email,AuthService.hash(token));
+        return token;
     }
     void as(Tokens tokens) {var p=auth.authenticate(tokens.accessToken());SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(p,null,List.of()));}
     MockHttpServletRequestBuilder request(MockHttpServletRequestBuilder r,Tokens tokens) {

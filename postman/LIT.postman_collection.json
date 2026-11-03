@@ -11,16 +11,6 @@
       "type": "string"
     },
     {
-      "key": "school",
-      "value": "테스트학교",
-      "type": "string"
-    },
-    {
-      "key": "bootstrapInviteCode",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "teacherUsername",
       "value": "",
       "type": "string"
@@ -76,11 +66,6 @@
       "type": "string"
     },
     {
-      "key": "nextInviteCode",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "participantToken",
       "value": "",
       "type": "string"
@@ -122,9 +107,127 @@
       "key": "privacyVersion",
       "value": "v1",
       "type": "string"
+    },
+    {
+      "key": "teacherEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailVerificationToken",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
+    {
+      "name": "이메일 인증 회원가입",
+      "description": "teacherUsername/password와 실수신 가능한 teacherEmail을 설정 → 발송 → 수신함의6자리번호를 emailCode에 직접 입력 → 확인 → 가입. 토큰은15분·일회용. 학교·교사 확인·초대 코드 없음. SMTP 설정 전503.",
+      "item": [
+        {
+          "name": "01 아이디 중복 확인",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/username-availability?username={{teacherUsername}}"
+          }
+        },
+        {
+          "name": "02 인증메일 발송",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/email-verifications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{teacherEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "03 메일에서 받은 인증번호 확인",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/email-verifications/confirm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{teacherEmail}}\",\n  \"code\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) pm.collectionVariables.set(\"emailVerificationToken\", pm.response.json().emailVerificationToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 이메일 인증 후 가입",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/signup/teacher",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     {
       "name": "전체 흐름 (테스트)",
       "item": [
@@ -141,13 +244,17 @@
             "url": "{{baseUrl}}/api/auth/signup/teacher",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherUsername}}@example.test\",\n  \"name\": \"테스트교사\",\n  \"school\": \"{{school}}\",\n  \"inviteCode\": \"{{bootstrapInviteCode}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "먼저 이메일 인증 회원가입 폴더에서 실제 수신 이메일 인증을 완료하세요. 학교·초대코드는 받지 않습니다."
           },
           "event": [
             {
@@ -841,7 +948,7 @@
           ]
         },
         {
-          "name": "22 교사 초대 코드 발급",
+          "name": "22 종료된 교사 초대 API (410 확인)",
           "request": {
             "method": "POST",
             "header": [
@@ -877,8 +984,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"요청 성공\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
-                  "pm.collectionVariables.set(\"nextInviteCode\", pm.response.json().inviteCode);"
+                  "pm.test(\"초대 기능 종료\", () => pm.response.to.have.status(410));"
                 ]
               }
             }

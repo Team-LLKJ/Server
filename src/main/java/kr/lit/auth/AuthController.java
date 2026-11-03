@@ -14,11 +14,11 @@ public class AuthController {
     @PostMapping("/signup/student")
     void studentSignupDisabled() {throw new kr.lit.api.ApiError.Failure(HttpStatus.GONE,"STUDENT_ACCOUNTS_DISABLED","학생은 가입 없이 PIN으로 참여해주세요.");}
     @PostMapping("/signup/teacher") @ResponseStatus(HttpStatus.CREATED)
-    User teacher(@Valid @RequestBody TeacherSignup input) {return auth.signupTeacher(input);}
+    User signupTeacher(@Valid @RequestBody TeacherSignup input) {return auth.signupTeacher(input);}
     @PostMapping("/login") Tokens login(@Valid @RequestBody Login input) {return auth.login(input);}
     @PostMapping("/refresh") Tokens refresh(@Valid @RequestBody Refresh input) {return auth.refresh(input.refreshToken());}
     @GetMapping("/me") User me(@AuthenticationPrincipal Principal p) {return auth.me(p.userId());}
     @PostMapping("/logout") Message logout(@AuthenticationPrincipal Principal p) {auth.logout(p);return new Message("로그아웃되었습니다.");}
-    @PostMapping("/teacher-invitations") @ResponseStatus(HttpStatus.CREATED)
-    Invitation invite(@Valid @RequestBody Invite input) {return auth.invite(input.expiresInHours());}
+    @PostMapping("/teacher-invitations")
+    void rejectTeacherInvitation() {throw new kr.lit.api.ApiError.Failure(HttpStatus.GONE,"TEACHER_INVITATIONS_DISABLED","초대 코드 대신 이메일 인증으로 가입해주세요.");}
 }

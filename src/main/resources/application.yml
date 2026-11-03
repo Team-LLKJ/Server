@@ -3,6 +3,18 @@ spring:
     url: ${DATABASE_URL:jdbc:h2:file:./data/lit}
     username: ${DATABASE_USER:sa}
     password: ${DATABASE_PASSWORD:}
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   sql:
     init:
       mode: always
@@ -47,8 +59,7 @@ lit:
       4: 0.7
       5: 1.0
   auth:
-    bootstrap-teacher-invite: ${LIT_BOOTSTRAP_TEACHER_INVITE:}
-    bootstrap-school: ${LIT_BOOTSTRAP_SCHOOL:}
+    mail-from: ${LIT_MAIL_FROM:}
 
 management:
   endpoints:

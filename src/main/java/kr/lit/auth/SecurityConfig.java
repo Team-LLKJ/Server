@@ -8,7 +8,6 @@ import java.util.*;
 import kr.lit.api.ApiError;
 import org.springframework.context.annotation.*;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -25,9 +24,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class SecurityConfig {
     @Bean PasswordEncoder passwordEncoder() {return Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8();}
     @Bean UserDetailsService unusedFormLoginUsers() {return username->{throw new UsernameNotFoundException("Bearer authentication only");};}
-    @Bean ApplicationRunner bootstrapInvite(AuthService auth,@Value("${lit.auth.bootstrap-teacher-invite:}") String code,@Value("${lit.auth.bootstrap-school:}") String school) {
-        return args->auth.bootstrap(code,school);
-    }
     @Bean org.springframework.web.cors.CorsConfigurationSource corsConfiguration(@Value("${lit.cors.allowed-origins:}") String origins) {
         var source=new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
         var allowed=Arrays.stream(origins.split(",")).map(String::strip).filter(v->!v.isEmpty()).toList();
@@ -53,7 +49,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
-                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
+                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
                 .requestMatchers("/api/notifications","/api/notifications/**","/api/users/me","/api/users/me/**").hasRole("TEACHER")
