@@ -44,6 +44,10 @@ class WorkController {
     QuestionAnswer select(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token) {
         return work.select(id,token,questionId);
     }
+    @GetMapping({"/evaluations/{id}/questions/{questionId}/answer","/student/evaluations/{id}/questions/{questionId}/answer"})
+    Answer getAnswer(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token) {
+        return work.getAnswer(id,token,questionId);
+    }
     @PutMapping({"/evaluations/{id}/questions/{questionId}/answer","/student/evaluations/{id}/questions/{questionId}/answer"})
     Answer save(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token,
                 @Valid @RequestBody SaveAnswer input) { return work.save(id,token,questionId,input); }

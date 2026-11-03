@@ -39,6 +39,8 @@
 
 ## 답안 자동 저장·HTML
 
+문항별 `GET .../questions/{questionId}/answer`로 저장 답안만 다시 불러올 수 있습니다. 기존 PUT과 같은 경로이며 두 접두어를 모두 지원합니다. [문항별 임시저장 API](ANSWER_DRAFTS.md)를 참고하세요.
+
 기존 저장 경로 또는 `/api/student/evaluations/{id}/questions/{questionId}/answer`에 PUT합니다. 버전 충돌은 기존 409 ANSWER_VERSION_CONFLICT입니다. 답안 저장 자체의 분당 호출 제한은 없으며 3초 자동 저장을 지원합니다. 변경된 경우만 저장하고, 요청을 순차 처리해 응답 version을 다음 expectedVersion으로 사용하세요.
 
 - content 입력 상한은 **UTF-8 1MiB (1,048,576 bytes)** 입니다. 초과는 413 ANSWER_TOO_LARGE. 글자 수가 아닌 바이트로 계산하세요 (`new TextEncoder().encode(html).length`). DB는 CLOB로 확장하며 기존 답안을 보존합니다.

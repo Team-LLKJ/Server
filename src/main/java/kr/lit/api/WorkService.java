@@ -158,6 +158,9 @@ public class WorkService {
         var c=authenticate(id,token);started(c);
         return new QuestionAnswer(question(id,questionId),answer(c.participantId(),questionId));
     }
+    public Answer getAnswer(String id,String token,String questionId) {
+        return select(id,token,questionId).answer();
+    }
     public Answer save(String id,String token,String questionId,SaveAnswer input) {
         var c=authenticate(id,token);
         // 마감 직후(서버 작업 전)라면 먼저 종료·자동 제출을 처리해 유예 저장 경로로 보냅니다.
