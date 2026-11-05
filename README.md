@@ -296,3 +296,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 [동의 API 명세](docs/CONSENTS.md): 교사 로그인 후 `GET /api/users/me/consents`로 현재 버전과 동의 상태를 조회하고, `POST`에 두 동의 값과 버전을 보내 DB에 저장합니다. `/history`로 본인의 과거 동의 이력을 확인할 수 있습니다. 문서 버전은 `LIT_TERMS_VERSION`·`LIT_PRIVACY_VERSION`(각 기본 v1)로 설정하며 실제 프런트 문서와 맞춰야 합니다. 같은 버전의 재요청은 최초 동의 시각을 유지합니다. 기존 가입·로그인 및 학생 PIN 참여 흐름은 바꾸지 않으며 회원가입 시 자동 동의 처리도 하지 않습니다.
 
 문항별 임시저장과 다시 불러오기 요청·응답 및 충돌 처리는 [문항별 임시저장 API](docs/ANSWER_DRAFTS.md)를 참고하세요. 기존 PUT 답안 저장을 사용하며 GET 같은 경로로 복원합니다.
+
+### HWP 리포트 다운로드
+
+저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 학생용 `GET /api/evaluations/{id}/report/hwp`로 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 기존 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
