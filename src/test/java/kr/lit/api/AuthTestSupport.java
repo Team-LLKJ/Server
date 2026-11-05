@@ -16,7 +16,7 @@ import java.util.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:authenticated;DB_CLOSE_DELAY=-1","lit.ai.provider=stub","lit.evaluation.expiry-check-ms=3600000","lit.cors.allowed-origins=https://frontend.example.test","lit.evaluation.end-grace-seconds=0","lit.grading.job-interval-ms=3600000"})
+@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:authenticated;DB_CLOSE_DELAY=-1","lit.ai.provider=stub","lit.evaluation.expiry-check-ms=3600000","lit.cors.allowed-origins=https://frontend.example.test","lit.evaluation.end-grace-seconds=0","lit.grading.job-interval-ms=3600000","lit.grading.process-interval-ms=3600000"})
 @AutoConfigureMockMvc
 abstract class AuthTestSupport {
     @Autowired MockMvc mvc;
