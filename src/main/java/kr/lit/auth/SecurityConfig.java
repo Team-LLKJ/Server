@@ -49,7 +49,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
-                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
+                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join","/api/participation/reconnect").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
                 .requestMatchers("/api/notifications","/api/notifications/**","/api/users/me","/api/users/me/**").hasRole("TEACHER")

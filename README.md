@@ -296,3 +296,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 [동의 API 명세](docs/CONSENTS.md): 교사 로그인 후 `GET /api/users/me/consents`로 현재 버전과 동의 상태를 조회하고, `POST`에 두 동의 값과 버전을 보내 DB에 저장합니다. `/history`로 본인의 과거 동의 이력을 확인할 수 있습니다. 문서 버전은 `LIT_TERMS_VERSION`·`LIT_PRIVACY_VERSION`(각 기본 v1)로 설정하며 실제 프런트 문서와 맞춰야 합니다. 같은 버전의 재요청은 최초 동의 시각을 유지합니다. 기존 가입·로그인 및 학생 PIN 참여 흐름은 바꾸지 않으며 회원가입 시 자동 동의 처리도 하지 않습니다.
 
 문항별 임시저장과 다시 불러오기 요청·응답 및 충돌 처리는 [문항별 임시저장 API](docs/ANSWER_DRAFTS.md)를 참고하세요. 기존 PUT 답안 저장을 사용하며 GET 같은 경로로 복원합니다.
+
+### 학생 재접속
+
+`POST /api/participation/reconnect`에 `{evaluationId,participantToken}`을 보내 기존 참가자 상태·저장 답안/버전·서버 종료 시각을 복구합니다. 나간 참가자도 같은 토큰으로 재활성화되며 마감·제출 후에는 읽기 전용입니다. 브라우저 초안 보관·자동 재시도·이어쓰기 UI는 별도 Web 연동이 필요합니다. [재접속 API와 프런트 연결 계약](docs/STUDENT_RECONNECT.md)을 참고하세요.
