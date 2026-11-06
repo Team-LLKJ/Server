@@ -22,9 +22,13 @@ public class AuthService {
     private final JdbcTemplate db;
     private final PasswordEncoder encoder;
     private final SignupEmailService signupEmail;
+    private final PasswordChangeService passwordChangeService;
+    private final NicknameService nicknameService;
     private final String dummyHash;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail) {
+    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail,PasswordChangeService passwordChangeService,NicknameService nicknameService) {
+        this.passwordChangeService=passwordChangeService;
+        this.nicknameService=nicknameService;
         this.db=db;this.encoder=encoder;this.signupEmail=signupEmail;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
     }
     public static String hash(String value) {
@@ -54,7 +58,7 @@ public class AuthService {
     }
     private Tokens issue(String userId,String familyId,OffsetDateTime familyExpiry) {
         String access=secret(),refresh=secret(),id=UUID.randomUUID().toString();var timestamp=now();
-        var accessExpiry=timestamp.plusMinutes(15);if(accessExpiry.isAfter(familyExpiry))accessExpiry=familyExpiry;
+        var accessExpiry=timestamp.plusHours(2);if(accessExpiry.isAfter(familyExpiry))accessExpiry=familyExpiry;
         db.update("INSERT INTO auth_sessions VALUES (?,?,?,?,?,?,?,NULL,NULL,?)",id,userId,familyId,hash(access),hash(refresh),accessExpiry,familyExpiry,timestamp);
         return new Tokens("Bearer",access,accessExpiry.toInstant(),refresh,familyExpiry.toInstant(),me(userId));
     }
@@ -101,18 +105,11 @@ public class AuthService {
         db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=(SELECT family_id FROM auth_sessions WHERE id=? AND user_id=?)",now(),p.sessionId(),p.userId());
     }
     public User updateName(Principal p,String name) {
-        String value=name==null?"":name.strip();
-        if(value.isEmpty()||value.length()>50) throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이름은 1~50자여야 합니다.");
-        db.update("UPDATE app_users SET display_name=?,updated_at=? WHERE id=?",value,now(),p.userId());
+        nicknameService.updateNickname(p,name);
         return me(p.userId());
     }
     /** 현재 비밀번호 확인 후 변경하고, 지금 로그인한 세션을 제외한 다른 기기의 세션을 모두 폐기합니다. */
-    @Transactional(noRollbackFor=ApiError.Failure.class)
     public void changePassword(Principal p,String current,String next) {
-        var rows=db.queryForList("SELECT password_hash FROM app_users WHERE id=? FOR UPDATE",String.class,p.userId());
-        if(rows.isEmpty()||!encoder.matches(current,rows.get(0))) throw fail(HttpStatus.BAD_REQUEST,"INVALID_CURRENT_PASSWORD","현재 비밀번호가 올바르지 않습니다.");
-        if(next.equals(current)) throw fail(HttpStatus.BAD_REQUEST,"PASSWORD_UNCHANGED","새 비밀번호가 현재 비밀번호와 같습니다.");
-        db.update("UPDATE app_users SET password_hash=?,updated_at=? WHERE id=?",encoder.encode(next),now(),p.userId());
-        db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND family_id<>(SELECT family_id FROM auth_sessions WHERE id=?)",now(),p.userId(),p.sessionId());
+        passwordChangeService.changePassword(p,current,next);
     }
 }

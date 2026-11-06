@@ -3,6 +3,7 @@ package kr.lit.api;
 import kr.lit.auth.*;
 import kr.lit.auth.AuthModels.*;
 import org.junit.jupiter.api.Test;
+import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.*;
@@ -32,6 +33,24 @@ class AuthApiTest extends AuthTestSupport {
         var user=ok(request(body(post("/api/auth/signup/teacher"),signup(token,suffix)),null));
         assertThat(user.path("role").asText()).isEqualTo("TEACHER");assertThat(user.path("school").asText()).isEmpty();
         mvc.perform(request(body(post("/api/auth/signup/teacher"),signup(token,suffix)),null)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("EMAIL_VERIFICATION_REQUIRED"));
+    }
+    @Test void loginAndRefreshIssueTwoHourAccessTokens() throws Exception {
+        var before=Instant.now();
+        var login=ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null));
+        assertThat(Instant.parse(login.path("accessExpiresAt").asText()))
+                .isBetween(before.plusSeconds(7200),Instant.now().plusSeconds(7200));
+        var storedFamilyExpiry=db.queryForObject("SELECT refresh_expires_at FROM auth_sessions WHERE refresh_hash=?",OffsetDateTime.class,AuthService.hash(login.path("refreshToken").asText())).toInstant();
+        var refreshedBefore=Instant.now();
+        var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(login.path("refreshToken").asText())),null));
+        assertThat(Instant.parse(refreshed.path("accessExpiresAt").asText()))
+                .isBetween(refreshedBefore.plusSeconds(7200),Instant.now().plusSeconds(7200));
+        assertThat(Instant.parse(refreshed.path("refreshExpiresAt").asText())).isEqualTo(storedFamilyExpiry);
+    }
+    @Test void accessTokenCannotOutliveRefreshFamily() throws Exception {
+        var familyExpiry=OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(30).withNano(0);
+        db.update("UPDATE auth_sessions SET refresh_expires_at=? WHERE refresh_hash=?",familyExpiry,AuthService.hash(teacher.refreshToken()));
+        var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null));
+        assertThat(Instant.parse(refreshed.path("accessExpiresAt").asText())).isEqualTo(familyExpiry.toInstant());
     }
     @Test void refreshRotationAndReuseRevokeSessionFamily() throws Exception {
         var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null));String access=refreshed.get("accessToken").asText();

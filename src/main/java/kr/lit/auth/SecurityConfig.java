@@ -49,7 +49,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
-                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join").permitAll()
+                .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join","/api/participation/reconnect").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
                 .requestMatchers("/api/notifications","/api/notifications/**","/api/users/me","/api/users/me/**").hasRole("TEACHER")
@@ -74,8 +74,8 @@ public class SecurityConfig {
         }
         protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain) throws ServletException,IOException {
             res.setHeader("Cache-Control","no-store");String path=req.getRequestURI().substring(req.getContextPath().length());
-            int max=path.equals("/api/users/me/password")?10:path.contains("signup")?20:30;
-            boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/")||path.equals("/api/users/me/password");
+            int max=(path.equals("/api/users/me/password")||path.startsWith("/api/users/me/email/")||(path.equals("/api/users/me")&&req.getMethod().equals("DELETE")))?10:path.contains("signup")?20:30;
+            boolean limited=path.startsWith("/api/auth/")&&!path.equals("/api/auth/me")&&!path.equals("/api/auth/logout")||path.startsWith("/api/participation/")||path.equals("/api/users/me/password")||path.startsWith("/api/users/me/email/")||(path.equals("/api/users/me")&&req.getMethod().equals("DELETE"));
             String group=path.startsWith("/api/participation/")?"pin":path.contains("signup")?"signup":path;
             if(limited&&!limit(req.getRemoteAddr(),group,max)) {error(res,json,429,"RATE_LIMITED","요청이 많습니다. 잠시 후 다시 시도해주세요.");return;}
             boolean studentPath=path.startsWith("/api/student/evaluations/");

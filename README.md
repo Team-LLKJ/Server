@@ -52,7 +52,7 @@ Authorization: Bearer {accessToken}
 
 학생은 가입·로그인 없이 PIN과 닉네임으로 참여합니다. 참여 응답의 participantToken을 학생 API의 `X-Participant-Token` 헤더에 사용하세요.
 교사 공통 키는 사용하지 않습니다.
-Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
+Access Token은 2시간, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
 토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
 [Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 이메일 인증·오류 정책을 정리했습니다.
@@ -300,3 +300,35 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ### AI 활용 과정 평가 V1
 
 행동 근거 기반 Gemini 수준 추천·서버 인용 검증·100점 환산·교사 검토/확정은 `/api/teacher/evaluations/{id}/process-grading` API로 제공합니다. 평가 시작 전에 `/policy`로 목표·허용 규칙·문항 배점 비율·AI 미관측 정책을 설정해야 합니다. 제출 시 입력을 고정해 자동 예약하며, 정책 누락·근거 부족은0점 대신 판단 보류합니다. 투명성은 평가 전체에서 한 번 반영하며 재분석·교사 보정은 이력을 보존합니다. 기존 키워드 채점 API와 리포트는 호환 유지되고 Web 연결은 별도입니다. [정책·분석·근거·검토·확정 명세](docs/PROCESS_GRADING.md)를 참고하세요.
+
+## 이메일 변경
+
+[API 명세](docs/EMAIL_CHANGE.md)
+
+로그인한 본인의 새 이메일에 인증번호를 보내 확인한 뒤 변경합니다. 기존 가입 인증번호·가입 토큰은 사용할 수 없습니다. username·비밀번호·현재 로그인 세션은 유지합니다.
+
+## 회원탈퇴
+
+[API 명세](docs/ACCOUNT_DELETION.md)
+
+`DELETE /api/users/me`로 현재 비밀번호를 확인한 뒤 탈퇴하고 본인 소유 수행평가 틀·반별 회차·독립 평가 및 학생 답안·대화·이벤트·제출·채점·리포트·관련 알림을 모두 삭제합니다. 공유 편집자도 삭제된 평가에 접근할 수 없습니다.
+
+## 비밀번호 변경
+
+[API 명세](docs/PASSWORD_CHANGE.md)
+
+`POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 기존 경로·응답은 유지합니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
+
+## 닉네임 변경
+
+[API 명세](docs/NICKNAME_CHANGE.md)
+
+`PATCH /api/users/me/nickname`으로 로그인한 본인의 닉네임을 변경합니다. 기존 `PATCH /api/users/me`의 `name` 요청도 같은 검증과 저장 경로를 사용합니다. 닉네임은 기존 `display_name`이며 응답은 기존 User의 `name` 필드입니다.
+
+### HWP 리포트 다운로드
+
+저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 학생용 `GET /api/evaluations/{id}/report/hwp`로 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 기존 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
+
+### 학생 재접속
+
+`POST /api/participation/reconnect`에 `{evaluationId,participantToken}`을 보내 기존 참가자 상태·저장 답안/버전·서버 종료 시각을 복구합니다. 나간 참가자도 같은 토큰으로 재활성화되며 마감·제출 후에는 읽기 전용입니다. 브라우저 초안 보관·자동 재시도·이어쓰기 UI는 별도 Web 연동이 필요합니다. [재접속 API와 프런트 연결 계약](docs/STUDENT_RECONNECT.md)을 참고하세요.
