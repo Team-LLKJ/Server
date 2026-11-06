@@ -318,3 +318,9 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 [API 명세](docs/PASSWORD_CHANGE.md)
 
 `POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 기존 경로·응답은 유지합니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
+
+## 닉네임 변경
+
+[API 명세](docs/NICKNAME_CHANGE.md)
+
+`PATCH /api/users/me/nickname`으로 로그인한 본인의 닉네임을 변경합니다. 기존 `PATCH /api/users/me`의 `name` 요청도 같은 검증과 저장 경로를 사용합니다. 닉네임은 기존 `display_name`이며 응답은 기존 User의 `name` 필드입니다.
