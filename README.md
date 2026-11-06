@@ -312,3 +312,9 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 [API 명세](docs/ACCOUNT_DELETION.md)
 
 `DELETE /api/users/me`로 현재 비밀번호를 확인한 뒤 탈퇴하고 본인 소유 수행평가 틀·반별 회차·독립 평가 및 학생 답안·대화·이벤트·제출·채점·리포트·관련 알림을 모두 삭제합니다. 공유 편집자도 삭제된 평가에 접근할 수 없습니다.
+
+## 비밀번호 변경
+
+[API 명세](docs/PASSWORD_CHANGE.md)
+
+`POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 기존 경로·응답은 유지합니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
