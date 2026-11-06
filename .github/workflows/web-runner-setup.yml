@@ -1,0 +1,40 @@
+name: Prepare Web deployment runner
+on:
+  push:
+    branches: [feature/web-deployment]
+    paths: ['.github/workflows/web-runner-setup.yml']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: [self-hosted, linux, x64, lit-production]
+    timeout-minutes: 10
+    steps:
+      - name: Inspect deployment prerequisites
+        run: |
+          set -eu
+          id
+          sudo -n true
+          systemctl is-active nginx
+          for file in /etc/nginx/sites-enabled/*; do
+            echo "Site: $file"
+            sudo awk '/listen |server_name |root |location |proxy_pass |ssl_certificate / {print}' "$file"
+          done
+          df -h /opt
+      - name: Register dedicated Web runner
+        if: env.REGISTRATION_TOKEN != ''
+        env:
+          REGISTRATION_TOKEN: ${{ secrets.WEB_RUNNER_REGISTRATION_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo '::add-mask::'"$REGISTRATION_TOKEN"
+          runner_dir=/opt/actions-runner-web
+          if [ -f "$runner_dir/.runner" ]; then echo 'Web runner already configured'; exit 0; fi
+          sudo install -d -o ubuntu -g ubuntu "$runner_dir"
+          cd "$runner_dir"
+          curl --fail --silent --show-error -L -o runner.tar.gz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz
+          tar xzf runner.tar.gz
+          rm runner.tar.gz
+          ./config.sh --unattended --url https://github.com/Team-LLKJ/Web --token "$REGISTRATION_TOKEN" --name lit-web-ec2-prod --labels lit-web-production --work _work
+          sudo ./svc.sh install ubuntu
+          sudo ./svc.sh start
