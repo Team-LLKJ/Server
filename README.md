@@ -328,3 +328,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ### HWP 리포트 다운로드
 
 저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 학생용 `GET /api/evaluations/{id}/report/hwp`로 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 기존 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
+
+### 학생 재접속
+
+`POST /api/participation/reconnect`에 `{evaluationId,participantToken}`을 보내 기존 참가자 상태·저장 답안/버전·서버 종료 시각을 복구합니다. 나간 참가자도 같은 토큰으로 재활성화되며 마감·제출 후에는 읽기 전용입니다. 브라우저 초안 보관·자동 재시도·이어쓰기 UI는 별도 Web 연동이 필요합니다. [재접속 API와 프런트 연결 계약](docs/STUDENT_RECONNECT.md)을 참고하세요.

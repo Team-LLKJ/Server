@@ -59,3 +59,7 @@
 HTML 정리는 [jsoup 공식 허용 목록 API](https://jsoup.org/apidocs/org/jsoup/safety/Safelist)를 사용합니다.
 
 제한 시간 후속 변경에서는 시작한 평가의 만료·수동 종료 시 서버가 최신 저장 답안을 자동 제출합니다. 종료 시각·서버 시계·durationMinutes 설정과 상세 동작은 [제한 시간 API](TIME_LIMITS.md)를 참고하세요.
+
+## 재접속 및 미전송 초안 복구
+
+PIN 만료·참가자 비활성화 상태를 포함한 기존 참가자 복귀는 `POST /api/participation/reconnect`를 사용합니다. [요청·응답과 버전 충돌 처리 계약](STUDENT_RECONNECT.md)을 참고하세요. 토큰·초안 지속 보관과 복귀 UI는 이번 백엔드 작업에서 수정하지 않습니다.
