@@ -225,3 +225,22 @@ CREATE TABLE IF NOT EXISTS signup_email_verifications (
  verified_at TIMESTAMP WITH TIME ZONE, token_hash VARCHAR(64),
  token_expires_at TIMESTAMP WITH TIME ZONE, used_at TIMESTAMP WITH TIME ZONE
 );
+
+CREATE TABLE IF NOT EXISTS process_grading_policies (
+ evaluation_id VARCHAR(36) PRIMARY KEY REFERENCES evaluations(id) ON DELETE CASCADE,
+ policy_json CLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS process_grading_jobs (
+ id VARCHAR(36) PRIMARY KEY,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+ version INT NOT NULL,status VARCHAR(30) NOT NULL,input_hash VARCHAR(64) NOT NULL,input_json CLOB NOT NULL,
+ rubric_version VARCHAR(80) NOT NULL,model VARCHAR(100),result_json CLOB,error_code VARCHAR(100),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,started_at TIMESTAMP WITH TIME ZONE,heartbeat_at TIMESTAMP WITH TIME ZONE,completed_at TIMESTAMP WITH TIME ZONE,
+ UNIQUE(participant_id,version)
+);
+CREATE INDEX IF NOT EXISTS idx_process_jobs_status ON process_grading_jobs(status,created_at);
+CREATE TABLE IF NOT EXISTS process_grading_reviews (
+ job_id VARCHAR(36) NOT NULL REFERENCES process_grading_jobs(id) ON DELETE CASCADE,
+ revision INT NOT NULL,review_json CLOB NOT NULL,PRIMARY KEY(job_id,revision)
+);

@@ -21,9 +21,10 @@ public class WorkService {
     private final NotificationService notifications;
     private final int endGraceSeconds;
     private final jakarta.validation.Validator validator;
+    private final ProcessGradingRepository processGrading;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator) {
-        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading) {
+        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;
     }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
@@ -219,6 +220,7 @@ public class WorkService {
     }
     /** 제출 직후 분석을 예약합니다. GradingAnalysisJob이 처리하며 조회 시에도 즉시 계산됩니다. */
     void requestAnalysis(String evaluationId,String participantId) {
+        processGrading.queueSubmission(evaluationId,participantId);
         db.update("MERGE INTO grading_analyses(participant_id,evaluation_id,analysis_status,requested_at) KEY(participant_id) VALUES (?,?,'PENDING',?)",
                 participantId,evaluationId,OffsetDateTime.now(ZoneOffset.UTC));
     }
