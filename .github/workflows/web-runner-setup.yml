@@ -23,7 +23,7 @@ jobs:
           df -h /opt
           docker system df
           docker builder prune --all --force
-          docker image prune --all --force --filter 'until=168h'
+          docker image prune --all --force --filter 'until=24h'
           df -h /opt
       - name: Register dedicated Web runner
         env:
@@ -36,7 +36,10 @@ jobs:
           if [ -f "$runner_dir/.runner" ]; then echo 'Web runner already configured'; exit 0; fi
           sudo install -d -o ubuntu -g ubuntu "$runner_dir"
           cd "$runner_dir"
-          curl --fail --silent --show-error -L -o runner.tar.gz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz
+          rm -f runner.tar.gz
+          curl --fail --silent --show-error --retry 2 --connect-timeout 10 --max-time 180 -L -o runner.tar.gz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz
+          df -h /opt
+          ls -lh runner.tar.gz
           tar xzf runner.tar.gz
           rm runner.tar.gz
           ./config.sh --unattended --url https://github.com/Team-LLKJ/Web --token "$REGISTRATION_TOKEN" --name lit-web-ec2-prod --labels lit-web-production --work _work
