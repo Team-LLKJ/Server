@@ -41,12 +41,13 @@
 응답:
 
 ```json
-{"tokenType":"Bearer","accessToken":"43자리 토큰","accessExpiresAt":"2026-10-26T12:15:00Z","refreshToken":"43자리 토큰","refreshExpiresAt":"2026-11-09T12:00:00Z","user":{"id":"uuid","username":"teacher01","email":"teacher@example.com","name":"교사","school":"테스트학교","role":"TEACHER","status":"ACTIVE","grade":null,"classNumber":null,"studentNumber":null,"createdAt":"2026-10-26T12:00:00Z"}}
+{"tokenType":"Bearer","accessToken":"43자리 토큰","accessExpiresAt":"2026-10-26T14:00:00Z","refreshToken":"43자리 토큰","refreshExpiresAt":"2026-11-09T12:00:00Z","user":{"id":"uuid","username":"teacher01","email":"teacher@example.com","name":"교사","school":"테스트학교","role":"TEACHER","status":"ACTIVE","grade":null,"classNumber":null,"studentNumber":null,"createdAt":"2026-10-26T12:00:00Z"}}
 ```
 
 - 교사 보호 API: `Authorization: Bearer {accessToken}`.
 - `/api/teacher/evaluations` 생성·설정·조회·시작·종료·학생 기록 조회는 로그인한 교사 및 평가 소유권을 검사.
-- Access Token 15분, Refresh Token 최초 로그인 기준 최대14일의 opaque 난수 토큰. JWT가 아니며 DB에는 해시만 저장.
+- Access Token 2시간, Refresh Token 최초 로그인 기준 최대14일의 opaque 난수 토큰. JWT가 아니며 DB에는 해시만 저장.
+- 신규 로그인·갱신 시 발급하는 Access Token부터 적용하며, 기존 토큰의 만료 시간은 유지합니다. Refresh Token 만료까지 2시간 미만이면 Access Token도 해당 시각에 만료됩니다.
 - 갱신 Body: `{"refreshToken":"발급받은 토큰"}`. 갱신 시 두 토큰 모두 교체, 이전 토큰 폐기. 이미 사용한 Refresh Token 재사용 시 해당 로그인 세션 계열 전체 폐기.
 - 로그아웃은 현재 세션 계열만 폐기. 로그인 실패5회 시 계정15분 제한.
 - 학생 참가자 토큰으로 수업 생성이나 교사 API 호출 불가.
