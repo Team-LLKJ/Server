@@ -3022,6 +3022,38 @@
           }
         }
       ]
+    },
+    {
+      "name": "회원탈퇴",
+      "description": "`DELETE /api/users/me`로 현재 비밀번호를 확인한 뒤 탈퇴하고 본인 소유 수행평가 틀·반별 회차·독립 평가 및 학생 답안·대화·이벤트·제출·채점·리포트·관련 알림을 모두 삭제합니다. 공유 편집자도 삭제된 평가에 접근할 수 없습니다.\n\nBearer Access Token 필수. 요청 `{ \"currentPassword\": \"현재 비밀번호\", \"deleteOwnedData\": true }`, 성공 200 `{ \"message\": \"회원탈퇴가 완료되었습니다. 본인 소유 평가와 학생 답안이 삭제되었습니다.\" }`. deleteOwnedData=true가 아니면 400 INVALID_REQUEST입니다. 프런트에서 영구 삭제 범위를 확인한 뒤 명시적으로 true를 보내세요.\n\n본인 소유 평가가 진행 중(STARTED이며 endsAt이 미래)이면 409 EVALUATION_IN_PROGRESS로 아무것도 삭제하지 않습니다. 먼저 평가 종료 API를 호출해야 합니다. 비밀번호 오류 400 INVALID_CURRENT_PASSWORD, 미인증·폐기 세션 401, 해당 DELETE 경로 IP당 10회/분 제한 429 RATE_LIMITED. 삭제 작업 전체가 한 트랜잭션이며 중간 실패 시 롤백합니다.\n\n다른 사람 소유 평가는 삭제하지 않고 본인의 공동 편집 권한만 제거합니다. 모든 로그인 세션·개인 알림·설정·동의 이력·가입 인증 기록을 삭제합니다. 이메일 변경 기능 테이블이 존재하면 본인의 대기 중 인증도 삭제합니다. 기존 계정 아이디·이메일·비밀번호·이름·학교·학년 등 식별 정보는 제거하고 다른 사람 소유 평가의 채점 작성자 외래키 참조를 위해 무작위 비밀번호와 DELETED 상태의 익명 계정 행만 보존합니다. 기존 Access/Refresh 토큰과 비밀번호로 재로그인은 불가능하며 원래 아이디·이메일로 새 가입은 가능합니다. 기존 운영 백업 파일까지 이 API에서 삭제하지는 않습니다.",
+      "item": [
+        {
+          "name": "회원탈퇴 및 소유 평가 영구 삭제 (주의)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/me",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"deleteOwnedData\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }
