@@ -244,3 +244,11 @@ CREATE TABLE IF NOT EXISTS process_grading_reviews (
  job_id VARCHAR(36) NOT NULL REFERENCES process_grading_jobs(id) ON DELETE CASCADE,
  revision INT NOT NULL,review_json CLOB NOT NULL,PRIMARY KEY(job_id,revision)
 );
+
+
+CREATE TABLE IF NOT EXISTS email_change_verifications (
+ user_id VARCHAR(36) PRIMARY KEY REFERENCES app_users(id),
+ email VARCHAR(254) NOT NULL, code_hash VARCHAR(255) NOT NULL,
+ password_hash VARCHAR(255) NOT NULL, last_sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ expires_at TIMESTAMP WITH TIME ZONE NOT NULL, attempts INT NOT NULL DEFAULT 0
+);
