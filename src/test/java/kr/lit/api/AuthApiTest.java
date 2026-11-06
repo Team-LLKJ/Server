@@ -39,11 +39,12 @@ class AuthApiTest extends AuthTestSupport {
         var login=ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null));
         assertThat(Instant.parse(login.path("accessExpiresAt").asText()))
                 .isBetween(before.plusSeconds(7200),Instant.now().plusSeconds(7200));
+        var storedFamilyExpiry=db.queryForObject("SELECT refresh_expires_at FROM auth_sessions WHERE refresh_hash=?",OffsetDateTime.class,AuthService.hash(login.path("refreshToken").asText())).toInstant();
         var refreshedBefore=Instant.now();
         var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(login.path("refreshToken").asText())),null));
         assertThat(Instant.parse(refreshed.path("accessExpiresAt").asText()))
                 .isBetween(refreshedBefore.plusSeconds(7200),Instant.now().plusSeconds(7200));
-        assertThat(refreshed.path("refreshExpiresAt").asText()).isEqualTo(login.path("refreshExpiresAt").asText());
+        assertThat(Instant.parse(refreshed.path("refreshExpiresAt").asText())).isEqualTo(storedFamilyExpiry);
     }
     @Test void accessTokenCannotOutliveRefreshFamily() throws Exception {
         var familyExpiry=OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(30).withNano(0);
