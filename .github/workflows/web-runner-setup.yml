@@ -21,12 +21,16 @@ jobs:
             sudo awk '/listen |server_name |root |location |proxy_pass |ssl_certificate / {print}' "$file"
           done
           df -h /opt
+          docker system df
+          docker builder prune --all --force
+          docker image prune --all --force --filter 'until=168h'
+          df -h /opt
       - name: Register dedicated Web runner
-        if: env.REGISTRATION_TOKEN != ''
         env:
           REGISTRATION_TOKEN: ${{ secrets.WEB_RUNNER_REGISTRATION_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$REGISTRATION_TOKEN" ]; then echo 'Registration not requested'; exit 0; fi
           echo '::add-mask::'"$REGISTRATION_TOKEN"
           runner_dir=/opt/actions-runner-web
           if [ -f "$runner_dir/.runner" ]; then echo 'Web runner already configured'; exit 0; fi
