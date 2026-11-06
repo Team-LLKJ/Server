@@ -11,7 +11,7 @@
 | API | 상태 |
 |---|---|
 | `POST /api/auth/signup/student` | **학생 가입 없음.** 항상 410 STUDENT_ACCOUNTS_DISABLED입니다. 학생은 PIN과 닉네임으로 참여합니다. 화면에서 학생 가입을 빼 주세요. |
-| `POST /api/auth/password-reset/request`, `/confirm` | **없음(404).** 메일 발송 수단이 없어 이전에 뺐습니다. 로그인한 교사는 새 `POST /api/users/me/password`로 바꿀 수 있습니다. 비밀번호를 잊은 교사는 관리자 처리가 필요합니다. |
+| `POST /api/auth/password-reset/request`, `/confirm` | **2026-11-04 추가됨.** 이메일 링크 요청·새 비밀번호 확정을 지원합니다. 요청·응답·환경 설정은 [PASSWORD_RESET.md](PASSWORD_RESET.md)를 참고하세요. |
 | `DELETE /api/teacher/evaluations/{id}` | **이번에 새로 추가.** 아래 3장 참고. |
 | `PUT /api/teacher/evaluations/{id}/questions` | aiPolicy에 `EDIT_ASSIST`, `TASK_ASSIST` 두 값이 늘었고 `aiLevel`(1~5) 필드를 함께 받습니다. 기존 세 값은 그대로 됩니다. |
 | CORS | 허용 메서드에 PATCH·DELETE를 추가했습니다. |

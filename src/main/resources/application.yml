@@ -61,6 +61,7 @@ lit:
       5: 1.0
   auth:
     mail-from: ${LIT_MAIL_FROM:}
+    password-reset-url: ${LIT_PASSWORD_RESET_URL:}
 
 management:
   endpoints:

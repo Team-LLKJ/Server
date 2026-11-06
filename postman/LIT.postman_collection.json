@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "LIT 전체 평가 API",
-    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 로그인·갱신 시 Access Token은 2시간 유효하며 Refresh Token 만료 시각(최초 로그인 기준 최대 14일)을 넘지 않습니다. 비밀번호 찾기 기능은 제외되었습니다.",
+    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 로그인·갱신 시 Access Token은 2시간 유효하며 Refresh Token 만료 시각(최초 로그인 기준 최대 14일)을 넘지 않습니다. 로그인 없이 이메일 링크로 비밀번호를 재설정합니다.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -151,6 +151,21 @@
     {
       "key": "reportVersion",
       "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "passwordResetEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "passwordResetToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newPassword",
+      "value": "",
       "type": "string"
     }
   ],
@@ -3190,6 +3205,64 @@
               }
             },
             "description": "최초 참가 토큰 필요. PIN 없이 기존 참가자를 활성화하고 lobby/readOnly/workspace를 반환합니다. 마감·제출 후 읽기 전용, 대기 중 workspace=null. 프런트 초안 지속 보관은 별도 구현."
+          }
+        }
+      ]
+    },
+    {
+      "name": "AUTH-003 비밀번호 재설정",
+      "description": "로그인 불필요. 메일의 fragment에서 토큰을 읽어 passwordResetToken 변수에 직접 입력합니다. 토큰은 응답에 반환되지 않습니다. confirm 성공 시 기존 모든 로그인 세션이 폐기됩니다. 운영 실계정이 아닌 테스트 계정에서 사용하세요.",
+      "item": [
+        {
+          "name": "1 재설정 링크 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/password-reset/request",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{passwordResetEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "202 동일 응답. 등록된 활성 교사 이메일에만 링크 발송.60초 재요청 제한. SMTP 및 LIT_PASSWORD_RESET_URL 설정 필요."
+          }
+        },
+        {
+          "name": "2 새 비밀번호 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/password-reset/confirm",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{passwordResetToken}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "메일 링크의 #token= 값을 입력.15분·일회용.10~128자 새 비밀번호. 성공 후 새 비밀번호로 로그인."
           }
         }
       ]

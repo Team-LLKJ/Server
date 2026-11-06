@@ -252,3 +252,15 @@ CREATE TABLE IF NOT EXISTS email_change_verifications (
  password_hash VARCHAR(255) NOT NULL, last_sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
  expires_at TIMESTAMP WITH TIME ZONE NOT NULL, attempts INT NOT NULL DEFAULT 0
 );
+
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+ token_hash VARCHAR(64) PRIMARY KEY,
+ user_id VARCHAR(36) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+ password_fingerprint VARCHAR(64) NOT NULL,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ used_at TIMESTAMP WITH TIME ZONE,
+ invalidated_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id,created_at);

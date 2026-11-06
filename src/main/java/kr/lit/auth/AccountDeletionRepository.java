@@ -33,6 +33,7 @@ public class AccountDeletionRepository {
         db.update("DELETE FROM user_settings WHERE user_id=?",userId);
         db.update("DELETE FROM user_policy_consents WHERE user_id=?",userId);
         db.update("DELETE FROM auth_sessions WHERE user_id=?",userId);
+        db.update("DELETE FROM password_reset_tokens WHERE user_id=?",userId);
         db.update("DELETE FROM signup_email_verifications WHERE email=?",email);
         // 이메일 변경 기능은 별도 브랜치여서 해당 테이블이 추가된 경우에만 정리합니다.
         if(db.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='PUBLIC' AND TABLE_NAME='EMAIL_CHANGE_VERIFICATIONS'",Integer.class)>0)

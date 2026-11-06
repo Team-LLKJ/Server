@@ -45,7 +45,6 @@ public class SecurityConfig {
             .requestCache(c->c.disable()).formLogin(f->f.disable()).httpBasic(b->b.disable()).logout(l->l.disable())
             .exceptionHandling(e->e.authenticationEntryPoint((req,res,ex)->error(res,json,401,"AUTH_REQUIRED","로그인이 필요합니다."))
                 .accessDeniedHandler((req,res,ex)->error(res,json,403,"ACCESS_DENIED","접근 권한이 없습니다.")))
-            // Retired reset URLs remain permitAll so missing handlers return 404.
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
