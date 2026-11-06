@@ -58,7 +58,7 @@ public class AuthService {
     }
     private Tokens issue(String userId,String familyId,OffsetDateTime familyExpiry) {
         String access=secret(),refresh=secret(),id=UUID.randomUUID().toString();var timestamp=now();
-        var accessExpiry=timestamp.plusMinutes(15);if(accessExpiry.isAfter(familyExpiry))accessExpiry=familyExpiry;
+        var accessExpiry=timestamp.plusHours(2);if(accessExpiry.isAfter(familyExpiry))accessExpiry=familyExpiry;
         db.update("INSERT INTO auth_sessions VALUES (?,?,?,?,?,?,?,NULL,NULL,?)",id,userId,familyId,hash(access),hash(refresh),accessExpiry,familyExpiry,timestamp);
         return new Tokens("Bearer",access,accessExpiry.toInstant(),refresh,familyExpiry.toInstant(),me(userId));
     }

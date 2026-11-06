@@ -52,7 +52,7 @@ Authorization: Bearer {accessToken}
 
 학생은 가입·로그인 없이 PIN과 닉네임으로 참여합니다. 참여 응답의 participantToken을 학생 API의 `X-Participant-Token` 헤더에 사용하세요.
 교사 공통 키는 사용하지 않습니다.
-Access Token은 15분, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
+Access Token은 2시간, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
 토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
 [Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 이메일 인증·오류 정책을 정리했습니다.
