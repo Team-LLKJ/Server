@@ -15,6 +15,8 @@
 | GET | /api/teacher/evaluations/{id}/students/{participantId}/reports | 저장된 리포트 버전 목록 |
 | GET | /api/teacher/evaluations/{id}/students/{participantId}/report?version=1 | 특정 버전, 생략하면 최신 버전 |
 | GET | /api/teacher/evaluations/{id}/students/{participantId}/report/pdf?version=1&includeConversations=false | PDF 첨부 다운로드 |
+| GET | /api/teacher/evaluations/{id}/students/{participantId}/report/hwp?version=1 | HWP 첨부 다운로드 |
+| GET | /api/evaluations/{id}/report/hwp?version=1 | 학생 본인의 HWP 다운로드 |
 | POST | /api/evaluations/{id}/reports | 학생 자신의 제출 리포트 생성 |
 | GET | /api/evaluations/{id}/report?version=1 | 학생 자신의 리포트 조회 |
 | GET | /api/evaluations/{id}/report/pdf?version=1&includeConversations=false | 학생 자신의 PDF 다운로드 |
@@ -83,3 +85,7 @@ PDF는 application/pdf, Content-Disposition attachment입니다. 한글 글꼴�
 교사·학생의 PDF 다운로드에도 같은 인증 헤더를 사용합니다. 브라우저에서는 fetch 후 Blob으로 저장하고 URL에 토큰을 넣지 마세요.
 
 채점 화면용 별칭과 신규 응답은 [교사 채점 화면 연동](TEACHER_GRADING.md)에 정의합니다. 기존 일괄 리뷰 입력0~4점은 유지하되 새 개별 채점은20점 기준이며 TeacherReview.maxScore를 함께 확인하세요. PDF는 부분 점수와 실제 배점을 표시합니다.
+
+## HWP 내보내기
+
+기존 저장 리포트를 HWP5 바이너리로 변환합니다. 버전·원문 포함 옵션·인증은 기존 PDF와 같으며, GET은 리포트를 생성하지 않습니다. [HWP API 명세와 서식 범위](HWP_EXPORT.md)를 참고하세요.

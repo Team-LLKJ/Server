@@ -147,6 +147,11 @@
       "key": "emailChangeCode",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "reportVersion",
+      "value": "1",
+      "type": "string"
     }
   ],
   "item": [
@@ -3115,6 +3120,45 @@
                 }
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "HWP 리포트 내보내기",
+      "item": [
+        {
+          "name": "교사 HWP 다운로드",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/report/hwp?version={{reportVersion}}&includeConversations=false",
+            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다."
+          }
+        },
+        {
+          "name": "학생 본인 HWP 다운로드",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/report/hwp?version={{reportVersion}}&includeConversations=false",
+            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다."
           }
         }
       ]

@@ -324,3 +324,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 [API 명세](docs/NICKNAME_CHANGE.md)
 
 `PATCH /api/users/me/nickname`으로 로그인한 본인의 닉네임을 변경합니다. 기존 `PATCH /api/users/me`의 `name` 요청도 같은 검증과 저장 경로를 사용합니다. 닉네임은 기존 `display_name`이며 응답은 기존 User의 `name` 필드입니다.
+
+### HWP 리포트 다운로드
+
+저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 학생용 `GET /api/evaluations/{id}/report/hwp`로 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 기존 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
