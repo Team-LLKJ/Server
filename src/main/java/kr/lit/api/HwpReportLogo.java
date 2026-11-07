@@ -1,0 +1,34 @@
+package kr.lit.api;
+
+import kr.dogfoot.hwplib.object.HWPFile;
+import kr.dogfoot.hwplib.object.bodytext.paragraph.Paragraph;
+import kr.dogfoot.hwplib.object.bodytext.paragraph.text.HWPCharNormal;
+import kr.dogfoot.hwplib.object.bodytext.control.gso.*;
+import kr.dogfoot.hwplib.object.bodytext.control.gso.shapecomponent.ShapeComponentNormal;
+import kr.dogfoot.hwplib.object.bodytext.control.ctrlheader.gso.*;
+import kr.dogfoot.hwplib.object.docinfo.BinData;
+import kr.dogfoot.hwplib.object.docinfo.bindata.*;
+import kr.dogfoot.hwplib.object.docinfo.borderfill.fillinfo.*;
+import kr.dogfoot.hwplib.object.bodytext.control.gso.shapecomponent.lineinfo.LineType;
+import kr.dogfoot.hwplib.object.bodytext.control.gso.shapecomponent.shadowinfo.ShadowType;
+
+/** 원본 PNG를 HWP 내부에 포함하고 제목 앞에 글자처럼 배치합니다. */
+final class HwpReportLogo {
+    private HwpReportLogo() {}
+    static void addLogo(HWPFile file,Paragraph paragraph,int titleLength) {
+        int index=file.getBinData().getEmbeddedBinaryDataList().size()+1;
+        file.getBinData().addNewEmbeddedBinaryData("Bin"+String.format("%04X",index)+".png",ReportBrand.getLogoBytes(),BinDataCompress.ByStorageDefault);
+        var data=new BinData();data.getProperty().setType(BinDataType.Embedding);data.getProperty().setCompress(BinDataCompress.ByStorageDefault);data.getProperty().setState(BinDataState.NotAccess);data.setBinDataID(index);data.setExtensionForEmbedding("png");file.getDocInfo().getBinDataList().add(data);
+        var chars=paragraph.getText().getCharList();chars.remove(chars.size()-1);int at=chars.size()-titleLength;
+        paragraph.getText().addExtendCharForGSO();var marker=chars.remove(chars.size()-1);chars.add(at,marker);chars.add(new HWPCharNormal(13));
+        var image=(ControlRectangle)paragraph.addNewGsoControl(GsoControlType.Rectangle);
+        var header=image.getHeader();var property=header.getProperty();
+        property.setLikeWord(true);property.setApplyLineSpace(true);property.setVertRelTo(VertRelTo.Para);property.setHorzRelTo(HorzRelTo.Para);property.setVertRelativeArrange(RelativeArrange.TopOrLeft);property.setHorzRelativeArrange(RelativeArrange.TopOrLeft);property.setWidthCriterion(WidthCriterion.Absolute);property.setHeightCriterion(HeightCriterion.Absolute);property.setAllowOverlap(false);property.setTextFlowMethod(TextFlowMethod.FitWithText);property.setTextHorzArrange(TextHorzArrange.BothSides);property.setObjectNumberSort(ObjectNumberSort.Figure);
+        int width=6400,height=3200;header.setWidth(width);header.setHeight(height);header.setOutterMarginRight(1000);header.setInstanceId(0x4c4954);header.setPreventPageDivide(true);
+        var shape=(ShapeComponentNormal)image.getShapeComponent();shape.setWidthAtCreate(width);shape.setHeightAtCreate(height);shape.setWidthAtCurrent(width);shape.setHeightAtCurrent(height);shape.setLocalFileVersion(1);shape.getProperty().setRotateWithImage(true);shape.setRotateXCenter(width/2);shape.setRotateYCenter(height/2);
+        shape.createLineInfo();shape.getLineInfo().getProperty().setLineType(LineType.None);shape.getLineInfo().setThickness(0);shape.getLineInfo().setOutlineStyle(kr.dogfoot.hwplib.object.bodytext.control.gso.shapecomponent.lineinfo.OutlineStyle.Normal);
+        shape.createFillInfo();var fill=shape.getFillInfo();fill.getType().setImageFill(true);fill.createImageFill();fill.getImageFill().setImageFillType(ImageFillType.FitSize);fill.getImageFill().getPictureInfo().setEffect(PictureEffect.RealPicture);fill.getImageFill().getPictureInfo().setBinItemID(file.getDocInfo().getBinDataList().size());
+        shape.createShadowInfo();shape.getShadowInfo().setType(ShadowType.None);shape.setMatrixsNormal();
+        var rect=image.getShapeComponentRectangle();rect.setX1(0);rect.setY1(0);rect.setX2(width);rect.setY2(0);rect.setX3(width);rect.setY3(height);rect.setX4(0);rect.setY4(height);
+    }
+}

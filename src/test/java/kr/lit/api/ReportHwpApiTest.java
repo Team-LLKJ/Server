@@ -63,12 +63,10 @@ class ReportHwpApiTest extends AuthTestSupport {
         var title=section.getParagraph(0);
         int charId=(int)title.getCharShape().getPositonShapeIdPairList().get(0).getShapeId();
         var titleShape=document.getDocInfo().getCharShapeList().get(charId);
-        assertThat(titleShape.getBaseSize()).isEqualTo(2300);
+        assertThat(titleShape.getBaseSize()).isEqualTo(1800);
         assertThat(titleShape.getProperty().isBold()).isTrue();
-        var runs=title.getCharShape().getPositonShapeIdPairList();
-        assertThat(runs).hasSize(2);
-        assertThat(runs.get(1).getPosition()).isGreaterThan(5);
-        assertThat(document.getDocInfo().getCharShapeList().get((int)runs.get(1).getShapeId()).getBaseSize()).isEqualTo(1800);
+        assertThat(document.getBinData().getEmbeddedBinaryDataList()).hasSize(1);
+        assertThat(document.getDocInfo().getBinDataList().get(0).getExtensionForEmbedding()).isEqualTo("png");
         assertThat(document.getDocInfo().getParaShapeList().get(title.getHeader().getParaShapeId()).getProperty1().getAlignment())
                 .isEqualTo(kr.dogfoot.hwplib.object.docinfo.parashape.Alignment.Left);
         var tables=new ArrayList<kr.dogfoot.hwplib.object.bodytext.control.ControlTable>();
@@ -76,10 +74,10 @@ class ReportHwpApiTest extends AuthTestSupport {
             var controls=section.getParagraph(i).getControlList();
             if(controls!=null)for(var control:controls)if(control instanceof kr.dogfoot.hwplib.object.bodytext.control.ControlTable table)tables.add(table);
         }
-        assertThat(tables).hasSize(3);
+        assertThat(tables).hasSize(5);
         assertThat(tables.get(0).getTable().getColumnCount()).isEqualTo(4);
         assertThat(tables.get(0).getRowList()).hasSize(2);
-        var scores=tables.get(1);
+        var scores=tables.get(2);
         assertThat(scores.getRowList()).hasSize(6);
         assertThat(scores.getTable().getColumnCount()).isEqualTo(3);
         assertThat(scores.getRowList().get(0).getCellList().get(0).getListHeader().getProperty().isTitleCell()).isTrue();
