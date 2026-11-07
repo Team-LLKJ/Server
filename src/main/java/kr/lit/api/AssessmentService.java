@@ -212,17 +212,19 @@ public class AssessmentService {
             db.update("DELETE FROM grading_scores WHERE participant_id=? AND criterion_id=?",pid,criterionId);after=null;
         } else if(input.level()==null) {
             if(current==null) throw fail(HttpStatus.BAD_REQUEST,"LEVEL_REQUIRED","처음 저장할 때는 level(0~4)이 필요합니다.");
-            db.update("UPDATE grading_scores SET feedback=?,teacher_id=?,updated_at=? WHERE participant_id=? AND criterion_id=?",input.feedback().strip(),teacherId,now(),pid,criterionId);after=before;
+            db.update("UPDATE grading_scores SET feedback=?,teacher_id=?,updated_at=? WHERE participant_id=? AND criterion_id=?",input.feedback(),teacherId,now(),pid,criterionId);after=before;
         } else {
-            String feedback=input.feedback()!=null?input.feedback().strip():current==null?"":current.feedback();
+            String feedback=input.feedback()!=null?input.feedback():current==null?"":current.feedback();
             db.update("MERGE INTO grading_scores(participant_id,criterion_id,evaluation_id,score_level,feedback,teacher_id,updated_at) KEY(participant_id,criterion_id) VALUES (?,?,?,?,?,?,?)",
                     pid,criterionId,id,input.level(),feedback,teacherId,now());after=input.level();
         }
-        if(!Objects.equals(before,after)) {
+        String previousFeedback=current==null?null:current.feedback();
+        String feedback=after==null?null:input.feedback()!=null?input.feedback():current==null?"":current.feedback();
+        if(!Objects.equals(before,after)||!Objects.equals(previousFeedback,feedback)) {
             Integer aiLevel=null;
             if(analysis!=null&&criterion.indicator()!=Indicator.MANUAL) for(var i:analysis.indicators()) if(i.indicator()==criterion.indicator()) aiLevel=i.level();
-            db.update("INSERT INTO grading_score_changes(evaluation_id,participant_id,criterion_id,previous_level,score_level,ai_level,teacher_id,changed_at) VALUES (?,?,?,?,?,?,?,?)",
-                    id,pid,criterionId,before,after,aiLevel,teacherId,now());
+            db.update("INSERT INTO grading_score_changes(evaluation_id,participant_id,criterion_id,previous_level,score_level,ai_level,teacher_id,changed_at,previous_feedback,feedback) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    id,pid,criterionId,before,after,aiLevel,teacherId,now(),previousFeedback,feedback);
             // 확정 뒤 점수를 바꾸면 DRAFT로 돌아가며, 재확정해야 합니다. 마지막 확정 총점은 confirmedTotal로 남습니다.
             setStatus(pid,id,"DRAFT");
         }
@@ -242,13 +244,13 @@ public class AssessmentService {
             for(var c:view.criteria()) if(c.teacher()==null&&c.ai()!=null) {
                 db.update("INSERT INTO grading_scores(participant_id,criterion_id,evaluation_id,score_level,feedback,teacher_id,updated_at) VALUES (?,?,?,?,?,?,?)",
                         pid,c.criterionId(),id,c.ai().level(),"",teacherId,now());
-                db.update("INSERT INTO grading_score_changes(evaluation_id,participant_id,criterion_id,previous_level,score_level,ai_level,teacher_id,changed_at) VALUES (?,?,?,NULL,?,?,?,?)",
-                        id,pid,c.criterionId(),c.ai().level(),c.ai().level(),teacherId,now());
+                db.update("INSERT INTO grading_score_changes(evaluation_id,participant_id,criterion_id,previous_level,score_level,ai_level,teacher_id,changed_at,previous_feedback,feedback) VALUES (?,?,?,NULL,?,?,?,?,NULL,?)",
+                        id,pid,c.criterionId(),c.ai().level(),c.ai().level(),teacherId,now(),"");
             }
         }
         var view=scoresView(id,pid,analysis);
-        var missing=view.criteria().stream().filter(c->c.teacher()==null).map(CriterionScore::name).toList();
-        if(!missing.isEmpty()) throw fail(HttpStatus.CONFLICT,"GRADING_INCOMPLETE","모든 기준을 채점해야 확정할 수 있습니다. 미입력: "+String.join(", ",missing));
+        var missing=view.criteria().stream().filter(c->c.teacher()==null).toList();
+        if(!missing.isEmpty()) throw new ApiError.Failure(HttpStatus.CONFLICT,"GRADING_INCOMPLETE","모든 기준을 채점해야 확정할 수 있습니다. 미입력: "+String.join(", ",missing.stream().map(CriterionScore::name).toList()),Map.of("missingCriteria",missing.stream().map(c->Map.of("criterionId",c.criterionId(),"name",c.name())).toList()));
         boolean alreadyConfirmed="CONFIRMED".equals(view.status());
         setStatus(pid,id,"CONFIRMED");
         db.update("UPDATE grading_results SET total_score=?,confirmed_by=?,confirmed_at=?,updated_at=? WHERE participant_id=?",
@@ -272,7 +274,7 @@ public class AssessmentService {
         teacher(id);person(id,pid);
         if(afterId<0||limit<1||limit>200) throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이력 조회 범위를 확인해주세요.");
         return db.query("SELECT * FROM grading_score_changes WHERE participant_id=? AND id>? ORDER BY id LIMIT ?",(r,n)->new ScoreChange(r.getLong("id"),r.getInt("criterion_id"),
-                (Integer)r.getObject("previous_level"),(Integer)r.getObject("score_level"),(Integer)r.getObject("ai_level"),r.getString("teacher_id"),instant(r,"changed_at")),pid,afterId,limit);
+                (Integer)r.getObject("previous_level"),(Integer)r.getObject("score_level"),(Integer)r.getObject("ai_level"),r.getString("teacher_id"),instant(r,"changed_at"),r.getString("previous_feedback"),r.getString("feedback")),pid,afterId,limit);
     }
 
     // ===== 제출 현황 =====

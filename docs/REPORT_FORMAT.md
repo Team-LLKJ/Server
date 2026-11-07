@@ -31,3 +31,7 @@ PDF application/pdf, HWP application/x-hwp. 둘 다 attachment. 저장본 조회
 - 이벤트: `POST /api/student/evaluations/{id}/events`와 `/api/evaluations/{id}/events`는 별칭입니다. 전체화면 이탈은 FULLSCREEN_EXIT 또는 FULLSCREEN_LEAVE, 개발자 도구는 DEVTOOLS_OPEN. 기존 WINDOW_LEAVE/SHORTCUT_CAPTURE도 유지합니다. 경고 집계·첫 교사 알림에 포함하고 클라이언트 이벤트10종 합산60건/분을 적용합니다.
 - 배포: 위 이벤트는 develop890c5a2의 배포 워크플로42376198497 성공으로 운영 반영됐습니다. 교사 /activity의 warnings에 표시합니다. 프런트가 실제 해당 이벤트를 감지해 참가자 토큰으로 전송해야 하며 단순 지원 여부와 실제 브라우저 전달 성공은 별개입니다.
 - 답안 기여도: /activity.studentContribution은 실제 작성 비율을 측정할 수 없으므로 null 유지합니다. contribution.direct는 TEXT_SIMILARITY_ESTIMATE(문장 유사도 추정 비중)로 '직접 작성한 실제 비율'이 아닙니다. 새 과정 평가V2의 studentContribution은 25점 행동 기반 역량 평가이며 퍼센트와 구분합니다. 별도 feature/analysis-rubric-v2는 아직 운영 미배포입니다.
+
+## rubric-scores 연결 보완
+
+feature/grading-feedback에서 새 보고서는 실제 rubric-scores를 content.grading에 고정하고 교사 feedback → AI reason 순으로 평가 내용을 표시합니다. 기존 보고서 버전에는 소급하지 않습니다. [GRADING_FEEDBACK.md](GRADING_FEEDBACK.md) 참고.
