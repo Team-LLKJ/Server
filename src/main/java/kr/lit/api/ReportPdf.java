@@ -48,8 +48,9 @@ public class ReportPdf {
   }
   private void ensureSpace(float height)throws IOException{if(y-height<BOTTOM)newPage();}
   void addHeader(String title,String date)throws IOException {
-   draw("LIT",LEFT,y-18,23,0,0.48f,1);draw(title,LEFT+60,y-15,18,0.1f,0.1f,0.1f);y-=34;
-   draw(date,LEFT+60,y,9,0.4f,0.4f,0.4f);y-=15;rule(0,0.48f,1,1.3f);y-=14;
+   var logo=org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject.createFromByteArray(doc,ReportBrand.getLogoBytes(),"LIT logo");
+   stream.drawImage(logo,LEFT,y-32,64,32);draw(title,LEFT+80,y-18,18,0.1f,0.1f,0.1f);y-=36;
+   draw(date,LEFT+80,y,9,0.4f,0.4f,0.4f);y-=15;rule(0,123f/255f,1,1.3f);y-=14;
   }
   private void rule(float r,float g,float b,float width)throws IOException{stream.setStrokingColor(r,g,b);stream.setLineWidth(width);stream.moveTo(LEFT,y);stream.lineTo(LEFT+WIDTH,y);stream.stroke();}
   void addText(String value,String style)throws IOException {
@@ -57,7 +58,7 @@ public class ReportPdf {
    if(heading){ensureSpace(75);y-=14;}
    else if(question){ensureSpace(65);y-=9;}
    for(String line:wrap(value,size,WIDTH)) {ensureSpace(size*1.55f);draw(line,LEFT,y-size,size,style.equals("note")?0.4f:0.12f,style.equals("note")?0.4f:0.12f,style.equals("note")?0.4f:0.12f);y-=size*1.55f;}
-   y-=5;if(heading){rule(0.83f,0.85f,0.87f,0.5f);y-=7;}
+   y-=5;if(heading){rule(0,123f/255f,1,0.5f);y-=7;}
   }
   void addTable(ReportLayout.Table table)throws IOException {
    float[] widths=new float[table.widths().length];for(int c=0;c<widths.length;c++)widths[c]=WIDTH*table.widths()[c]/42520f;
@@ -82,7 +83,7 @@ public class ReportPdf {
    float x=LEFT;for(int c=0;c<widths.length;c++){drawCell(x,y,widths[c],29,true);draw(cells.get(c),x+6,y-18,11,0.12f,0.12f,0.12f);x+=widths[c];}y-=29;
   }
   private void drawCell(float x,float top,float width,float height,boolean shaded)throws IOException {
-   stream.setNonStrokingColor(shaded?0.95f:1f,shaded?0.975f:1f,1f);stream.addRect(x,top-height,width,height);stream.fill();
+   stream.setNonStrokingColor(shaded?242f/255f:1f,shaded?248f/255f:1f,1f);stream.addRect(x,top-height,width,height);stream.fill();
    stream.setStrokingColor(0.84f,0.85f,0.87f);stream.setLineWidth(0.4f);stream.addRect(x,top-height,width,height);stream.stroke();
   }
   private List<String> wrap(String value,int size,float width)throws IOException {

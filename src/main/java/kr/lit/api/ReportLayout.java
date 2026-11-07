@@ -23,22 +23,22 @@ public class ReportLayout {
         int saves=0,warnings=0,completed=0,failed=0;
         for(var e:c.submission().path("learningEvents")){if("ANSWER_SAVED".equals(e.path("type").asText()))saves++;if(WorkModels.ClientEventType.warningNames().contains(e.path("type").asText()))warnings++;}
         for(var t:c.submission().path("conversations")){if("COMPLETED".equals(t.path("state").asText()))completed++;if("FAILED".equals(t.path("state").asText()))failed++;}
-        text(blocks,"저장 "+saves+"회, AI 질문 "+c.submission().path("conversations").size()+"건(완료 "+completed+"건·실패 "+failed+"건), 경고 신고 "+warnings+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.");
-        if(review!=null&&!review.comment().isBlank())text(blocks,review.comment());
-        text(blocks,"교사 검토: "+(c.grading()!=null?labelCode(c.grading().status()):review==null?"검토 전":labelCode(review.compliance().name())));
+        var overview=new ArrayList<List<String>>();
+        overview.add(List.of("답안 저장",saves+"회"));overview.add(List.of("AI 질문",c.submission().path("conversations").size()+"건 (완료 "+completed+"건·실패 "+failed+"건)"));overview.add(List.of("경고 신고",warnings+"건"));
+        overview.add(List.of("교사 검토",c.grading()!=null?labelCode(c.grading().status()):review==null?"검토 전":labelCode(review.compliance().name())));
+        if(review!=null&&!review.comment().isBlank())overview.add(List.of("교사 의견",review.comment()));
+        blocks.add(new Table(overview,new int[]{14520,28000},false));
+        blocks.add(new Text("신고 기록만으로 부정행위를 판단하지 않습니다.","note"));
         heading(blocks,"2. 평가 기준별 루브릭");
         var scores=new ArrayList<List<String>>();scores.add(List.of("평가 기준","점수","평가 내용"));
         if(c.grading()!=null) {
-            for(var criterion:c.grading().criteria())scores.add(List.of(criterion.name(),criterion.score()==null?"미채점":formatScore(criterion.score())+" / "+criterion.maxScore()+(criterion.teacherScored()?"":" (AI 추천)"),shorten(selectFeedback(criterion),100)));
+            for(var criterion:c.grading().criteria())scores.add(List.of(criterion.name(),criterion.score()==null?"미채점":formatScore(criterion.score())+" / "+criterion.maxScore()+(criterion.teacherScored()?"":" (AI 추천)"),selectFeedback(criterion)));
         }else for(var criterion:Criterion.values()) {
             var rating=review==null?null:review.ratings().stream().filter(r->r.criterion()==criterion).findFirst().orElse(null);
             String evidence=rating==null?"":Objects.toString(rating.evidence(),"");
-            scores.add(List.of(ReportPdf.label(criterion),rating==null||rating.score()==null?"미채점":rating.score()+" / "+review.maxScore(),shorten(evidence,100)));
+            scores.add(List.of(ReportPdf.label(criterion),rating==null||rating.score()==null?"미채점":rating.score()+" / "+review.maxScore(),evidence));
         }
         blocks.add(new Table(scores,new int[]{14520,8000,20000},true));
-        if(c.grading()!=null) {
-            for(var criterion:c.grading().criteria())if(selectFeedback(criterion).length()>100)text(blocks,criterion.name()+" 평가 내용: "+selectFeedback(criterion));
-        }else if(review!=null)for(var rating:review.ratings())if(rating.evidence()!=null&&rating.evidence().length()>100)text(blocks,ReportPdf.label(rating.criterion())+" 평가 내용: "+rating.evidence());
         heading(blocks,"3. AI 활용 분석");
         var usage=new ArrayList<List<String>>();
         usage.add(List.of("답안 기여도","판단 보류: 저장된 리포트에는 실제 작성 비율이 없습니다."));
@@ -49,14 +49,15 @@ public class ReportLayout {
         blocks.add(new Table(usage,new int[]{14520,28000},false));
         blocks.add(new Text("키워드 기반 분류(교사 검토 필요). 복수 목적을 허용합니다. 문장 유사도는 실제 작성자 비율이나 기여 점수가 아닙니다.","note"));
         heading(blocks,"4. 활동 및 경고 기록");
-        int eventNumber=0;
+        var activities=new ArrayList<List<String>>();activities.add(List.of("시각 (KST)","문항","활동·경고 내용"));
         for(var event:c.submission().path("learningEvents")) {
             String type=event.path("type").asText();if(!"ANSWER_SAVED".equals(type)&&!WorkModels.ClientEventType.warningNames().contains(type))continue;
-            eventNumber++;String q=questionLabel(c,event.path("questionId").asText());
+            String q=questionLabel(c,event.path("questionId").asText());
             String detail="ANSWER_SAVED".equals(type)?"답안 저장 · "+labelCode(event.path("details").path("source").asText()):labelCode(type)+" (학생 기기 신고)";
-            text(blocks,formatDate(event.path("createdAt").asText())+" | "+q+" | "+detail);
+            activities.add(List.of(formatDate(event.path("createdAt").asText()),q,detail));
         }
-        if(eventNumber==0)text(blocks,"기록된 활동이 없습니다.");
+        if(activities.size()==1)activities.add(List.of("","","기록된 활동이 없습니다."));
+        blocks.add(new Table(activities,new int[]{14520,6500,21500},true));
         heading(blocks,"5. 문항별 제출 답안");
         for(var a:c.submission().path("answers")) {
             blocks.add(new Text("문항 "+a.path("question").path("position").asInt()+" · "+a.path("question").path("title").asText(),"question"));
@@ -69,9 +70,12 @@ public class ReportLayout {
             blocks.add(new PageBreak());heading(blocks,"부록. AI 대화 기록");int index=0;
             for(var t:c.submission().path("conversations")) {
                 blocks.add(new Text("대화 "+(++index)+" · "+questionLabel(c,t.path("questionId").asText()),"question"));
-                blocks.add(new Text(formatDate(t.path("createdAt").asText())+" · "+labelCode(t.path("state").asText()),"note"));
-                text(blocks,"질문: "+t.path("questionText").asText());
-                text(blocks,"응답: "+(t.path("answerText").isNull()?"[응답 없음]":t.path("answerText").asText()));
+                blocks.add(new Table(List.of(
+                    List.of("문항",questionLabel(c,t.path("questionId").asText())),
+                    List.of("시각 (KST)",formatDate(t.path("createdAt").asText())),
+                    List.of("상태",labelCode(t.path("state").asText())),
+                    List.of("질문",t.path("questionText").asText()),
+                    List.of("응답",t.path("answerText").isNull()?"[응답 없음]":t.path("answerText").asText())),new int[]{7000,35520},false));
             }
             if(index==0)text(blocks,"기록된 AI 대화가 없습니다.");
         }
@@ -83,7 +87,6 @@ public class ReportLayout {
     private static String scoreSummary(TeacherReview review){return review==null||review.ratings().size()!=5||review.ratings().stream().anyMatch(r->r.score()==null)?"미채점":review.ratings().stream().mapToInt(Rating::score).sum()+" / "+review.maxScore()*5+"점";}
     private static void heading(List<Block> blocks,String text){blocks.add(new Text(text,"heading"));}
     private static void text(List<Block> blocks,String text){if(text!=null&&!text.isBlank())blocks.add(new Text(text,"body"));}
-    private static String shorten(String text,int max){return text.length()<=max?text:text.substring(0,max)+"… (상세 내용 아래)";}
     private static String questionLabel(ReportContent c,String id){for(var a:c.submission().path("answers"))if(id.equals(a.path("question").path("id").asText()))return "문항 "+a.path("question").path("position").asInt();return "평가 전체";}
     static String formatDate(Instant value){return value==null?"미기록":DateTimeFormatter.ofPattern("yyyy. MM. dd HH:mm").withZone(ZoneId.of("Asia/Seoul")).format(value);}
     private static String formatDate(String value){try{return formatDate(Instant.parse(value));}catch(Exception ignored){return "시각 미기록";}}

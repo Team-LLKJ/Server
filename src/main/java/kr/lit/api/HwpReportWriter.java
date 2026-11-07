@@ -16,7 +16,7 @@ import java.util.*;
 final class HwpReportWriter {
     private static final int WIDTH=50458, MAX_PARAGRAPH_CHARS=2000;
     private final HWPFile document;
-    private final int bodyChar,titleChar,logoChar,subtitleChar,headingChar,noteChar;
+    private final int bodyChar,titleChar,subtitleChar,headingChar,noteChar;
     private final int bodyPara,titlePara,headerNotePara,headingPara,cellPara;
     private final int cellBorder,headerBorder;
     private boolean first=true;
@@ -30,7 +30,6 @@ final class HwpReportWriter {
         for(var faces:List.of(info.getHangulFaceNameList(),info.getEnglishFaceNameList(),info.getHanjaFaceNameList(),info.getJapaneseFaceNameList(),info.getEtcFaceNameList(),info.getSymbolFaceNameList(),info.getUserFaceNameList()))for(var face:faces)face.setName("나눔고딕");
         bodyChar=createCharShape(11,false,0x292929);
         titleChar=createCharShape(18,true,0x292929);
-        logoChar=createCharShape(23,true,0xFF7A00);
         subtitleChar=createCharShape(11,true,0x292929);
         headingChar=createCharShape(12,true,0x292929);
         noteChar=createCharShape(9,false,0x666666);
@@ -40,9 +39,9 @@ final class HwpReportWriter {
         headingPara=createParaShape(Alignment.Left,1400,700,true);
         cellPara=createParaShape(Alignment.Left,0,0,false);
         cellBorder=createBorder(0xFFFFFF);
-        headerBorder=createBorder(0xFFF8F2);
-        document.getDocInfo().getParaShapeList().get(headerNotePara).setBorderFillId(createRuleBorder(0xFF7A00));
-        document.getDocInfo().getParaShapeList().get(headingPara).setBorderFillId(createRuleBorder(0xDDDDDD));
+        headerBorder=createBorder(ReportBrand.TINT_BGR);
+        document.getDocInfo().getParaShapeList().get(headerNotePara).setBorderFillId(createRuleBorder(ReportBrand.PRIMARY_BGR));
+        document.getDocInfo().getParaShapeList().get(headingPara).setBorderFillId(createRuleBorder(ReportBrand.PRIMARY_BGR));
     }
     private int createCharShape(int points,boolean bold,long color) {
         var shape=document.getDocInfo().getCharShapeList().get(0).clone();
@@ -72,10 +71,8 @@ final class HwpReportWriter {
         document.getDocInfo().getBorderFillList().add(border);return document.getDocInfo().getBorderFillList().size();
     }
     void addReportHeader(String title,String date) {
-        var paragraph=addParagraph("LIT  "+title,titleChar,titlePara);
-        paragraph.getCharShape().getPositonShapeIdPairList().clear();
-        int prefix=paragraph.getText().getCharSize()-("LIT  "+title).length()-1;
-        paragraph.getCharShape().addParaCharShape(0,logoChar);paragraph.getCharShape().addParaCharShape(prefix+5,titleChar);
+        var paragraph=addParagraph(title,titleChar,titlePara);
+        HwpReportLogo.addLogo(document,paragraph,title.length());
         addText(date,noteChar,headerNotePara);
     }
     void addSectionHeading(String text) {addText(text,headingChar,headingPara);}
@@ -128,7 +125,7 @@ final class HwpReportWriter {
         prop.setAllowOverlap(false);prop.setTextFlowMethod(TextFlowMethod.FitWithText);prop.setTextHorzArrange(TextHorzArrange.BothSides);prop.setObjectNumberSort(ObjectNumberSort.Table);
         header.setWidth(WIDTH);header.setHeight(rows.size()*2400L);header.setOutterMarginBottom(500);
         var table=control.getTable();table.setRowCount(rows.size());table.setColumnCount(widths.length);
-        table.getProperty().setDivideAtPageBoundary(DivideAtPageBoundary.DivideByCell);table.getProperty().setAutoRepeatTitleRow(firstRowHeader);
+        table.getProperty().setDivideAtPageBoundary(DivideAtPageBoundary.Divide);table.getProperty().setAutoRepeatTitleRow(firstRowHeader);
         table.setBorderFillId(cellBorder);
         for(int r=0;r<rows.size();r++) {
             if(rows.get(r).size()!=widths.length)throw new IllegalArgumentException("Invalid report table row");
@@ -142,8 +139,10 @@ final class HwpReportWriter {
                 cellHeader.getProperty().setTitleCell(firstRowHeader&&r==0);
                 cellHeader.getProperty().setLineChange(LineChange.Normal);cellHeader.getProperty().setTextVerticalAlignment(TextVerticalAlignment.Center);
                 cellHeader.setFieldName("");
-                var p=cell.getParagraphList().addNewParagraph();p.createText();p.createCharShape();
-                p.getHeader().setLastInList(true);setParagraph(p,sanitize(rows.get(r).get(c)).replaceAll("\\R"," "),shaded?subtitleChar:bodyChar,cellPara);
+                String value=sanitize(rows.get(r).get(c));var parts=new ArrayList<String>();
+                for(String line:value.split("\\R",-1)){if(line.isEmpty())parts.add("");else for(int start=0;start<line.length();){int end=Math.min(start+MAX_PARAGRAPH_CHARS,line.length());if(end<line.length()&&Character.isHighSurrogate(line.charAt(end-1)))end--;parts.add(line.substring(start,end));start=end;}}
+                cellHeader.setParaCount(parts.size());
+                for(int i=0;i<parts.size();i++){var p=cell.getParagraphList().addNewParagraph();p.createText();p.createCharShape();p.getHeader().setLastInList(i==parts.size()-1);setParagraph(p,parts.get(i),shaded?subtitleChar:bodyChar,cellPara);}
             }
         }
     }
