@@ -39,7 +39,7 @@ class TemplateApiTest extends AuthTestSupport {
                 .andExpect(status().isConflict()).andExpect(jsonPath("code").value("CLASS_LOBBY_REQUIRED"));
         var lobby=ok(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",60)));
         String pin=lobby.path("pin").asText();assertThat(pin).matches("[0-9]{6}");
-        assertThat(lobby.path("state").asText()).isEqualTo("WAITING");assertThat(lobby.path("endsAt").isNull()).isTrue();
+        assertThat(lobby.path("state").asText()).isEqualTo("READY");assertThat(lobby.path("lobbyState").asText()).isEqualTo("WAITING");assertThat(lobby.path("endsAt").isNull()).isTrue();
         assertThat(db.queryForObject("SELECT started_at FROM evaluations WHERE id=?",java.time.OffsetDateTime.class,c)).isNull();
         assertThat(ok(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",30)))).isEqualTo(lobby);
         mvc.perform(get("/api/participation/verify").param("pin",pin)).andExpect(status().isOk())

@@ -89,3 +89,6 @@ PDF는 application/pdf, Content-Disposition attachment입니다. 한글 글꼴�
 ## HWP 내보내기
 
 기존 저장 리포트를 HWP5 바이너리로 변환합니다. 버전·원문 포함 옵션·인증은 기존 PDF와 같으며, GET은 리포트를 생성하지 않습니다. [HWP API 명세와 서식 범위](HWP_EXPORT.md)를 참고하세요.
+
+
+제출 기록이 있으면 학생 leave(active=false) 이후에도 기존 참가자 토큰으로 본인 리포트 생성·조회·PDF·HWP를 사용할 수 있습니다. 참가 상태는 재활성화하지 않으며 풀이·답안·이벤트 권한은 복구하지 않습니다. 미제출 이탈 학생은 접근할 수 없습니다.

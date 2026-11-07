@@ -176,7 +176,7 @@ public class TemplateService {
         return db.query("SELECT e.*,(SELECT COUNT(*) FROM participants p WHERE p.evaluation_id=e.id) participant_count,(SELECT COUNT(*) FROM submissions s WHERE s.evaluation_id=e.id) submitted_count FROM evaluations e WHERE assessment_id=? ORDER BY class_name_key,id",
                 (r,n)->{
                     String classId=r.getString("id"),pin=r.getString("pin");
-                    return new ClassView(classId,classId,id,r.getString("class_name"),r.getString("state").equals("WAITING")?(pin==null?"READY":"WAITING"):r.getString("state"),r.getString("state"),pin,pin==null?null:joinBase+"?pin="+pin,
+                    return new ClassView(classId,classId,id,r.getString("class_name"),r.getString("state").equals("WAITING")?"READY":r.getString("state"),r.getString("state"),pin,pin==null?null:joinBase+"?pin="+pin,
                             pin==null?null:"/api/teacher/evaluations/"+classId+"/qr",time(r,"expires_at"),time(r,"ends_at"),r.getInt("participant_count"),r.getInt("submitted_count"),r.getInt("template_revision"));
                 },id);
     }

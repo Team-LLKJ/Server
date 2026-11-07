@@ -162,8 +162,8 @@ public class ReportService {
  public UsageReport teacherGenerate(String id,String pid){teacher(id);return generate(id,pid);}
  public UsageReport teacherReport(String id,String pid,Integer version){teacher(id);return getReport(id,pid,version,null);}
  public List<ReportVersion> versions(String id,String pid){teacher(id);person(id,pid);return db.query("SELECT id,version,created_at FROM usage_reports WHERE participant_id=? ORDER BY version DESC",(r,n)->new ReportVersion(r.getString("id"),r.getInt("version"),instant(r,"created_at")),pid);}
- public UsageReport studentGenerate(String id,String token){String pid=participants.authenticate(id,token).participantId();evaluations.details(id);return generate(id,pid);}
- public UsageReport studentReport(String id,String token,Integer version){String pid=participants.authenticate(id,token).participantId();evaluations.details(id);return getReport(id,pid,version,null);}
+ public UsageReport studentGenerate(String id,String token){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return generate(id,pid);}
+ public UsageReport studentReport(String id,String token,Integer version){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return getReport(id,pid,version,null);}
  // Called by the scheduled job through the Spring proxy, one transaction per participant.
  public void generateForJob(String id,String pid){generate(id,pid);}
 }

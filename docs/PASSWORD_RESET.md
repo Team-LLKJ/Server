@@ -79,3 +79,6 @@ IP 제한은 기존 단일 서버 메모리 방식입니다. SMTP 공급자 오�
 ## DB 호환성
 
 `schema.sql`은 기존 데이터를 바꾸지 않고 `password_reset_tokens` 테이블과 인덱스를 추가합니다. 회원 탈퇴의 계정 익명화 전에 토큰 행도 명시적으로 삭제합니다. 계정 행의 물리 삭제 시에는 FK `ON DELETE CASCADE`로 함께 삭제됩니다. 만료·소비·무효화 이력을 남기며 현재 별도 정리 작업은 없습니다.
+
+
+운영 GitHub 배포는 URL 설정이 없거나 비어 있을 때 PRODUCTION_URL origin + `/reset-password`로 초기화합니다. 명시한 URL·SMTP 비밀값은 변경하지 않습니다. 수동 배포에서는 위 환경변수를 직접 설정하세요.

@@ -7,7 +7,7 @@
 - `assessmentId`: 수행평가 **틀** ID. 제목·HTML guidelines·AI 정책·평가 항목·부정행위 설정·문항을 저장합니다.
 - `classId` = `evaluationId`: 반 **회차** ID. 기존 학생/참가자/답안/대화/리포트/채점 API에는 이 값을 넣습니다. 틀 ID를 넣지 않습니다.
 - 반 생성: 프런트용 `state=READY`, 기존 evaluation 상태는 `evaluationState=WAITING`이며 PIN·QR·expiresAt·endsAt은 null입니다. 아직 참여할 수 없습니다.
-- 대기실 열기: `POST .../classes/{classId}/lobby`로 PIN·QR을 발급합니다. `state=WAITING`, `evaluationState=WAITING`, `started_at/endsAt=null`이며 학생은 PIN으로 참가해 기다립니다. 요청의 `expiresInMinutes`는 대기실 PIN 유효 시간입니다.
+- 대기실 열기: `POST .../classes/{classId}/lobby`로 PIN·QR을 발급합니다. `state=READY`, `lobbyState=WAITING`, `evaluationState=WAITING`, `started_at/endsAt=null`이며 학생은 PIN으로 참가해 기다립니다. 요청의 `expiresInMinutes`는 대기실 PIN 유효 시간입니다.
 - 실제 시작: 대기실을 연 후 `POST .../classes/{classId}/start`를 호출하면 기존 PIN을 유지하고 `STARTED`로 바뀝니다. 이때부터 풀이 시간이 흐릅니다. 기존 계약대로 시작 요청의 `expiresInMinutes`가 실제 풀이 시간입니다. 참가자0명 시작과 시작 후 추가 참가는 기존처럼 허용합니다. 대기실 없이 start를 호출하면409 `CLASS_LOBBY_REQUIRED`입니다.
 - 기존 독립 평가의 대기실→참가자 확인→시작 방식은 유지합니다. **반 회차만** 시작 후 새 참가를 허용합니다.
 - 반 종료: 기존 자동 제출·분석 예약·교사 알림을 재사용합니다. 시작 전 반 종료는409, 이미 종료된 반 종료는 같은 결과를 반환합니다.
@@ -48,7 +48,7 @@
 
 - 제목1~100자, 문항1~100개, position은1이상·중복 불가. 문항 제목200자·내용10,000자 이하입니다.
 - `guidelines`: 생략 시 빈 문자열, 안전 HTML 정리 후 저장. 원본/정리 결과 각10,000자 이하입니다.
-- `aiPolicy`: `DISABLED`, `HINT_ONLY`, `EDIT_ASSIST`, `TASK_ASSIST`, `FULL` 중 필수입니다.
+- `aiPolicy`: `DISABLED`, `HINT_ONLY`, `EDIT_ASSIST`, `TASK_ASSIST`, `FULL` 중 하나이며 생략/null이면 `HINT_ONLY`입니다.
 - `durationMinutes`: 생략 시60,1~1440. 대기 반에 복사되는 기본값이며, 시작 요청의 `expiresInMinutes`가 실제 회차 시간을 결정합니다.
 - `criteria`: 선택한 평가 항목 제목 배열입니다. 최대10개, 각1~100자이며 중복·빈 문자열은 거절합니다. 생략 시 `[]`입니다. 제목 선택만으로 임의 배점을 만들지 않습니다. 별도의 반별 `/rubric`·점수 확정 API는 기존 계약을 유지하며, 루브릭 수정/초기화가 이 제목 배열을 덮어쓰지 않습니다.
 - 기존 상세 루브릭 객체 배열(`name,maxScore,description,indicator,levelDescriptions`)도 호환합니다. 상세 형식은 합계100점이며 indicator 생략 시 MANUAL입니다. 제목과 객체를 한 배열에 섞을 수 없습니다. 제목 배열과 상세 루브릭 배열은 다른 계약이므로 새 프런트는 제목 배열을 사용하세요.
@@ -80,7 +80,7 @@
 }
 ```
 
-`participantCount`는 나간 학생을 포함한 등록 참가자 수입니다. PIN은 앞자리0을 보존하는 문자열입니다. QR 조회는 기존 교사 토큰이 필요합니다. 대기실을 열기 전 READY의 PIN/링크/시간은 null이고, 연 뒤 WAITING에는 PIN·참여 링크·PIN 만료 시각이 있으며 endsAt은 null입니다. 새 반 API의 state는 READY/WAITING/STARTED/ENDED, evaluationState는 WAITING/STARTED/ENDED입니다. 기존 state API는 WAITING 이름을 유지합니다.
+`participantCount`는 나간 학생을 포함한 등록 참가자 수입니다. PIN은 앞자리0을 보존하는 문자열입니다. QR 조회는 기존 교사 토큰이 필요합니다. 대기실을 열기 전 READY의 PIN/링크/시간은 null이고, 연 뒤 lobbyState=WAITING에는 PIN·참여 링크·PIN 만료 시각이 있으며 endsAt은 null입니다. 새 반 API의 state는 READY/STARTED/ENDED이며 lobbyState는 READY/WAITING/STARTED/ENDED, evaluationState는 WAITING/STARTED/ENDED입니다. 기존 state API는 WAITING 이름을 유지합니다.
 
 기존 `GET /api/teacher/evaluations`와 상세 응답에도 `assessmentId,className`을 추가합니다. 독립 평가는 두 값이 null입니다. 학생 state의 `endsAt/serverNow` 계약은 그대로 유지합니다.
 
@@ -155,3 +155,8 @@ SSE/WebSocket은 추가하지 않고 요청서의 대안으로 기존 조회 응
 활성 대기실 `/lobby` 재호출은 PIN·참가자·유효 시간을 유지합니다. 만료된 대기실은 같은 PIN·참가자를 유지해 새 대기실 유효 시간을 부여합니다. 만료된 상태의 `/start`는410 `PIN_EXPIRED`이며 먼저 대기실을 다시 열어야 합니다. 시작·종료 후 `/lobby`는409 `CLASS_LOBBY_LOCKED`, 중복 start는409입니다. 별도 DB 마이그레이션 없이 기존 null PIN·WAITING 모델을 사용하며 이미 시작된 반은 변경하지 않습니다.
 
 프런트 연결은 위 두 버튼의 API를 구분하고 WAITING 상태를 처리하도록 함께 변경해야 합니다. 서버가 자동으로 화면을 이동시키거나 실시간 push하지는 않습니다. 기존 시작 전 반 삭제 정책은 열린 WAITING에도 적용되며, 삭제하면 참가자 기록도 삭제됩니다.
+
+
+### 대기실 응답 호환 필드
+
+대기실을 열어도 `state=READY`는 유지합니다. `lobbyState`는 미개방 READY / PIN 발급 후 WAITING / STARTED / ENDED를 구분하며 evaluationState는 기존 WAITING/STARTED/ENDED입니다. expiresAt으로 PIN 만료를 별도 확인하세요. [완전한 응답 예시](FRONTEND_CONTRACT_COMPLETION.md#2-대기실-응답)를 참고하세요.

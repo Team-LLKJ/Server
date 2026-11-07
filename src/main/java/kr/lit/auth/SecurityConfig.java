@@ -84,7 +84,8 @@ public class SecurityConfig {
                     String[] segments=path.split("/");
                     int idIndex=studentPath?4:3;
                     if(segments.length<=idIndex) {error(res,json,404,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");return;}
-                    var guest=participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
+                    boolean reportPath=(req.getMethod().equals("GET")||req.getMethod().equals("POST"))&&path.matches("/api/evaluations/[^/]+/(?:reports|report(?:\\.(?:pdf|hwp)|/(?:pdf|hwp))?)");
+                    var guest=reportPath?participants.authenticateReport(segments[idIndex],req.getHeader("X-Participant-Token")):participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
                     SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(guest,null,List.of(new SimpleGrantedAuthority("ROLE_PARTICIPANT"))));
                 } catch(ApiError.Failure failure) {error(res,json,failure.status.value(),failure.code,failure.getMessage());return;}
                 chain.doFilter(req,res);return;

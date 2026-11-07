@@ -52,6 +52,7 @@ public class EvaluationService {
   String id=UUID.randomUUID().toString(); Instant expiry=Instant.now().plusSeconds(minutes*60L);
   try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id,evaluation_content,duration_minutes) VALUES (?,?,?,'WAITING',?,?,?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId,evaluationContent==null?"":Guidelines.clean(evaluationContent),durationMinutes==null?minutes:durationMinutes);}
   catch(org.springframework.dao.DuplicateKeyException e){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시도해주세요.");}
+  db.update("INSERT INTO evaluation_settings(evaluation_id,ai_policy) VALUES (?,'HINT_ONLY')",id);
   return new Created(id,title.strip(),pin,"WAITING",expiry,baseUrl+"?pin="+pin,"/api/teacher/evaluations/"+id+"/qr");
  }
  @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)

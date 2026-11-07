@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "LIT 전체 평가 API",
-    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 로그인·갱신 시 Access Token은 2시간 유효하며 Refresh Token 만료 시각(최초 로그인 기준 최대 14일)을 넘지 않습니다. 로그인 없이 이메일 링크로 비밀번호를 재설정합니다.",
+    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 로그인·갱신 시 Access Token은 2시간 유효하며 Refresh Token 만료 시각(최초 로그인 기준 최대 14일)을 넘지 않습니다. 로그인 없이 이메일 링크로 비밀번호를 재설정합니다. 프런트 응답 계약: docs/FRONTEND_CONTRACT_COMPLETION.md. 새 정책 생략 시 HINT_ONLY. 대기실 state=READY/lobbyState=WAITING. 제출 후 leave해도 본인 리포트 열람 가능.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

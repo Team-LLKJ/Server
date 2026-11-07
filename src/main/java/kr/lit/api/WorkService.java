@@ -101,13 +101,13 @@ public class WorkService {
         var e=evaluation(id);
         ClassSnapshots.requireStandalone(db,id);
         AiPolicy resolved=config.resolvedPolicy();
-        if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy 또는 aiLevel(1~5)이 필요하며 둘 다 보내면 같은 단계여야 합니다.");
+        if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy와 aiLevel을 함께 보내면 같은 단계여야 합니다.");
         if(!e.state().equals("WAITING")) throw failure(HttpStatus.CONFLICT,"CONFIGURATION_LOCKED","시작 후에는 문항과 AI 정책을 변경할 수 없습니다.");
         if((config.guidelines()!=null||config.durationMinutes()!=null)&&!e.expiresAt().isAfter(Instant.now()))
             throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
         QuestionLimits.validate(config.questions());
         var criteria=CommonSettingsRules.criteria(json,validator,config.criteria());
-        if(config.antiCheat()!=null)CommonSettingsRules.antiCheat(json,config.antiCheat());
+        var antiCheat=config.antiCheat()==null?null:CommonSettingsRules.antiCheat(json,config.antiCheat());
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
@@ -119,7 +119,7 @@ public class WorkService {
             db.update("UPDATE evaluations SET criteria_json=?,criteria_kind=? WHERE id=?",encode(criteria),CommonSettingsRules.kind(criteria),id);
             CommonSettingsRules.saveRubric(db,json,id,criteria);
         }
-        if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(config.antiCheat()),id);
+        if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(antiCheat),id);
         return configuration(id);
     }
     public Configuration configuration(String id) {
