@@ -15,9 +15,9 @@ import static kr.lit.api.ReportModels.*;
 @Transactional
 public class ReportService {
  private final JdbcTemplate db; private final ObjectMapper json; private final EvaluationService evaluations;
- private final ParticipantAccess participants; private final WorkService work;
- public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work) {
-  this.db=db;this.json=json;this.evaluations=evaluations;this.participants=participants;this.work=work;
+ private final ParticipantAccess participants; private final WorkService work; private final ReportGradingService grading;
+ public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work,ReportGradingService grading) {
+  this.db=db;this.json=json;this.evaluations=evaluations;this.participants=participants;this.work=work;this.grading=grading;
  }
  private ApiError.Failure fail(HttpStatus status,String code,String message){return new ApiError.Failure(status,code,message);}
  private String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception e){throw new IllegalStateException(e);}}
@@ -143,7 +143,7 @@ public class ReportService {
   person(id,pid);requireSubmitted(pid);var e=evaluations.details(id);var src=source(id,pid);
   String snapshotHash=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,pid);
   var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),review(pid)!=null&&review(pid).maxScore()==20?"PROVISIONAL_FIVE_CRITERIA_0_TO_20":"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
-    List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."));
+    List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."),grading.getSnapshot(id,pid));
   String hash=AuthService.hash(encode(content));
   var existing=db.queryForList("SELECT id FROM usage_reports WHERE participant_id=? AND source_hash=?",String.class,pid,hash);
   if(!existing.isEmpty())return getReport(id,pid,null,existing.get(0));

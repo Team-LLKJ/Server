@@ -57,7 +57,7 @@ public final class AssessmentModels {
     public record ScoreInput(@Min(0) @Max(4) Integer level,@Size(max=2000) String feedback) {}
     public record ConfirmInput(Boolean acceptAiForMissing) {}
     public record ComplianceInput(@NotNull ComplianceDecision decision,@Size(max=1000) String note) {}
-    public record ScoreChange(long id,int criterionId,Integer previousLevel,Integer level,Integer aiLevel,String teacherId,Instant changedAt) {}
+    public record ScoreChange(long id,int criterionId,Integer previousLevel,Integer level,Integer aiLevel,String teacherId,Instant changedAt,String previousFeedback,String feedback) {}
 
     // ---- 제출 현황·답안·대화 ----
     public record SubmissionRow(String participantId,String name,String nickname,String status,boolean submitted,String submissionStatus,

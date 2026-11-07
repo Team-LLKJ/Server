@@ -3426,6 +3426,169 @@
           }
         }
       ]
+    },
+    {
+      "name": "AI 활용 분석 V2",
+      "item": [
+        {
+          "name": "통합 AI 사용·역량·학생 기여 분석",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
+            "description": "V2 행동 루브릭: 1~5단계, 15/25/20/25/15점. criteria·studentContribution은 근거 기반 평가, aiUsage·textSimilarity는 통계. 기존 V1 run 유지. docs/ANALYSIS_RUBRIC_V2.md 참고."
+          }
+        }
+      ]
+    },
+    {
+      "name": "공통 PDF·HWP 보고서 서식",
+      "item": [
+        {
+          "name": "교사 보고서 pdf (participants 별칭)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.pdf?version=1&includeConversations=false",
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
+          }
+        },
+        {
+          "name": "교사 보고서 hwp (participants 별칭)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.hwp?version=1&includeConversations=false",
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
+          }
+        }
+      ]
+    },
+    {
+      "name": "교사 채점 근거",
+      "item": [
+        {
+          "name": "단계·근거 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"level\": 3, \"feedback\": \"학생의 근거를 확인했습니다.\"}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "단계만 변경·근거 유지",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"level\": 4}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "근거 삭제",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"feedback\": \"\"}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "근거 포함 이력",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/history",
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "AI 추천 채움·확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/grade/confirm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"acceptAiForMissing\": true}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        }
+      ]
     }
   ]
 }

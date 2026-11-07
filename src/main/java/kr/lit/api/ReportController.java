@@ -25,10 +25,10 @@ class ReportController {
  Object versions(@PathVariable String id,@PathVariable String participantId){return reports.versions(id,participantId);}
  @GetMapping("/teacher/evaluations/{id}/students/{participantId}/report")
  UsageReport report(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version){return reports.teacherReport(id,participantId,version);}
- @GetMapping(value="/teacher/evaluations/{id}/students/{participantId}/report/pdf",produces=MediaType.APPLICATION_PDF_VALUE)
+ @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report/pdf","/teacher/evaluations/{id}/participants/{participantId}/report/pdf"},produces=MediaType.APPLICATION_PDF_VALUE)
  ResponseEntity<byte[]> pdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
                            @RequestParam(defaultValue="false") boolean includeConversations){return download(reports.teacherReport(id,participantId,version),includeConversations);}
- @GetMapping(value="/teacher/evaluations/{id}/students/{participantId}/report.pdf",produces=MediaType.APPLICATION_PDF_VALUE)
+ @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report.pdf","/teacher/evaluations/{id}/participants/{participantId}/report.pdf"},produces=MediaType.APPLICATION_PDF_VALUE)
  ResponseEntity<byte[]> gradingPdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
                            @RequestParam(defaultValue="false") boolean includeConversations){return download(version==null?reports.teacherGenerate(id,participantId):reports.teacherReport(id,participantId,version),includeConversations);}
  @PostMapping("/evaluations/{id}/reports")

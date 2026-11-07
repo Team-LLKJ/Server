@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS grading_score_changes (
  criterion_id INT NOT NULL, previous_level INT, score_level INT, ai_level INT,
  teacher_id VARCHAR(36) NOT NULL REFERENCES app_users(id), changed_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
+ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS previous_feedback VARCHAR(2000);
+ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS feedback VARCHAR(2000);
 CREATE INDEX IF NOT EXISTS idx_grading_changes_participant ON grading_score_changes(participant_id,id);
 CREATE TABLE IF NOT EXISTS ai_disclosures (
  participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id),

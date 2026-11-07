@@ -196,7 +196,7 @@ PDF 저장은 프런트의 브라우저 인쇄를 쓰므로 서버 API를 추가
 - 같은 값을 다시 보내도 결과가 같아 자동 저장 재시도에 안전합니다. 응답은 최신 rubric-scores 전체입니다.
 - 미제출 409 SUBMISSION_REQUIRED, 없는 기준 404 CRITERION_NOT_FOUND, 범위 밖 400 INVALID_REQUEST.
 - **확정 뒤 점수를 바꾸면 status가 DRAFT로 돌아갑니다.** 마지막 확정 총점은 `confirmedTotal`에 남고, 다시 confirm하면 갱신됩니다.
-- 수준이 실제로 바뀐 경우만 이력(`/rubric-scores/history`)에 이전·새 수준, 당시 AI 추천 수준, 교사, 시각을 남깁니다.
+- 수준 또는 feedback이 실제로 바뀌면 이력(`/rubric-scores/history`)에 이전·새 수준과 previousFeedback/feedback, 당시 AI 추천 수준, 교사, 시각을 남깁니다. 과거 이력의 근거 필드는 null입니다.
 
 `POST .../participants/{pid}/grade/confirm`
 
@@ -285,3 +285,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 - 채점 이력이 있으면 점수를 모두 삭제해도 기준 잠금이 풀리지 않습니다. 이력의 criterionId 의미를 보존합니다.
 - 분석 작업은 평가 잠금과 requested_at 버전을 검사합니다. 이전 분석 요청의 결과·오류가 새로운 요청이나 완료 결과를 덮어쓰지 않습니다.
 - 종료 후 저장 유예는 기본0입니다. 켠 경우에도 시간 만료는 실제 endsAt을 기준으로 유예를 계산하고, 채점·리포트가 생긴 뒤에는 저장을 허용하지 않습니다.
+
+## 교사 근거 계약 보완
+
+level만 전송하면 feedback을 유지합니다. feedback의 서버 제한은2000자, 초과400 INVALID_REQUEST. feedback=""는 근거 삭제입니다. 확정 오류 missingCriteria 및 보고서의 교사 근거 우선 적용은 [GRADING_FEEDBACK.md](GRADING_FEEDBACK.md)를 참고하세요.

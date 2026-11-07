@@ -49,7 +49,8 @@ public class ProcessGradingRepository {
         if(!disclosures.isEmpty())for(String field:List.of("TOOLS","USED_PARTS","REASON"))sources.add(new Source("disclosure:"+field,GLOBAL,"DISCLOSURE",Objects.toString(disclosures.get(0).get(field),"")));
         limitations.add("외부 AI·저장되지 않은 입력·실제 외부 자료 열람은 자동 관측할 수 없습니다.");
         limitations.add("최종 제출본과 저장 이력에 존재하는 문장만 근거로 사용합니다.");
-        var input=new Input(id,pid,(String)row.get("REVIEW_TOKEN"),(String)row.get("TITLE"),snapshot.path("aiPolicy").asText(),getPolicy(id).orElse(null),ids,List.copyOf(sources),
+        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights())).orElse(null);
+        var input=new Input(id,pid,(String)row.get("REVIEW_TOKEN"),(String)row.get("TITLE"),snapshot.path("aiPolicy").asText(),policy,ids,List.copyOf(sources),
                 List.copyOf(limitations));
         return insertJob(input);
     }

@@ -146,3 +146,7 @@ POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revisi
 ## 응답 모델 필드와 완전한 상태 목록
 
 루브릭 criteria[].name, cells[].criterionName/maxScore, conditions[].evidence, 고정 입력 /evidence 전체 예시와 기존 채점 모델과 다른 compliance 값은 [최종 연동 계약](FRONTEND_CONTRACT_COMPLETION.md#3-과정-평가-모델)을 참고하세요.
+
+## V2 개정
+
+새 분석의 현재 계약은 [ANALYSIS_RUBRIC_V2.md](ANALYSIS_RUBRIC_V2.md)입니다. 위 V1 0~4단계 설명은 기존 run에만 적용하며 V2는 1~5단계·배점×(단계−1)/4입니다. 새 통합 분석 API로 화면의 5개 기준과 기여도를 조회할 수 있습니다.

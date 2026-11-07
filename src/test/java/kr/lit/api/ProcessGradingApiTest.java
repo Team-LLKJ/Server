@@ -36,10 +36,10 @@ class ProcessGradingApiTest extends AuthTestSupport {
         var recommendations=new ArrayList<Recommendation>();var engine=new ProcessGradingEngine();
         for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY) {
             var src=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")&&s.questionId().equals(q)).findFirst().orElseThrow();
-            recommendations.add(new Recommendation(q,c,3,"과제 조건에 연결함","발전·반영의 추가 근거 부족",List.of(new Condition(engine.requiredConditions(c,3).get(0),List.of(new Citation(src.id(),src.text())))),List.of(),List.of()));
+            recommendations.add(new Recommendation(q,c,4,"과제 조건에 연결함","발전·반영의 추가 근거 부족",List.of(new Condition(engine.requiredConditions(c,4).get(0),List.of(new Citation(src.id(),src.text())))),List.of(),List.of()));
         }
         var disclosure=input.sources().stream().filter(s->s.kind().equals("DISCLOSURE")).findFirst().orElseThrow();
-        recommendations.add(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,3,"활용 공개","추가 이유 부족",List.of(new Condition("TRANSPARENCY_L3",List.of(new Citation(disclosure.id(),disclosure.text())))),List.of(),List.of()));
+        recommendations.add(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,4,"활용 공개","추가 이유 부족",List.of(new Condition("TRANSPARENCY_L4",List.of(new Citation(disclosure.id(),disclosure.text())))),List.of(),List.of()));
         return new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations);
     }
     @Test void submissionFreezesInputsAndWorkerPublishesSeventyFiveWithVersionedReview() throws Exception {
@@ -103,13 +103,28 @@ class ProcessGradingApiTest extends AuthTestSupport {
     }
     @Test void fabricatedEvidenceIsHeldAndCannotBeConfirmedWithoutTeacherCompletion() throws Exception {
         var f=fixture(true,true);var job=latest(f);var output=validOutput(repository.getInput(job.id()));var records=new ArrayList<>(output.recommendations());var r=records.get(0);
-        records.set(0,new Recommendation(r.questionId(),r.criterion(),r.level(),r.reason(),r.unmetNextLevel(),List.of(new Condition("PURPOSE_L3",List.of(new Citation("foreign-student","위조 인용")))),List.of(),List.of()));
+        records.set(0,new Recommendation(r.questionId(),r.criterion(),r.level(),r.reason(),r.unmetNextLevel(),List.of(new Condition("PURPOSE_L4",List.of(new Citation("foreign-student","위조 인용")))),List.of(),List.of()));
         when(ai.recommendLevels(any())).thenReturn(new AiOutput(output.compliance(),records));worker.processJob(job.id());assertThat(latest(f).result().total()).isNull();
         String path=root(f)+"/"+job.id();
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),"CONFIRMED_OK","검토"))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isConflict());
-        var override=new LevelOverride(f.question(),Criterion.PURPOSE,3,"교사가 실제 근거를 확인했습니다.");
+        var override=new LevelOverride(f.question(),Criterion.PURPOSE,4,"교사가 실제 근거를 확인했습니다.");
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(1,List.of(override),"CONFIRMED_OK","검토 완료"))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(2))).andExpect(status().isOk());
+    }
+    @Test void analysisViewSeparatesSimilarityFromContributionAndUsesTeacherReview() throws Exception {
+        var f=fixture(true,true);var job=latest(f);
+        when(ai.recommendLevels(any())).thenAnswer(call->validOutput(call.getArgument(0)));
+        String path="/api/teacher/evaluations/"+f.id()+"/process-grading/participants/"+f.pid()+"/analysis";
+        mvc.perform(request(get(path),teacher)).andExpect(jsonPath("status").value("PENDING")).andExpect(jsonPath("total").isEmpty());
+        worker.processJob(job.id());
+        mvc.perform(request(get(path),teacher)).andExpect(status().isOk())
+            .andExpect(jsonPath("rubricVersion").value(RUBRIC_VERSION)).andExpect(jsonPath("total").value(75))
+            .andExpect(jsonPath("criteria.length()").value(5)).andExpect(jsonPath("studentContribution.level").value(4))
+            .andExpect(jsonPath("studentContribution.score").value(18.75)).andExpect(jsonPath("studentContribution.label").value("잘함"))
+            .andExpect(jsonPath("textSimilarity.basis").value("TEXT_SIMILARITY_ESTIMATE"));
+        as(teacher);service.saveReview(f.id(),f.pid(),job.id(),new ReviewRequest(0,List.of(new LevelOverride(f.question(),Criterion.CONTRIBUTION,5,"학생의 핵심 판단 확인")),"CONFIRMED_OK","확인"));
+        mvc.perform(request(get(path),teacher)).andExpect(jsonPath("studentContribution.level").value(5)).andExpect(jsonPath("total").value(81.25)).andExpect(jsonPath("confirmed").value(false));
+        mvc.perform(request(get(path),newTeacher())).andExpect(status().isNotFound());
     }
 }

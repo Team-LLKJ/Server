@@ -40,9 +40,13 @@ public final class ReportModels {
  public record Analysis(String method,String status,List<Classification> classifications,List<String> missingData,
                         List<String> limitations) {}
  public record Detail(Student student,JsonNode work,Analysis analysis,TeacherReview teacherReview) {}
+ public record GradingCriterion(int criterionId,String name,int maxScore,Double score,boolean teacherScored,String feedback,String aiReason) {}
+ public record GradingSnapshot(String status,List<GradingCriterion> criteria) {}
  public record ReportContent(String evaluationId,String title,String participantId,String nickname,Instant submittedAt,
                              String submissionHash,JsonNode submission,Analysis analysis,TeacherReview teacherReview,
-                             String rubricStatus,List<String> limitations) {}
+                             String rubricStatus,List<String> limitations,GradingSnapshot grading) {
+  public ReportContent(String evaluationId,String title,String participantId,String nickname,Instant submittedAt,String submissionHash,JsonNode submission,Analysis analysis,TeacherReview teacherReview,String rubricStatus,List<String> limitations){this(evaluationId,title,participantId,nickname,submittedAt,submissionHash,submission,analysis,teacherReview,rubricStatus,limitations,null);}
+ }
  public record UsageReport(String id,int version,Instant createdAt,ReportContent content) {}
  public record ReportVersion(String id,int version,Instant createdAt) {}
 }
