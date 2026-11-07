@@ -8,10 +8,14 @@ import static kr.lit.api.ProcessGradingModels.*;
 /** 근거 인용·충족 조건 검증 및 점수 계산. 외부 AI·DB·시계에 접근하지 않습니다. */
 @Component
 public class ProcessGradingEngine {
-    public List<String> requiredConditions(Criterion criterion,int level) {
+    public boolean isLegacy(Input input){return input.policy()!=null&&LEGACY_RUBRIC_VERSION.equals(input.policy().rubricVersion());}
+    private int minimumLevel(Input input){return isLegacy(input)?0:1;}
+    private int maximumLevel(Input input){return isLegacy(input)?4:5;}
+    public List<String> requiredConditions(Criterion criterion,int level) {return requiredConditions(criterion,level,false);}
+    public List<String> requiredConditions(Criterion criterion,int level,boolean legacy) {
         var list=new ArrayList<String>();list.add(criterion.name()+"_L"+level);
-        if(level==4)list.add(criterion.name()+"_FINAL_APPLICATION");
-        return list;
+        if(level==(legacy?4:5))list.add(criterion.name()+"_FINAL_APPLICATION");
+        return List.copyOf(list);
     }
     public Result evaluate(Input input,AiOutput output) {
         if(output==null||output.recommendations()==null||output.compliance()==null)throw new IllegalArgumentException("INVALID_AI_OUTPUT");
@@ -34,27 +38,27 @@ public class ProcessGradingEngine {
             var safeCounter=validCitations(input,r.questionId(),r.counterEvidence())?r.counterEvidence():List.<Citation>of();
             return new Cell(r.questionId(),r.criterion(),null,null,"HOLD","판단 보류: "+Objects.toString(r.reason(),"근거 부족"),Objects.toString(r.unmetNextLevel(),""),safeConditions,safeCounter,r.limitations()==null?List.of():r.limitations());
         }
-        if(r.level()<0||r.level()>4||r.reason()==null||r.reason().isBlank()||r.unmetNextLevel()==null||r.conditions()==null||r.counterEvidence()==null||r.limitations()==null)
+        if(r.level()<minimumLevel(input)||r.level()>maximumLevel(input)||r.reason()==null||r.reason().isBlank()||r.unmetNextLevel()==null||r.conditions()==null||r.counterEvidence()==null||r.limitations()==null)
             return held(r,"INVALID_RECOMMENDATION");
         var matches=new HashMap<String,Condition>();
         for(var condition:r.conditions()) {
             if(condition==null||condition.key()==null||matches.put(condition.key(),condition)!=null||!validCitations(input,r.questionId(),condition.evidence())||condition.evidence().isEmpty())return held(r,"INVALID_CONDITION_EVIDENCE");
-            boolean allowed=false;for(int level=0;level<=4;level++)if(requiredConditions(r.criterion(),level).contains(condition.key()))allowed=true;
+            boolean allowed=false;for(int level=minimumLevel(input);level<=maximumLevel(input);level++)if(requiredConditions(r.criterion(),level,isLegacy(input)).contains(condition.key()))allowed=true;
             if(!allowed)return held(r,"UNKNOWN_CONDITION");
         }
         if(!validCitations(input,r.questionId(),r.counterEvidence()))return held(r,"INVALID_COUNTER_EVIDENCE");
         int highest=-1;
-        for(int level=0;level<=4;level++)if(matches.keySet().containsAll(requiredConditions(r.criterion(),level)))highest=level;
+        for(int level=minimumLevel(input);level<=maximumLevel(input);level++)if(matches.keySet().containsAll(requiredConditions(r.criterion(),level,isLegacy(input))))highest=level;
         if(highest!=r.level())return held(r,"LEVEL_CONDITIONS_MISMATCH");
         var refs=r.conditions().stream().flatMap(c->c.evidence().stream()).toList();
         boolean studentEvidence=refs.stream().anyMatch(c->input.sources().stream().anyMatch(s->s.id().equals(c.sourceId())&&Set.of("STUDENT_QUESTION","FINAL_ANSWER","ANSWER_CHANGE","DISCLOSURE").contains(s.kind())));
         if(!studentEvidence)return held(r,"NO_STUDENT_BEHAVIOR_EVIDENCE");
-        if(r.level()==4&&r.criterion()!=Criterion.TRANSPARENCY) {
+        if(r.level()==maximumLevel(input)&&r.criterion()!=Criterion.TRANSPARENCY) {
             boolean answer=refs.stream().anyMatch(c->input.sources().stream().anyMatch(s->s.id().equals(c.sourceId())&&s.kind().equals("FINAL_ANSWER")));
             boolean process=refs.stream().anyMatch(c->input.sources().stream().anyMatch(s->s.id().equals(c.sourceId())&&Set.of("STUDENT_QUESTION","ANSWER_CHANGE","DISCLOSURE").contains(s.kind())));
             if(!answer||!process)return held(r,"FINAL_APPLICATION_NOT_LINKED");
         }
-        return new Cell(r.questionId(),r.criterion(),r.level(),score(r.criterion(),r.level()),"RECOMMENDED",r.reason(),r.unmetNextLevel(),r.conditions(),r.counterEvidence(),r.limitations());
+        return new Cell(r.questionId(),r.criterion(),r.level(),score(input,r.criterion(),r.level()),"RECOMMENDED",r.reason(),r.unmetNextLevel(),r.conditions(),r.counterEvidence(),r.limitations());
     }
     private boolean validCitations(Input input,String questionId,List<Citation> citations) {
         if(citations==null)return false;
@@ -75,9 +79,9 @@ public class ProcessGradingEngine {
         var keys=keys(input);var seen=new HashSet<String>();var cells=new ArrayList<>(original.cells());
         for(var override:overrides) {
             String key=key(override.questionId(),override.criterion());
-            if(!keys.contains(key)||!seen.add(key)||override.level()==null||override.level()<0||override.level()>4||override.reason()==null||override.reason().isBlank())throw new IllegalArgumentException("INVALID_OVERRIDE");
+            if(!keys.contains(key)||!seen.add(key)||override.level()==null||override.level()<minimumLevel(input)||override.level()>maximumLevel(input)||override.reason()==null||override.reason().isBlank())throw new IllegalArgumentException("INVALID_OVERRIDE");
             for(int i=0;i<cells.size();i++)if(key(cells.get(i).questionId(),cells.get(i).criterion()).equals(key)) {
-                var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),score(old.criterion(),override.level()),"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations()));
+                var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),score(input,old.criterion(),override.level()),"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations()));
             }
         }
         return calculate(input,cells,original.compliance(),original.limitations());
@@ -94,7 +98,7 @@ public class ProcessGradingEngine {
         }
         return new Result(complete?"DONE":"HOLD",compliance,List.copyOf(cells),complete?total.setScale(2,RoundingMode.HALF_UP):null,limitations);
     }
-    private BigDecimal score(Criterion c,int level){return BigDecimal.valueOf(c.maxScore()).multiply(BigDecimal.valueOf(level)).divide(BigDecimal.valueOf(4));}
+    private BigDecimal score(Input input,Criterion c,int level){return BigDecimal.valueOf(c.maxScore()).multiply(BigDecimal.valueOf(level-minimumLevel(input))).divide(BigDecimal.valueOf(4));}
     private Set<String> keys(Input input){var keys=new HashSet<String>();for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY)keys.add(key(q,c));keys.add(key(GLOBAL,Criterion.TRANSPARENCY));return keys;}
     private String key(String q,Criterion c){return q+":"+c;}
 }
