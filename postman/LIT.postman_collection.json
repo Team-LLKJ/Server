@@ -3589,6 +3589,133 @@
           }
         }
       ]
+    },
+    {
+      "name": "프런트 연동 보완",
+      "item": [
+        {
+          "name": "반 PDF ZIP",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/reports/archive?format=PDF",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "폴더 HWP ZIP",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/reports/archive?format=HWP",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "AI 사용 설명 교사 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/ai-disclosure",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "참가 정보 me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/me",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "안내 동의",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/policy-acceptance",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyVersion\": \"{{policyVersion}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "전체화면 이벤트 별칭",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"FULLSCREEN\",\n  \"occurredAt\": \"2026-11-08T00:00:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "설정 포함 평가 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"평가\",\n  \"expiresInMinutes\": 60,\n  \"criteria\": [\n    \"비판적 검토\"\n  ],\n  \"antiCheat\": [\n    \"FULLSCREEN\",\n    \"DEVTOOLS\"\n  ]\n}"
+            }
+          }
+        }
+      ]
     }
   ]
 }

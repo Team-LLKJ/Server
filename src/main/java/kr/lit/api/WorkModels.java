@@ -45,7 +45,7 @@ public final class WorkModels {
                              @NotNull AnswerSource source, @Size(max=64) String aiRequestId) {}
     /** 학생 화면이 신고하는 이벤트. 전체화면 이탈·개발자 도구 열림도 경고이며, 신고 자체가 부정행위 확정은 아닙니다. */
     public enum ClientEventType {
-        WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true), FULLSCREEN_EXIT(true), FULLSCREEN_LEAVE(true), DEVTOOLS_OPEN(true),
+        WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true), FULLSCREEN_EXIT(true), FULLSCREEN_LEAVE(true), DEVTOOLS_OPEN(true), FULLSCREEN(true), DEVTOOLS(true),
         PASTE(false), AI_ANSWER_COPY(false);
         private final boolean warning;
         ClientEventType(boolean warning) { this.warning=warning; }
@@ -81,7 +81,7 @@ public final class WorkModels {
     public record Workspace(String evaluationId, String participantId, String status, boolean readOnly,
                             AiPolicy aiPolicy, List<QuestionAnswer> questions, String evaluationContent, String guidelines,
                             int aiLevel, String aiLevelDescription,List<?> criteria,
-                            com.fasterxml.jackson.databind.JsonNode antiCheat,String assessmentId,String className) {}
+                            com.fasterxml.jackson.databind.JsonNode antiCheat,String assessmentId,String className,boolean policyAccepted,Instant policyAcceptedAt,String policyVersion) {}
     public record Configuration(String evaluationId, AiPolicy aiPolicy, List<Question> questions, String guidelines,int durationMinutes,
                                 int aiLevel, String aiLevelDescription,List<?> criteria,
                             com.fasterxml.jackson.databind.JsonNode antiCheat,String assessmentId,String className) {}
@@ -91,7 +91,9 @@ public final class WorkModels {
     public record Event(long id, String questionId, String type, com.fasterxml.jackson.databind.JsonNode details,
                         Instant createdAt) {}
     public record ReviewContent(String evaluationId, String participantId, AiPolicy aiPolicy,
-                                List<QuestionAnswer> answers, List<Turn> conversations, List<Event> learningEvents) {}
+                                List<QuestionAnswer> answers, List<Turn> conversations, List<Event> learningEvents,DisclosureView aiDisclosure) {
+        public ReviewContent(String evaluationId,String participantId,AiPolicy aiPolicy,List<QuestionAnswer> answers,List<Turn> conversations,List<Event> learningEvents){this(evaluationId,participantId,aiPolicy,answers,conversations,learningEvents,null);}
+    }
     public record AnswerValidationError(String questionId,int actualChars,int minChars,Integer maxChars) {}
     public record Review(String reviewToken, boolean canConfirm, List<String> blankQuestionIds, ReviewContent content,
                          List<AnswerValidationError> answerValidationErrors) {}

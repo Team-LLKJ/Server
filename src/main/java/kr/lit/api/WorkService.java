@@ -22,9 +22,10 @@ public class WorkService {
     private final int endGraceSeconds;
     private final jakarta.validation.Validator validator;
     private final ProcessGradingRepository processGrading;
+    private final ParticipantSessionService sessions;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading) {
-        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions) {
+        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;this.sessions=sessions;
     }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
@@ -122,6 +123,13 @@ public class WorkService {
         if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(antiCheat),id);
         return configuration(id);
     }
+    public void saveCreationSettings(String id,List<?> inputCriteria,JsonNode inputAntiCheat) {
+        evaluation(id);
+        var criteria=CommonSettingsRules.criteria(json,validator,inputCriteria);
+        var antiCheat=CommonSettingsRules.antiCheat(json,inputAntiCheat);
+        if(inputCriteria!=null){db.update("UPDATE evaluations SET criteria_json=?,criteria_kind=? WHERE id=?",encode(criteria),CommonSettingsRules.kind(criteria),id);CommonSettingsRules.saveRubric(db,json,id,criteria);}
+        if(inputAntiCheat!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(antiCheat),id);
+    }
     public Configuration configuration(String id) {
         evaluation(id);var p=policy(id);var shared=shared(id);
         return new Configuration(id,p,questions(id),guidelines(id),durationMinutes(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
@@ -153,7 +161,8 @@ public class WorkService {
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         var p=policy(id);
         var shared=shared(id);
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
+        var accepted=sessions.getPolicyStatus(id,token);
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className(),accepted.policyAccepted(),accepted.policyAcceptedAt(),accepted.policyVersion());
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);
@@ -208,7 +217,7 @@ public class WorkService {
         return mode!=null&&mode.startsWith("AUTO_")&&cutoff!=null&&Instant.now().isBefore(cutoff.plusSeconds(endGraceSeconds));
     }
     private void refreshAutoSubmission(Context c) {
-        var snapshot=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c));
+        var snapshot=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c),snapshotDisclosure(c));
         String content=encode(snapshot);
         db.update("UPDATE submissions SET snapshot=?,review_token=? WHERE participant_id=?",content,sha(content),c.participantId());
         requestAnalysis(c.evaluationId(),c.participantId());
@@ -249,6 +258,10 @@ public class WorkService {
         return db.queryForObject("SELECT * FROM learning_events WHERE id=?",(r,n)->new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),eventId);
     }
     /** 투명성 영역 근거: 학생이 직접 적는 사용 AI 도구·활용 부분·선택 이유. 제출 전까지만 수정할 수 있습니다. */
+    private DisclosureView snapshotDisclosure(Context c) {
+        var rows=db.query("SELECT * FROM ai_disclosures WHERE participant_id=?",(r,n)->new DisclosureView(c.evaluationId(),c.participantId(),r.getString("tools"),r.getString("used_parts"),r.getString("reason"),instant(r,"updated_at"),false),c.participantId());
+        return rows.isEmpty()?new DisclosureView(c.evaluationId(),c.participantId(),"","","",null,false):rows.get(0);
+    }
     public DisclosureView disclosure(String id,String token) {
         var c=authenticate(id,token);started(c);
         boolean editable=!submitted(c)&&c.state().equals("STARTED")&&c.expiresAt().isAfter(Instant.now());
@@ -291,7 +304,7 @@ public class WorkService {
         return events(new Context(id,participantId,e.state(),e.expiresAt())).stream().filter(v->v.id()>afterId).limit(limit).toList();
     }
     private Review review(Context c) {
-        var content=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c));
+        var content=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c),snapshotDisclosure(c));
         if(content.answers().isEmpty()) throw failure(HttpStatus.CONFLICT,"NO_QUESTIONS","문항이 등록되지 않았습니다.");
         String digest;
         try { digest=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(encode(content).getBytes(StandardCharsets.UTF_8))); }
@@ -353,7 +366,7 @@ public class WorkService {
         for(String pid:participants) {
             var context=new Context(id,pid,"ENDED",e.expiresAt());
             if(submitted(context))continue;
-            var snapshot=new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context));
+            var snapshot=new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context),snapshotDisclosure(context));
             String content=encode(snapshot),hash;
             try {hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8)));}
             catch(NoSuchAlgorithmException ex){throw new IllegalStateException(ex);}

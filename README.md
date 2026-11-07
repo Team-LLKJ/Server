@@ -370,3 +370,7 @@ HWP 다운로드는 제목·학생 정보 표·영역별 점수표·섹션/문�
 ### 보고서 로고·브랜드 색상·분석 표
 
 PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합 평가·상세 채점 근거·활동 기록·선택 AI 대화 부록을 표로 정리하며 긴 내용도 보존합니다. [서식 정책](docs/REPORT_FORMAT.md).
+
+### 프런트 연동 보완
+
+반·수행평가 폴더 보고서 ZIP, 최초 HWP 생성, 생성 시 criteria/antiCheat, 대화 연결 ID, AI 사용 설명 동결·교사 조회·보고서, 참가 정보 me와 안내 동의 API를 제공합니다. [경로·요청·오류·기존 기능 대조](docs/BACKEND_INTEGRATION_COMPLETION.md).

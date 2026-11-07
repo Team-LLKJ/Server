@@ -46,6 +46,12 @@ public class ReportLayout {
         for(var cls:c.analysis().classifications())for(String purpose:cls.purposes())counts.merge(labelCode(purpose),1,Integer::sum);
         if(counts.isEmpty())usage.add(List.of("AI 사용 기록","기록된 AI 질문이 없습니다."));
         else counts.forEach((name,count)->usage.add(List.of(name,count+"건")));
+        var disclosure=c.submission().path("aiDisclosure");
+        if(!disclosure.isMissingNode()&&!disclosure.isNull()) {
+            usage.add(List.of("사용 AI 도구",disclosure.path("tools").asText().isBlank()?"미작성":disclosure.path("tools").asText()));
+            usage.add(List.of("사용한 부분",disclosure.path("usedParts").asText().isBlank()?"미작성":disclosure.path("usedParts").asText()));
+            usage.add(List.of("선택·활용 이유",disclosure.path("reason").asText().isBlank()?"미작성":disclosure.path("reason").asText()));
+        }
         blocks.add(new Table(usage,new int[]{14520,28000},false));
         blocks.add(new Text("키워드 기반 분류(교사 검토 필요). 복수 목적을 허용합니다. 문장 유사도는 실제 작성자 비율이나 기여 점수가 아닙니다.","note"));
         heading(blocks,"4. 활동 및 경고 기록");
@@ -95,7 +101,7 @@ public class ReportLayout {
         case "COMPLETED"->"완료";case "FAILED"->"실패";case "PENDING"->"대기 중";case "RUNNING"->"처리 중";
         case "DIRECT"->"직접 작성";case "AI_REFERENCED"->"AI 참고";case "AI_USED"->"AI 사용";
         case "WINDOW_LEAVE","WINDOW_BLUR"->"창 이탈";case "SHORTCUT_CAPTURE","CAPTURE_SHORTCUT"->"캡처 단축키";
-        case "COPY_ATTEMPT"->"복사 시도";case "FULLSCREEN_EXIT","FULLSCREEN_LEAVE"->"전체화면 이탈";case "DEVTOOLS_OPEN"->"개발자 도구 열림";
+        case "COPY_ATTEMPT"->"복사 시도";case "FULLSCREEN_EXIT","FULLSCREEN_LEAVE","FULLSCREEN"->"전체화면 이탈";case "DEVTOOLS_OPEN","DEVTOOLS"->"개발자 도구 열림";
         case "IDEATION"->"아이디어 탐색";case "RESEARCH"->"자료 탐색";case "STRUCTURING"->"구조 구성";case "CONCEPT_HELP"->"개념 이해";case "VERIFICATION"->"검증 요청";case "REVISION"->"수정 요청";case "ANSWER_DRAFTING"->"답안 작성 요청";
         default->"기타";};}
 }

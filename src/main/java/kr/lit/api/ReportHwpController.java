@@ -17,12 +17,12 @@ class ReportHwpController {
     @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report/hwp","/teacher/evaluations/{id}/students/{participantId}/report.hwp","/teacher/evaluations/{id}/participants/{participantId}/report/hwp","/teacher/evaluations/{id}/participants/{participantId}/report.hwp"},produces=HWP_MEDIA_TYPE)
     ResponseEntity<byte[]> exportTeacherReport(@PathVariable String id,@PathVariable String participantId,
             @RequestParam(required=false) @Min(1) Integer version,@RequestParam(defaultValue="false") boolean includeConversations) {
-        return downloadReport(reports.teacherReport(id,participantId,version),includeConversations);
+        return downloadReport(reports.teacherHwpReport(id,participantId,version),includeConversations);
     }
     @GetMapping(value={"/evaluations/{id}/report/hwp","/evaluations/{id}/report.hwp"},produces=HWP_MEDIA_TYPE)
     ResponseEntity<byte[]> exportStudentReport(@PathVariable String id,@RequestHeader("X-Participant-Token") String token,
             @RequestParam(required=false) @Min(1) Integer version,@RequestParam(defaultValue="false") boolean includeConversations) {
-        return downloadReport(reports.studentReport(id,token,version),includeConversations);
+        return downloadReport(reports.studentHwpReport(id,token,version),includeConversations);
     }
     private ResponseEntity<byte[]> downloadReport(UsageReport report,boolean includeConversations) {
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(HWP_MEDIA_TYPE))

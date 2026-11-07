@@ -61,7 +61,7 @@ class ParticipantReconnectApiTest extends AuthTestSupport {
     @Test void requiresTokenAndAppliesSharedParticipationRateLimit() throws Exception {
         var f=fixture(true);
         for(var invalid:List.of(Map.of("evaluationId",f.id(),"pin","123456"),Map.of("evaluationId",f.id(),"participantToken","invalid")))
-            mvc.perform(body(request(post("/api/participation/reconnect"),null),invalid)).andExpect(status().isBadRequest());
+            mvc.perform(body(request(post("/api/participation/reconnect"),null),invalid)).andExpect(status().isUnauthorized());
         remote="reconnect-limit-"+unique();
         for(int i=0;i<30;i++)mvc.perform(body(request(post("/api/participation/reconnect"),null),Map.of("evaluationId",f.id(),"participantToken","0".repeat(64)))).andExpect(status().isUnauthorized());
         mvc.perform(body(request(post("/api/participation/reconnect"),null),input(f))).andExpect(status().isTooManyRequests());

@@ -57,7 +57,10 @@ public class ReportService {
  private JsonNode source(String id,String pid){
   person(id,pid);
   var stored=db.queryForList("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,pid);
-  if(!stored.isEmpty())return decode(stored.get(0));
+  if(!stored.isEmpty()) {
+   var snapshot=(com.fasterxml.jackson.databind.node.ObjectNode)decode(stored.get(0));boolean frozen=snapshot.hasNonNull("aiDisclosure");
+   if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));snapshot.put("aiDisclosureFrozen",frozen);return snapshot;
+  }
   var root=json.createObjectNode();root.put("evaluationId",id);root.put("participantId",pid);
   var policy=db.queryForList("SELECT ai_policy FROM evaluation_settings WHERE evaluation_id=?",String.class,id);
   root.put("aiPolicy",policy.isEmpty()?"DISABLED":policy.get(0));
@@ -77,7 +80,22 @@ public class ReportService {
    var completed=instant(r,"completed_at");t.put("completedAt",completed==null?null:completed.toString());
   },pid);
   root.set("learningEvents",json.valueToTree(work.teacherEvents(id,pid,0,Integer.MAX_VALUE)));
+  root.set("aiDisclosure",readDisclosure(pid));root.put("aiDisclosureFrozen",false);
   return root;
+ }
+ private JsonNode readDisclosure(String pid){
+  var rows=db.queryForList("SELECT tools,used_parts,reason,updated_at FROM ai_disclosures WHERE participant_id=?",pid);
+  var result=json.createObjectNode();for(String field:List.of("tools","used_parts","reason"))result.put(field.equals("used_parts")?"usedParts":field,rows.isEmpty()?"":Objects.toString(rows.get(0).get(field.toUpperCase(java.util.Locale.ROOT)),""));
+  result.set("updatedAt",rows.isEmpty()?json.nullNode():json.valueToTree(rows.get(0).get("UPDATED_AT")));return result;
+ }
+ public JsonNode teacherDisclosure(String id,String pid){teacher(id);person(id,pid);var source=source(id,pid);var result=((com.fasterxml.jackson.databind.node.ObjectNode)source.path("aiDisclosure")).deepCopy();result.put("frozen",source.path("aiDisclosureFrozen").asBoolean());return result;}
+ public UsageReport teacherHwpReport(String id,String pid,Integer version){
+  if(version!=null)return teacherReport(id,pid,version);
+  try{return teacherReport(id,pid,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND")||db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,pid)==0)throw failure;return teacherGenerate(id,pid);}
+ }
+ public UsageReport studentHwpReport(String id,String token,Integer version){
+  if(version!=null)return studentReport(id,token,version);
+  try{return studentReport(id,token,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND"))throw failure;var guest=participants.authenticateReport(id,token);if(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,guest.participantId())==0)throw failure;return studentGenerate(id,token);}
  }
  private TeacherReview review(String pid){var values=db.queryForList("SELECT review_json FROM teacher_reviews WHERE participant_id=?",String.class,pid);return values.isEmpty()?null:parse(values.get(0),TeacherReview.class);}
  private Analysis classify(JsonNode source){

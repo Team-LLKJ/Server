@@ -45,8 +45,13 @@ public class ProcessGradingRepository {
         }
         for(var e:snapshot.path("learningEvents"))if(WorkModels.ClientEventType.warningNames().contains(e.path("type").asText()))
             sources.add(new Source("warning:"+e.path("id").asText(),e.path("questionId").isNull()?GLOBAL:e.path("questionId").asText(),"WARNING",e.path("type").asText()+" (브라우저 신고·참고용)",e.path("createdAt").asText(null),null));
+        if(snapshot.hasNonNull("aiDisclosure")) {
+            var disclosure=snapshot.path("aiDisclosure");for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,"DISCLOSURE",disclosure.path(field).asText()));
+        }else {
         var disclosures=db.queryForList("SELECT tools,used_parts,reason FROM ai_disclosures WHERE participant_id=?",pid);
         if(!disclosures.isEmpty())for(String field:List.of("TOOLS","USED_PARTS","REASON"))sources.add(new Source("disclosure:"+field,GLOBAL,"DISCLOSURE",Objects.toString(disclosures.get(0).get(field),"")));
+            limitations.add("이전 제출본에는 활용 설명 스냅샷이 없어 기존 저장 자료를 사용합니다.");
+        }
         limitations.add("외부 AI·저장되지 않은 입력·실제 외부 자료 열람은 자동 관측할 수 없습니다.");
         limitations.add("최종 제출본과 저장 이력에 존재하는 문장만 근거로 사용합니다.");
         var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights())).orElse(null);

@@ -31,7 +31,7 @@ public final class ReportModels {
  public record Rubric(int version,String analysisStatus,String analysisMethod,String rubricStatus,List<CriterionView> criteria,List<CriterionView> analysis,List<ReviewChange> adjustments) {}
  public record GradingQuestion(String questionId,int position,String title,String content,com.fasterxml.jackson.databind.JsonNode answer) {}
  public record GradingAnswers(String participantId,String nickname,Instant submittedAt,String status,List<GradingQuestion> questions) {}
- public record Message(String id,String role,String content,String questionId,Instant createdAt,String status,String errorCode) {}
+ public record Message(String id,String role,String content,String questionId,Instant createdAt,String status,String errorCode,Long conversationId) {}
  public record Usage(String name,double percentage,String level,String colorKey) {}
  public record ActivityWarning(long eventId,String type,String questionId,Instant occurredAt,Instant receivedAt,boolean clientReported) {}
  public record Activity(Double studentContribution,List<Usage> usage,List<ActivityWarning> warnings,long warningsTotal,boolean hasMoreWarnings,String summary,String analysisMethod) {}

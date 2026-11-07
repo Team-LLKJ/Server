@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS grading_score_changes (
 ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS previous_feedback VARCHAR(2000);
 ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS feedback VARCHAR(2000);
 CREATE INDEX IF NOT EXISTS idx_grading_changes_participant ON grading_score_changes(participant_id,id);
+CREATE TABLE IF NOT EXISTS participant_policy_acceptances (
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ policy_version VARCHAR(64) NOT NULL, accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ PRIMARY KEY(participant_id,policy_version)
+);
 CREATE TABLE IF NOT EXISTS ai_disclosures (
  participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id),
  evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
