@@ -176,7 +176,7 @@ public class TemplateService {
         return db.query("SELECT e.*,(SELECT COUNT(*) FROM participants p WHERE p.evaluation_id=e.id) participant_count,(SELECT COUNT(*) FROM submissions s WHERE s.evaluation_id=e.id) submitted_count FROM evaluations e WHERE assessment_id=? ORDER BY class_name_key,id",
                 (r,n)->{
                     String classId=r.getString("id"),pin=r.getString("pin");
-                    return new ClassView(classId,classId,id,r.getString("class_name"),r.getString("state").equals("WAITING")?"READY":r.getString("state"),r.getString("state"),pin,pin==null?null:joinBase+"?pin="+pin,
+                    return new ClassView(classId,classId,id,r.getString("class_name"),r.getString("state").equals("WAITING")?(pin==null?"READY":"WAITING"):r.getString("state"),r.getString("state"),pin,pin==null?null:joinBase+"?pin="+pin,
                             pin==null?null:"/api/teacher/evaluations/"+classId+"/qr",time(r,"expires_at"),time(r,"ends_at"),r.getInt("participant_count"),r.getInt("submitted_count"),r.getInt("template_revision"));
                 },id);
     }
@@ -184,19 +184,23 @@ public class TemplateService {
         return classViews(id).stream().filter(c->c.classId().equals(classId)).findFirst()
                 .orElseThrow(()->fail(HttpStatus.NOT_FOUND,"CLASS_NOT_FOUND","해당 수행평가의 반이 아닙니다."));
     }
+    public ClassView openLobby(String id,String classId,int minutes) {
+        accessible(id);classView(id,classId);
+        evaluations.openClassLobby(classId,minutes);return classView(id,classId);
+    }
     public ClassView start(String id,String classId,int minutes) {
         accessible(id);var c=classView(id,classId);
-        if(!c.state().equals("READY"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","이미 시작했거나 종료된 반입니다.");
+        if(!c.evaluationState().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","이미 시작했거나 종료된 반입니다.");
         evaluations.activateClass(classId,minutes);return classView(id,classId);
     }
     public ClassView end(String id,String classId) {
         accessible(id);var c=classView(id,classId);
-        if(c.state().equals("READY"))throw fail(HttpStatus.CONFLICT,"EVALUATION_NOT_STARTED","시작 전인 반은 종료할 수 없습니다.");
+        if(c.evaluationState().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"EVALUATION_NOT_STARTED","시작 전인 반은 종료할 수 없습니다.");
         evaluations.end(classId);return classView(id,classId);
     }
     public void deleteClass(String id,String classId) {
         accessible(id);var c=classView(id,classId);
-        if(!c.state().equals("READY"))throw fail(HttpStatus.CONFLICT,"CLASS_DELETE_REQUIRES_WAITING","시작 전인 반만 삭제할 수 있습니다.");
+        if(!c.evaluationState().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"CLASS_DELETE_REQUIRES_WAITING","시작 전인 반만 삭제할 수 있습니다.");
         evaluations.deleteFromAssessment(classId);
     }
     public void delete(String id) {

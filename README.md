@@ -337,3 +337,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ### 알림 삭제
 
 `DELETE /api/notifications/{id}`로 본인 알림 하나를, `DELETE /api/notifications`로 현재 조회 가능한 본인 알림 전체를 삭제합니다. 두 API 모두 `{deleted,unreadCount}`를 반환합니다. 삭제한 알림은 목록·읽지 않은 개수·읽음 처리에서 제외하며 같은 이벤트의 재전송으로 되살아나지 않습니다. 상세는 [알림 삭제 명세](docs/NOTIFICATION_DELETION.md)를 참고하세요.
+
+### 반별 대기실과 실제 시작
+
+‘평가 시작하러 가기’는 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`(`{ "expiresInMinutes":60 }`)를 호출해 PIN·QR을 표시합니다. 학생 참가 중에는 WAITING을 유지하고, 대기실의 ‘평가 시작하기’에서 기존 `/start`(`{ "expiresInMinutes":45 }`)를 호출해야 풀이와 타이머가 시작됩니다. 학생은 기존 state 조회로 STARTED 전환을 확인합니다. 대기실 없이 start는409이며 프런트 두 버튼의 호출 분리가 필요합니다. [상세 흐름](docs/ASSESSMENT_CLASSES.md)을 참고하세요.

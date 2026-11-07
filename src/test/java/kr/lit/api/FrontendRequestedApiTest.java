@@ -17,7 +17,9 @@ class FrontendRequestedApiTest extends AuthTestSupport {
     }
     JsonNode createTemplate() throws Exception {return ok(body(request(post("/api/teacher/assessments"),teacher),templateInput()));}
     JsonNode add(String id) throws Exception {return ok(body(request(post("/api/teacher/assessments/"+id+"/classes"),teacher),Map.of("className","1반")));}
-    JsonNode start(String id,String c) throws Exception {return ok(body(request(post("/api/teacher/assessments/"+id+"/classes/"+c+"/start"),teacher),Map.of("expiresInMinutes",40)));}
+    JsonNode start(String id,String c) throws Exception {
+        ok(body(request(post("/api/teacher/assessments/"+id+"/classes/"+c+"/lobby"),teacher),Map.of("expiresInMinutes",60)));
+        return ok(body(request(post("/api/teacher/assessments/"+id+"/classes/"+c+"/start"),teacher),Map.of("expiresInMinutes",40)));}
     @Test void frontendTitleAndAntiCheatArraysRoundTripAndReadyStateIsExplicit() throws Exception {
         var t=createTemplate();assertThat(t.path("criteria").get(0).asText()).isEqualTo("근거의 적절성");assertThat(t.path("antiCheat").get(1).asText()).isEqualTo("PRINT_BLOCK");
         String id=t.path("id").asText();var c=add(id);assertThat(c.path("state").asText()).isEqualTo("READY");assertThat(c.path("evaluationState").asText()).isEqualTo("WAITING");

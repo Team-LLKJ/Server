@@ -2452,7 +2452,45 @@
           }
         },
         {
-          "name": "반 시작 및 PIN 발급",
+          "name": "대기실 열기 및 PIN 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/lobby",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresInMinutes\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "평가 시작하러 가기 버튼. WAITING 유지·PIN 발급. 응답 evaluationId로 참가자 목록을 조회하고 학생이 참가한 후 다음 실제 시작 요청을 호출합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const r=pm.response.json(); pm.collectionVariables.set('pin', r.pin); pm.collectionVariables.set('evaluationId', r.evaluationId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "대기실에서 실제 평가 시작",
           "request": {
             "method": "POST",
             "header": [
@@ -2474,7 +2512,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "대기실 열기 이후 호출. 기존 PIN 유지, STARTED 전환 및45분 타이머 시작. 학생 state 조회가 SOLVING으로 변경됩니다."
           },
           "event": [
             {

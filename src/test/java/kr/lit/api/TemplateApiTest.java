@@ -28,19 +28,35 @@ class TemplateApiTest extends AuthTestSupport {
     String add(String id,String name) throws Exception {
         return ok(body(request(post("/api/teacher/assessments/"+id+"/classes"),teacher),Map.of("className",name))).path("classId").asText();
     }
-    ClassView startClass(String id,String c) {as(teacher);return templates.start(id,c,60);}
-    @Test void classStartsWithoutParticipantsAndExistingStudentApisKeepWorking() throws Exception {
+    ClassView startClass(String id,String c) {as(teacher);templates.openLobby(id,c,60);return templates.start(id,c,60);}
+    @Test void classLobbyWaitsForExplicitStartAndExistingStudentApisKeepWorking() throws Exception {
         var t=createTemplate();String c=add(t.id(),"1반");
         as(teacher);var waiting=templates.classes(t.id()).get(0);
         assertThat(waiting.state()).isEqualTo("READY");assertThat(waiting.pin()).isNull();assertThat(waiting.expiresAt()).isNull();assertThat(waiting.qrUrl()).isNull();
         mvc.perform(request(get("/api/teacher/evaluations/"+c+"/qr"),teacher)).andExpect(status().isConflict());
-        var started=ok(body(request(post("/api/teacher/assessments/"+t.id()+"/classes/"+c+"/start"),teacher),Map.of("expiresInMinutes",45)));
-        String pin=started.path("pin").asText();assertThat(pin).matches("[0-9]{6}");assertThat(started.path("state").asText()).isEqualTo("STARTED");
+        String root="/api/teacher/assessments/"+t.id()+"/classes/"+c;
+        mvc.perform(body(request(post(root+"/start"),teacher),Map.of("expiresInMinutes",45)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("CLASS_LOBBY_REQUIRED"));
+        var lobby=ok(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",60)));
+        String pin=lobby.path("pin").asText();assertThat(pin).matches("[0-9]{6}");
+        assertThat(lobby.path("state").asText()).isEqualTo("WAITING");assertThat(lobby.path("endsAt").isNull()).isTrue();
+        assertThat(db.queryForObject("SELECT started_at FROM evaluations WHERE id=?",java.time.OffsetDateTime.class,c)).isNull();
+        assertThat(ok(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",30)))).isEqualTo(lobby);
         mvc.perform(get("/api/participation/verify").param("pin",pin)).andExpect(status().isOk())
                 .andExpect(jsonPath("id").value(c)).andExpect(jsonPath("pin").value(pin));
-        mvc.perform(request(get(started.path("qrUrl").asText()),teacher)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+        mvc.perform(request(get(lobby.path("qrUrl").asText()),teacher)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
         var p=ok(body(request(post("/api/participation/join"),null),Map.of("pin",pin,"nickname","학생")));
         String token=p.path("participantToken").asText();
+        assertThat(p.at("/lobby/screen").asText()).isEqualTo("WAITING");
+        mvc.perform(get("/api/student/evaluations/"+c+"/workspace").header("X-Participant-Token",token)).andExpect(status().isConflict());
+        mvc.perform(get("/api/student/evaluations/"+c+"/state").header("X-Participant-Token",token)).andExpect(jsonPath("screen").value("WAITING"));
+        mvc.perform(request(get("/api/teacher/evaluations/"+c+"/participants"),teacher)).andExpect(jsonPath("participants[0].nickname").value("학생"));
+        var started=ok(body(request(post(root+"/start"),teacher),Map.of("expiresInMinutes",45)));
+        assertThat(started.path("pin").asText()).isEqualTo(pin);assertThat(started.path("state").asText()).isEqualTo("STARTED");
+        var began=db.queryForObject("SELECT started_at FROM evaluations WHERE id=?",java.time.OffsetDateTime.class,c);
+        var ends=db.queryForObject("SELECT ends_at FROM evaluations WHERE id=?",java.time.OffsetDateTime.class,c);
+        assertThat(java.time.Duration.between(began,ends).toMinutes()).isEqualTo(45);
+        mvc.perform(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",60))).andExpect(status().isConflict());
         mvc.perform(get("/api/student/evaluations/"+c+"/workspace").header("X-Participant-Token",token)).andExpect(status().isOk())
                 .andExpect(jsonPath("assessmentId").value(t.id())).andExpect(jsonPath("className").value("1반"))
                 .andExpect(jsonPath("questions[0].question.maxChars").value(100)).andExpect(jsonPath("criteria[0].maxScore").value(100))
@@ -48,6 +64,34 @@ class TemplateApiTest extends AuthTestSupport {
         mvc.perform(get("/api/student/evaluations/"+c+"/state").header("X-Participant-Token",token)).andExpect(status().isOk()).andExpect(jsonPath("state").value("STARTED"));
         mvc.perform(body(request(post("/api/teacher/assessments/"+t.id()+"/classes/"+c+"/start"),teacher),Map.of("expiresInMinutes",20))).andExpect(status().isConflict());
         as(teacher);assertThat(templates.classes(t.id()).get(0).pin()).isEqualTo(pin);
+    }
+    @Test void lobbyPermissionsExpiryAndReentryDoNotResetParticipantsOrTimer() throws Exception {
+        var t=createTemplate();String c=add(t.id(),"대기반");String root="/api/teacher/assessments/"+t.id()+"/classes/"+c;
+        var outsider=newTeacher();
+        mvc.perform(body(request(post(root+"/lobby"),outsider),Map.of("expiresInMinutes",60))).andExpect(status().isNotFound());
+        mvc.perform(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",0))).andExpect(status().isBadRequest());
+        as(teacher);var lobby=templates.openLobby(t.id(),c,60);var participant=evaluations.join(lobby.pin(),"복귀 학생",null);
+        evaluations.participant(c,participant.participantToken(),true);
+        var joined=evaluations.join(lobby.pin(),null,participant.participantToken());assertThat(joined.participantId()).isEqualTo(participant.participantId());
+        assertThat(joined.lobby().screen()).isEqualTo("WAITING");
+        mvc.perform(request(post(root+"/end"),teacher)).andExpect(status().isConflict());
+        db.update("UPDATE evaluations SET expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",c);
+        mvc.perform(body(request(post(root+"/start"),teacher),Map.of("expiresInMinutes",45))).andExpect(status().isGone());
+        as(teacher);var reopened=templates.openLobby(t.id(),c,60);assertThat(reopened.pin()).isEqualTo(lobby.pin());assertThat(reopened.participantCount()).isEqualTo(1);
+        assertThat(reopened.endsAt()).isNull();templates.start(t.id(),c,45);
+        templates.end(t.id(),c);
+        mvc.perform(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",60))).andExpect(status().isConflict());
+    }
+    @Test void concurrentLobbyRequestsKeepOnePinAndStartOnlyOnce() throws Exception {
+        var t=createTemplate();String c=add(t.id(),"동시 대기반");var pool=Executors.newFixedThreadPool(2);var gate=new CountDownLatch(1);
+        Callable<ClassView> open=()->{as(teacher);try{gate.await();return templates.openLobby(t.id(),c,60);}finally{clear();}};
+        try {
+            var one=pool.submit(open);var two=pool.submit(open);gate.countDown();
+            assertThat(one.get(10,TimeUnit.SECONDS).pin()).isEqualTo(two.get(10,TimeUnit.SECONDS).pin());
+            Callable<Boolean> start=()->{as(teacher);try{templates.start(t.id(),c,45);return true;}catch(ApiError.Failure failure){return false;}finally{clear();}};
+            var first=pool.submit(start);var second=pool.submit(start);
+            assertThat(List.of(first.get(10,TimeUnit.SECONDS),second.get(10,TimeUnit.SECONDS))).containsExactlyInAnyOrder(true,false);
+        }finally{pool.shutdownNow();}
     }
     @Test void templateEditUpdatesOnlyWaitingSnapshotsAndPreservesStartedQuestionIds() throws Exception {
         var t=createTemplate();String first=add(t.id(),"1반"),second=add(t.id(),"2반");startClass(t.id(),first);
@@ -144,7 +188,7 @@ class TemplateApiTest extends AuthTestSupport {
         }finally{executor.shutdownNow();}
     }
     @Test void racingTemplateEditAndStartProduceACompleteSnapshot() throws Exception {
-        var t=createTemplate();String c=add(t.id(),"1반");var executor=Executors.newFixedThreadPool(2);var gate=new CountDownLatch(1);
+        var t=createTemplate();String c=add(t.id(),"1반");as(teacher);templates.openLobby(t.id(),c,60);var executor=Executors.newFixedThreadPool(2);var gate=new CountDownLatch(1);
         try {
             var a=executor.submit(()->{as(teacher);try{gate.await();return templates.start(t.id(),c,60);}finally{clear();}});
             var b=executor.submit(()->{as(teacher);try{gate.await();return templates.update(t.id(),input("새 틀",3,30));}finally{clear();}});
