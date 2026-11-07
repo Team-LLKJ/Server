@@ -67,3 +67,7 @@ Cache-Control: no-store
 
 
 제출 기록이 있는 학생은 leave 후에도 기존 토큰으로 본인 HWP를 다운로드할 수 있습니다. active를 재활성화하거나 답안 수정 권한을 복구하지 않습니다. 미생성 리포트는404 REPORT_NOT_FOUND이며 POST reports가 선행되어야 합니다.
+
+## 공통 보고서 서식 개정
+
+PDF·HWP 공통 데이터와 레이아웃, participants 경로 별칭, KST/한글 표시 및 대화 부록 정책은 [REPORT_FORMAT.md](REPORT_FORMAT.md)를 참고하세요. feature/hwp-report-format 구현·미배포이며 기존 버전 저장 내용은 보존합니다.

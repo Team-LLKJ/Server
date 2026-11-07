@@ -92,3 +92,7 @@ PDF는 application/pdf, Content-Disposition attachment입니다. 한글 글꼴�
 
 
 제출 기록이 있으면 학생 leave(active=false) 이후에도 기존 참가자 토큰으로 본인 리포트 생성·조회·PDF·HWP를 사용할 수 있습니다. 참가 상태는 재활성화하지 않으며 풀이·답안·이벤트 권한은 복구하지 않습니다. 미제출 이탈 학생은 접근할 수 없습니다.
+
+## 공통 보고서 서식 개정
+
+PDF·HWP 공통 데이터와 레이아웃, participants 경로 별칭, KST/한글 표시 및 대화 부록 정책은 [REPORT_FORMAT.md](REPORT_FORMAT.md)를 참고하세요. feature/hwp-report-format 구현·미배포이며 기존 버전 저장 내용은 보존합니다.

@@ -46,8 +46,9 @@ class ReportHwpApiTest extends AuthTestSupport {
         byte[] bytes=mvc.perform(request(get(teacherPath(f)).param("version","1"),teacher)).andExpect(status().isOk())
                 .andExpect(content().contentType("application/x-hwp")).andExpect(header().string("Content-Disposition","attachment; filename=\"lit-report-"+report.id()+"-v1.hwp\""))
                 .andExpect(header().string("Cache-Control","no-store")).andReturn().getResponse().getContentAsByteArray();
-        assertThat(extractText(bytes)).contains("LIT AI 활용 리포트","한글 리포트 평가","학생 한글","분모를 같게","한글 셀 | 두 번째 셀","마지막 답안","교사의 검토 근거","성장 과정 확인","분류 방식","직접 작성·참고·수정 이력","두 번째 문항","[미작성]")
+        assertThat(extractText(bytes)).contains("AI 활용 학습 보고서","한글 리포트 평가","학생 한글","분모를 같게","한글 셀 | 두 번째 셀","마지막 답안","교사의 검토 근거","성장 과정 확인","키워드 기반 분류","활동 및 경고 기록","두 번째 문항","[미작성]")
                 .doesNotContain("대화원문비공개표식","<table>","<p>");
+        mvc.perform(request(get(teacherPath(f).replace("/students/","/participants/")),teacher)).andExpect(status().isOk());
         byte[] student=mvc.perform(get(studentPath(f)).header("X-Participant-Token",f.token())).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         assertThat(extractText(student)).isEqualTo(extractText(bytes));
         String qa=System.getProperty("lit.hwp.qa-dir");
@@ -64,22 +65,26 @@ class ReportHwpApiTest extends AuthTestSupport {
         var titleShape=document.getDocInfo().getCharShapeList().get(charId);
         assertThat(titleShape.getBaseSize()).isEqualTo(2300);
         assertThat(titleShape.getProperty().isBold()).isTrue();
+        var runs=title.getCharShape().getPositonShapeIdPairList();
+        assertThat(runs).hasSize(2);
+        assertThat(runs.get(1).getPosition()).isGreaterThan(5);
+        assertThat(document.getDocInfo().getCharShapeList().get((int)runs.get(1).getShapeId()).getBaseSize()).isEqualTo(1800);
         assertThat(document.getDocInfo().getParaShapeList().get(title.getHeader().getParaShapeId()).getProperty1().getAlignment())
-                .isEqualTo(kr.dogfoot.hwplib.object.docinfo.parashape.Alignment.Center);
+                .isEqualTo(kr.dogfoot.hwplib.object.docinfo.parashape.Alignment.Left);
         var tables=new ArrayList<kr.dogfoot.hwplib.object.bodytext.control.ControlTable>();
         for(int i=0;i<section.getParagraphCount();i++) {
             var controls=section.getParagraph(i).getControlList();
             if(controls!=null)for(var control:controls)if(control instanceof kr.dogfoot.hwplib.object.bodytext.control.ControlTable table)tables.add(table);
         }
-        assertThat(tables).hasSize(2);
-        assertThat(tables.get(0).getTable().getColumnCount()).isEqualTo(2);
-        assertThat(tables.get(0).getRowList()).hasSize(4);
+        assertThat(tables).hasSize(3);
+        assertThat(tables.get(0).getTable().getColumnCount()).isEqualTo(4);
+        assertThat(tables.get(0).getRowList()).hasSize(2);
         var scores=tables.get(1);
         assertThat(scores.getRowList()).hasSize(6);
         assertThat(scores.getTable().getColumnCount()).isEqualTo(3);
         assertThat(scores.getRowList().get(0).getCellList().get(0).getListHeader().getProperty().isTitleCell()).isTrue();
         assertThat(scores.getTable().getProperty().isAutoRepeatTitleRow()).isTrue();
-        assertThat(extractText(hwp.exportReport(report,false))).contains("KST","1. 검토 상태 및 판단 한계","2. 5개 영역 - 교사 검토");
+        assertThat(extractText(hwp.exportReport(report,false))).contains("KST","1. 종합 평가","2. 평가 기준별 루브릭");
     }
     @Test void exportedVersionsAreFrozenAndConversationOriginalsRequireOptIn() throws Exception {
         var f=createFixture(true);var first=reports.teacherGenerate(f.id(),f.pid());
@@ -87,12 +92,12 @@ class ReportHwpApiTest extends AuthTestSupport {
         reports.teacherGenerate(f.id(),f.pid());
         db.update("UPDATE answers SET content='라이브 답안 변경 표식' WHERE participant_id=?",f.pid());
         byte[] old=mvc.perform(request(get(teacherPath(f)).param("version","1"),teacher)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
-        assertThat(extractText(old)).contains("미검토","분모를 같게").doesNotContain("두 번째 버전 의견","라이브 답안 변경 표식","대화원문비공개표식");
+        assertThat(extractText(old)).contains("미채점","분모를 같게").doesNotContain("두 번째 버전 의견","라이브 답안 변경 표식","대화원문비공개표식");
         byte[] latest=mvc.perform(request(get(teacherPath(f)),teacher)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         assertThat(extractText(latest)).contains("두 번째 버전 의견");
         byte[] raw=mvc.perform(get(studentPath(f)).param("version","1").param("includeConversations","true").header("X-Participant-Token",f.token()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
-        assertThat(extractText(raw)).contains("대화원문비공개표식","AI 대화 원문 (포함 선택)");
+        assertThat(extractText(raw)).contains("대화원문비공개표식","부록. AI 대화 기록");
         as(teacher);assertThat(reports.versions(f.id(),f.pid())).hasSize(2);assertThat(first.version()).isEqualTo(1);
     }
     @Test void rejectsForeignAccessMissingReportsAndInvalidVersion() throws Exception {

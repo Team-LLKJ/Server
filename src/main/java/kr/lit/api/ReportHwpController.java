@@ -14,7 +14,7 @@ class ReportHwpController {
     private final ReportService reports;
     private final ReportHwpService hwp;
     ReportHwpController(ReportService reports,ReportHwpService hwp){this.reports=reports;this.hwp=hwp;}
-    @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report/hwp","/teacher/evaluations/{id}/students/{participantId}/report.hwp"},produces=HWP_MEDIA_TYPE)
+    @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report/hwp","/teacher/evaluations/{id}/students/{participantId}/report.hwp","/teacher/evaluations/{id}/participants/{participantId}/report/hwp","/teacher/evaluations/{id}/participants/{participantId}/report.hwp"},produces=HWP_MEDIA_TYPE)
     ResponseEntity<byte[]> exportTeacherReport(@PathVariable String id,@PathVariable String participantId,
             @RequestParam(required=false) @Min(1) Integer version,@RequestParam(defaultValue="false") boolean includeConversations) {
         return downloadReport(reports.teacherReport(id,participantId,version),includeConversations);

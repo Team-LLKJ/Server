@@ -126,7 +126,7 @@ class GradingApiTest extends AuthTestSupport {
         var f=fixture(true);grading.saveCriterion(f.id(),f.pid(),"PURPOSE_CLARITY",new ScoreInput(18,0));
         var result=mvc.perform(request(get(root(f)+"/report.pdf"),teacher)).andExpect(status().isOk()).andExpect(content().contentType("application/pdf")).andReturn().getResponse().getContentAsByteArray();
         try(var doc=org.apache.pdfbox.Loader.loadPDF(result)) {
-            String text=new org.apache.pdfbox.text.PDFTextStripper().getText(doc);assertThat(text).contains("18 / 20","미입력","부분합","표 답안","[빈 셀]").doesNotContain("<table>");
+            String text=new org.apache.pdfbox.text.PDFTextStripper().getText(doc);assertThat(text).contains("18 / 20","미채점","표 답안","[빈 셀]").doesNotContain("<table>");
             javax.imageio.ImageIO.write(new org.apache.pdfbox.rendering.PDFRenderer(doc).renderImageWithDPI(0,100),"png",java.nio.file.Path.of("/tmp/lit-grading-review.png").toFile());
         }
         mvc.perform(request(get(root(f)+"/report/pdf"),teacher)).andExpect(status().isOk());

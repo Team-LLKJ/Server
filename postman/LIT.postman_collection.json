@@ -3445,6 +3445,39 @@
           }
         }
       ]
+    },
+    {
+      "name": "공통 PDF·HWP 보고서 서식",
+      "item": [
+        {
+          "name": "교사 보고서 pdf (participants 별칭)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.pdf?version=1&includeConversations=false",
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
+          }
+        },
+        {
+          "name": "교사 보고서 hwp (participants 별칭)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.hwp?version=1&includeConversations=false",
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
+          }
+        }
+      ]
     }
   ]
 }

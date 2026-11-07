@@ -13,49 +13,14 @@ public class ReportPdf {
  public byte[] render(UsageReport report,boolean raw){
   try(var document=new PDDocument();var fontData=getClass().getResourceAsStream("/fonts/NanumGothic-Regular.ttf")){
    var font=PDType0Font.load(document,fontData);var out=new ByteArrayOutputStream();
+   var layout=new ReportLayout().buildDocument(report,raw);
    try(var writer=new Writer(document,font)){
-    var c=report.content();
-    writer.line("LIT AI 활용 리포트",18);writer.line(c.title(),14);
-    writer.line("학생: "+c.nickname()+" | 리포트 v"+report.version(),11);
-    writer.line("제출: "+c.submittedAt()+" | 생성: "+report.createdAt(),9);
-    writer.line("리포트 ID: "+report.id(),9);writer.line("제출 확인 해시: "+c.submissionHash(),8);
-    writer.line("검토 상태 및 한계",13);
-    for(String limit:c.limitations())writer.line(limit,10);
-    writer.line("분류 방식: "+c.analysis().method()+" / "+c.analysis().status(),10);
-    writer.line("기록 부족 항목: "+String.join(", ",c.analysis().missingData()),10);
-    writer.line("5개 영역 - 교사 검토",13);
-    if(c.teacherReview()==null){writer.line("미검토: 영역별 점수 미입력. 미입력은 0점을 의미하지 않습니다.",11);}
-    else{
-     writer.line("규칙 준수 검토: "+c.teacherReview().compliance()+" / 검토 버전 "+c.teacherReview().version(),10);
-     int total=0,rated=0;
-     for(var rating:c.teacherReview().ratings()){
-      if(rating.score()!=null){total+=rating.score();rated++;}
-      writer.line(label(rating.criterion())+": "+(rating.score()==null?"미입력":rating.score())+" / "+c.teacherReview().maxScore(),11);writer.line("근거: "+(rating.evidence()==null||rating.evidence().isBlank()?"[미입력]":rating.evidence()),10);
-     }
-     writer.line(rated==5?"합계: "+total+" / "+(c.teacherReview().maxScore()*5)+" (교사 입력)":"부분합: "+total+" (입력 "+rated+"/5개 영역, 미입력은 0점이 아닙니다.)",11);writer.line("교사 의견: "+c.teacherReview().comment(),10);
+    writer.addHeader(layout.title(),layout.date());
+    for(var block:layout.blocks()) {
+     if(block instanceof ReportLayout.Text text)writer.addText(text.value(),text.style());
+     else if(block instanceof ReportLayout.Table table)writer.addTable(table);
+     else if(block instanceof ReportLayout.PageBreak)writer.newPage();
     }
-    writer.line("최종 제출 답안",13);
-    for(var a:c.submission().path("answers")){
-     writer.line(a.path("question").path("title").asText(),12);
-     writer.line("문항: "+a.path("question").path("content").asText(),10);
-     String answer=a.path("answer").path("content").asText();writer.line("답안: "+(answer.isBlank()?"[미작성]":answerText(answer)),11);
-    }
-    writer.line("AI 활용 분류 및 이력 요약",13);
-    for(var x:c.analysis().classifications()){
-     writer.line("요청 "+x.requestId()+": "+String.join(", ",x.purposes())+" / "+String.join(", ",x.stages()),10);
-     // Do not leak original question excerpts when the PDF excludes conversation originals.
-     if(raw)writer.line("분류 근거: "+x.evidence(),10);
-    }
-    writer.line("도구·모델 및 상태",13);
-    for(var t:c.submission().path("conversations"))writer.line(t.path("requestId").asText()+" | "+t.path("provider").asText()+" / "+t.path("model").asText()+" | "+t.path("state").asText(),10);
-    writer.line("직접 작성·참고·수정 이력",13);
-    for(var e:c.submission().path("learningEvents"))if(e.path("type").asText().equals("ANSWER_SAVED")){
-     var d=e.path("details");writer.line("문항 "+e.path("questionId").asText()+" / v"+d.path("version").asInt()+" / "+d.path("source").asText()+" / AI 참조 "+d.path("aiRequestId").asText("없음"),9);
-    }
-    if(raw){writer.line("AI 대화 원문 (공유 시 포함 선택)",13);for(var t:c.submission().path("conversations")){
-     writer.line("질문: "+t.path("questionText").asText(),10);writer.line("응답: "+(t.path("answerText").isNull()?"[응답 없음]":t.path("answerText").asText()),10);
-    }}else writer.line("AI 대화 원문은 내보내기 설정에 따라 제외했습니다.",10);
-    for(String limit:c.analysis().limitations())writer.line(limit,9);
    }
    document.save(out);return out.toByteArray();
   }catch(IOException e){throw new IllegalStateException("PDF 생성에 실패했습니다.",e);}
@@ -73,24 +38,64 @@ public class ReportPdf {
   for(var block:body.select("p,div,li,h1,h2,h3,h4,blockquote,pre"))block.appendText("\n");
   return body.wholeText();
  }
- private static final class Writer implements AutoCloseable{
+ private static final class Writer implements AutoCloseable {
+  private static final float LEFT=45.35f, TOP=51.02f, BOTTOM=51.02f, WIDTH=504.58f;
   private final PDDocument doc;private final PDFont font;private PDPageContentStream stream;private float y;private int page;
   Writer(PDDocument doc,PDFont font)throws IOException{this.doc=doc;this.font=font;newPage();}
-  private void newPage()throws IOException{if(stream!=null)stream.close();var p=new PDPage(PDRectangle.A4);doc.addPage(p);page++;stream=new PDPageContentStream(doc,p);y=790;
-   stream.beginText();stream.setFont(font,8);stream.newLineAtOffset(48,28);stream.showText("LIT | "+page);stream.endText();}
-  void line(String value,int size)throws IOException{
-   if(size>=12&&y<135)newPage();
-   for(String paragraph:Objects.toString(value,"").split("\\R",-1)){
-    StringBuilder line=new StringBuilder();
-    for(int code:paragraph.codePoints().toArray()){
-     String ch=Character.isISOControl(code)?" ":new String(Character.toChars(code));
-     try{font.encode(ch);}catch(IllegalArgumentException e){ch="?";}
-     if(font.getStringWidth(line+ch)/1000*size>498&&line.length()>0){draw(line.toString(),size);line.setLength(0);}line.append(ch);
-    }
-    draw(line.toString(),size);
-   }y-=4;
+  void newPage()throws IOException {
+   if(stream!=null)stream.close();var p=new PDPage(PDRectangle.A4);doc.addPage(p);page++;stream=new PDPageContentStream(doc,p);y=p.getMediaBox().getHeight()-TOP;
+   draw("LIT  |  "+page,LEFT,28,8,0.4f,0.4f,0.4f);
   }
-  private void draw(String text,int size)throws IOException{if(y<size+52)newPage();stream.beginText();stream.setFont(font,size);stream.newLineAtOffset(48,y);stream.showText(text);stream.endText();y-=size*1.5f;}
+  private void ensureSpace(float height)throws IOException{if(y-height<BOTTOM)newPage();}
+  void addHeader(String title,String date)throws IOException {
+   draw("LIT",LEFT,y-18,23,0,0.48f,1);draw(title,LEFT+60,y-15,18,0.1f,0.1f,0.1f);y-=34;
+   draw(date,LEFT+60,y,9,0.4f,0.4f,0.4f);y-=15;rule(0,0.48f,1,1.3f);y-=14;
+  }
+  private void rule(float r,float g,float b,float width)throws IOException{stream.setStrokingColor(r,g,b);stream.setLineWidth(width);stream.moveTo(LEFT,y);stream.lineTo(LEFT+WIDTH,y);stream.stroke();}
+  void addText(String value,String style)throws IOException {
+   boolean heading=style.equals("heading"), question=style.equals("question");int size=heading?12:style.equals("note")?9:11;
+   if(heading){ensureSpace(75);y-=14;}
+   else if(question){ensureSpace(65);y-=9;}
+   for(String line:wrap(value,size,WIDTH)) {ensureSpace(size*1.55f);draw(line,LEFT,y-size,size,style.equals("note")?0.4f:0.12f,style.equals("note")?0.4f:0.12f,style.equals("note")?0.4f:0.12f);y-=size*1.55f;}
+   y-=5;if(heading){rule(0.83f,0.85f,0.87f,0.5f);y-=7;}
+  }
+  void addTable(ReportLayout.Table table)throws IOException {
+   float[] widths=new float[table.widths().length];for(int c=0;c<widths.length;c++)widths[c]=WIDTH*table.widths()[c]/42520f;
+   for(int r=0;r<table.rows().size();r++) {
+    var lines=new ArrayList<List<String>>();int max=1;
+    for(int c=0;c<widths.length;c++){var wrapped=wrap(table.rows().get(r).get(c),11,widths[c]-12);lines.add(wrapped);max=Math.max(max,wrapped.size());}
+    int offset=0;
+    while(offset<max) {
+     if(y-BOTTOM<29){newPage();if(table.header()&&r>0)drawHeader(table.rows().get(0),widths);}
+     int capacity=Math.max(1,(int)((y-BOTTOM-12)/17));int count=Math.min(max-offset,capacity);float height=count*17+12;
+     for(int c=0;c<widths.length;c++) {
+      boolean shaded=table.header()?r==0:(widths.length==4?c%2==0:c==0);float x=LEFT;for(int i=0;i<c;i++)x+=widths[i];
+      drawCell(x,y,widths[c],height,shaded);
+      for(int l=0;l<count&&offset+l<lines.get(c).size();l++)draw(lines.get(c).get(offset+l),x+6,y-18-l*17,11,0.12f,0.12f,0.12f);
+     }
+     y-=height;offset+=count;
+     if(offset<max){newPage();if(table.header()&&r>0)drawHeader(table.rows().get(0),widths);}
+    }
+   }y-=8;
+  }
+  private void drawHeader(List<String> cells,float[] widths)throws IOException {
+   float x=LEFT;for(int c=0;c<widths.length;c++){drawCell(x,y,widths[c],29,true);draw(cells.get(c),x+6,y-18,11,0.12f,0.12f,0.12f);x+=widths[c];}y-=29;
+  }
+  private void drawCell(float x,float top,float width,float height,boolean shaded)throws IOException {
+   stream.setNonStrokingColor(shaded?0.95f:1f,shaded?0.975f:1f,1f);stream.addRect(x,top-height,width,height);stream.fill();
+   stream.setStrokingColor(0.84f,0.85f,0.87f);stream.setLineWidth(0.4f);stream.addRect(x,top-height,width,height);stream.stroke();
+  }
+  private List<String> wrap(String value,int size,float width)throws IOException {
+   var lines=new ArrayList<String>();
+   for(String paragraph:Objects.toString(value,"").split("\\R",-1)) {
+    StringBuilder line=new StringBuilder();
+    for(int cp:paragraph.codePoints().toArray()) {
+     String ch=Character.isISOControl(cp)?" ":new String(Character.toChars(cp));try{font.encode(ch);}catch(IllegalArgumentException ex){ch="?";}
+     if(font.getStringWidth(line+ch)/1000*size>width&&line.length()>0){lines.add(line.toString());line.setLength(0);}line.append(ch);
+    }lines.add(line.toString());
+   }return lines;
+  }
+  private void draw(String text,float x,float baseline,int size,float r,float g,float b)throws IOException{stream.setNonStrokingColor(r,g,b);stream.beginText();stream.setFont(font,size);stream.newLineAtOffset(x,baseline);stream.showText(text);stream.endText();}
   public void close()throws IOException{if(stream!=null)stream.close();}
  }
 }
