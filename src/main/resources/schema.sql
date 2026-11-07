@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS notifications (
  evaluation_id VARCHAR(36), participant_id VARCHAR(36), dedupe_key VARCHAR(200),
  created_at TIMESTAMP WITH TIME ZONE NOT NULL, read_at TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_dedupe ON notifications(user_id,dedupe_key);
 CREATE TABLE IF NOT EXISTS user_settings (

@@ -77,6 +77,8 @@
 |---|---|---|
 | 알림 목록 | `GET /api/notifications?page=0&size=20&unreadOnly=false` | `{ items, page, size, totalElements, totalPages, unreadCount }` |
 | 하나 읽음 | `PATCH /api/notifications/{id}/read` | 알림 하나 |
+| 하나 삭제 | `DELETE /api/notifications/{id}` | `{ deleted, unreadCount }` |
+| 전체 삭제 | `DELETE /api/notifications` | `{ deleted, unreadCount }` |
 | 모두 읽음 | `POST /api/notifications/read-all` | `{ updated, unreadCount }` |
 | 읽지 않은 개수 | `GET /api/notifications/unread-count` | `{ unreadCount }` |
 | 알림 설정 | `GET · PUT /api/users/me/settings` | `{ notify, sound, updatedAt }` |
