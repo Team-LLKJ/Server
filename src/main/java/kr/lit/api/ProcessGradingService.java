@@ -20,7 +20,7 @@ public class ProcessGradingService {
     public Map<String,Object> getRubric(String id) {
         requireTeacher(id);
         try(var stream=new org.springframework.core.io.ClassPathResource("grading/process-rubric-v1.md").getInputStream()) {
-            return Map.of("rubricVersion",RUBRIC_VERSION,"provisional",true,"criteria",Arrays.stream(Criterion.values()).map(c->Map.of("criterion",c.name(),"maxScore",c.maxScore())).toList(),"criteriaMarkdown",new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
+            return Map.of("rubricVersion",RUBRIC_VERSION,"provisional",true,"criteria",Arrays.stream(Criterion.values()).map(c->Map.of("criterion",c.name(),"name",c.displayName(),"maxScore",c.maxScore())).toList(),"criteriaMarkdown",new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
         }catch(java.io.IOException ex){throw new IllegalStateException(ex);}
     }
     public Policy getPolicy(String id){requireTeacher(id);return repository.getPolicy(id).orElseThrow(()->fail(HttpStatus.NOT_FOUND,"PROCESS_POLICY_NOT_FOUND","평가 전 사전 정책이 필요합니다."));}

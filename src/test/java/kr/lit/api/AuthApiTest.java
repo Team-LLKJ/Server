@@ -86,10 +86,10 @@ class AuthApiTest extends AuthTestSupport {
         db.update("UPDATE app_users SET locked_until=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",teacher.user().id());
         ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null));
     }
-    @Test void passwordRecoveryEndpointsAreNotAvailable() throws Exception {
+    @Test void passwordRecoveryEndpointsValidateRequiredFields() throws Exception {
         for(String endpoint:List.of("request","confirm")) {
-            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),null)).andExpect(status().isNotFound());
-            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),teacher)).andExpect(status().isNotFound());
+            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),null)).andExpect(status().isBadRequest());
+            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),teacher)).andExpect(status().isBadRequest());
         }
     }
 }

@@ -34,18 +34,18 @@ public final class WorkModels {
         public Configure(AiPolicy aiPolicy,List<QuestionInput> questions,String guidelines,Integer durationMinutes) { this(aiPolicy,questions,guidelines,durationMinutes,null); }
         public Configure(AiPolicy aiPolicy,List<QuestionInput> questions,String guidelines) { this(aiPolicy,questions,guidelines,null,null); }
         public Configure(AiPolicy aiPolicy,List<QuestionInput> questions) { this(aiPolicy,questions,null,null,null); }
-        /** aiPolicy와 aiLevel 중 하나는 필수이며 둘 다 보내면 같은 단계여야 합니다. */
+        /** 둘 다 생략하면 HINT_ONLY이며, 둘 다 보내면 같은 단계여야 합니다. */
         public AiPolicy resolvedPolicy() {
-            if(aiPolicy==null&&aiLevel==null) return null;
+            if(aiPolicy==null&&aiLevel==null) return AiPolicy.HINT_ONLY;
             if(aiPolicy!=null&&aiLevel!=null&&aiPolicy.level()!=aiLevel) return null;
             return aiPolicy!=null?aiPolicy:AiPolicy.ofLevel(aiLevel);
         }
     }
     public record SaveAnswer(@NotNull String content, @Min(0) int expectedVersion,
                              @NotNull AnswerSource source, @Size(max=64) String aiRequestId) {}
-    /** 학생 화면이 신고하는 이벤트. WINDOW_BLUR/CAPTURE_SHORTCUT은 기존 WINDOW_LEAVE/SHORTCUT_CAPTURE와 같은 경고로 취급합니다. */
+    /** 학생 화면이 신고하는 이벤트. 전체화면 이탈·개발자 도구 열림도 경고이며, 신고 자체가 부정행위 확정은 아닙니다. */
     public enum ClientEventType {
-        WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true),
+        WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true), FULLSCREEN_EXIT(true), FULLSCREEN_LEAVE(true), DEVTOOLS_OPEN(true),
         PASTE(false), AI_ANSWER_COPY(false);
         private final boolean warning;
         ClientEventType(boolean warning) { this.warning=warning; }

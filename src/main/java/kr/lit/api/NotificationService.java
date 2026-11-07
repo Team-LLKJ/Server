@@ -69,7 +69,7 @@ public class NotificationService {
     }
     /** 공유 해제와 이벤트 수신이 경합해 늦게 저장된 알림도 해제 뒤에는 노출하지 않습니다. */
     private String visible() {
-        return "(assessment_id IS NULL OR EXISTS (SELECT 1 FROM assessment_templates a WHERE a.id=notifications.assessment_id AND (a.teacher_id=notifications.user_id OR EXISTS (SELECT 1 FROM assessment_collaborators c WHERE c.assessment_id=a.id AND c.teacher_id=notifications.user_id))))";
+        return NotificationRepository.getVisiblePredicate();
     }
     private static String cut(String v,int max) { return v==null?"":v.length()<=max?v:v.substring(0,max); }
 
@@ -92,7 +92,7 @@ public class NotificationService {
     @Transactional
     public Notification read(long id) {
         String userId=me();
-        var rows=db.query("SELECT * FROM notifications WHERE id=? AND user_id=? AND "+visible(),this::row,id,userId);
+        var rows=db.query("SELECT * FROM notifications WHERE id=? AND user_id=? AND "+visible()+" FOR UPDATE",this::row,id,userId);
         if(rows.isEmpty()) throw new ApiError.Failure(HttpStatus.NOT_FOUND,"NOTIFICATION_NOT_FOUND","알림을 찾을 수 없습니다.");
         db.update("UPDATE notifications SET read_at=COALESCE(read_at,?) WHERE id=?",OffsetDateTime.now(ZoneOffset.UTC),id);
         return db.query("SELECT * FROM notifications WHERE id=?",this::row,id).get(0);

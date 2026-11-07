@@ -209,7 +209,7 @@ Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 
 학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
 
-비밀번호 찾기·재설정 기능은 제외했습니다. 회원가입 인증메일은 SMTP 설정이 필요하며, 대표 색상 `#007BFF`의 HTML 본문과 일반 텍스트 대체 본문으로 발송합니다.
+비밀번호 찾기·재설정은 [AUTH-003 API 명세](docs/PASSWORD_RESET.md)를 참고하세요. 공개 `POST /api/auth/password-reset/request`로 가입 이메일에15분 유효 일회용 링크를 보내고 `/confirm`에 `{token,newPassword}`를 전송합니다. 성공 시 모든 기기의 로그인 세션을 해제합니다. `LIT_PASSWORD_RESET_URL`에 실제 HTTPS 프런트 재설정 페이지 설정이 필요합니다. 회원가입 인증메일은 SMTP 설정이 필요하며, 대표 색상 `#007BFF`의 HTML 본문과 일반 텍스트 대체 본문으로 발송합니다.
 
 
 ### 내가 만든 수행평가 조회
@@ -332,3 +332,25 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ### 학생 재접속
 
 `POST /api/participation/reconnect`에 `{evaluationId,participantToken}`을 보내 기존 참가자 상태·저장 답안/버전·서버 종료 시각을 복구합니다. 나간 참가자도 같은 토큰으로 재활성화되며 마감·제출 후에는 읽기 전용입니다. 브라우저 초안 보관·자동 재시도·이어쓰기 UI는 별도 Web 연동이 필요합니다. [재접속 API와 프런트 연결 계약](docs/STUDENT_RECONNECT.md)을 참고하세요.
+
+
+### 알림 삭제
+
+`DELETE /api/notifications/{id}`로 본인 알림 하나를, `DELETE /api/notifications`로 현재 조회 가능한 본인 알림 전체를 삭제합니다. 두 API 모두 `{deleted,unreadCount}`를 반환합니다. 삭제한 알림은 목록·읽지 않은 개수·읽음 처리에서 제외하며 같은 이벤트의 재전송으로 되살아나지 않습니다. 상세는 [알림 삭제 명세](docs/NOTIFICATION_DELETION.md)를 참고하세요.
+
+### 반별 대기실과 실제 시작
+
+‘평가 시작하러 가기’는 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`(`{ "expiresInMinutes":60 }`)를 호출해 PIN·QR을 표시합니다. 학생 참가 중에는 WAITING을 유지하고, 대기실의 ‘평가 시작하기’에서 기존 `/start`(`{ "expiresInMinutes":45 }`)를 호출해야 풀이와 타이머가 시작됩니다. 학생은 기존 state 조회로 STARTED 전환을 확인합니다. 대기실 없이 start는409이며 프런트 두 버튼의 호출 분리가 필요합니다. [상세 흐름](docs/ASSESSMENT_CLASSES.md)을 참고하세요.
+
+### HWP 보고서 서식
+
+HWP 다운로드는 제목·학생 정보 표·영역별 점수표·섹션/문항 제목·검토 근거를 구분하는 보고서 서식을 제공합니다. 실제 HWP 표와 문단/글자 스타일을 사용하며 긴 답안은 일반 문단으로 보존합니다. API 경로·인증·저장 버전·원문 포함 옵션은 유지합니다. [HWP 내보내기](docs/HWP_EXPORT.md)를 참고하세요.
+
+### 전체화면 이탈·개발자 도구 신고
+
+`antiCheat`에 `FULLSCREEN_LEAVE`, `DEVTOOLS`를 추가로 허용합니다. 학생 이벤트 `FULLSCREEN_EXIT`, `DEVTOOLS_OPEN`은 기존 이벤트와 합산해 분당60건 제한을 적용하며 경고 개수·교사 활동 조회·첫 경고 알림에 포함합니다. 신고 자체로 점수를 변경하지 않습니다. 서버는 설정과 기록 API를 제공하며 브라우저 감지 기능은 포함하지 않습니다. [설정·이벤트 명세](docs/ANTI_CHEAT_EVENTS.md)를 참고하세요.
+
+
+### 프런트 연동 계약 통합
+
+알림 삭제·비밀번호 재설정·반 대기실·HWP 서식·경고 이벤트를 통합합니다. 대기실 `state=READY` 호환을 유지하면서 `lobbyState=WAITING`을 추가합니다. 제출 후 이탈한 학생도 본인 리포트에만 접근할 수 있으며, 새 평가/틀의 생략 정책은 HINT_ONLY입니다. 과정 평가의 표시 이름·배점 및 전체 상태값·근거 예시는 [프런트 연동 계약](docs/FRONTEND_CONTRACT_COMPLETION.md)을 참고하세요. 기존 데이터와 명시한 AI 정책은 소급 변경하지 않습니다.

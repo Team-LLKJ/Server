@@ -11,7 +11,7 @@
 | API | 상태 |
 |---|---|
 | `POST /api/auth/signup/student` | **학생 가입 없음.** 항상 410 STUDENT_ACCOUNTS_DISABLED입니다. 학생은 PIN과 닉네임으로 참여합니다. 화면에서 학생 가입을 빼 주세요. |
-| `POST /api/auth/password-reset/request`, `/confirm` | **없음(404).** 메일 발송 수단이 없어 이전에 뺐습니다. 로그인한 교사는 새 `POST /api/users/me/password`로 바꿀 수 있습니다. 비밀번호를 잊은 교사는 관리자 처리가 필요합니다. |
+| `POST /api/auth/password-reset/request`, `/confirm` | **2026-11-04 추가됨.** 이메일 링크 요청·새 비밀번호 확정을 지원합니다. 요청·응답·환경 설정은 [PASSWORD_RESET.md](PASSWORD_RESET.md)를 참고하세요. |
 | `DELETE /api/teacher/evaluations/{id}` | **이번에 새로 추가.** 아래 3장 참고. |
 | `PUT /api/teacher/evaluations/{id}/questions` | aiPolicy에 `EDIT_ASSIST`, `TASK_ASSIST` 두 값이 늘었고 `aiLevel`(1~5) 필드를 함께 받습니다. 기존 세 값은 그대로 됩니다. |
 | CORS | 허용 메서드에 PATCH·DELETE를 추가했습니다. |
@@ -77,6 +77,8 @@
 |---|---|---|
 | 알림 목록 | `GET /api/notifications?page=0&size=20&unreadOnly=false` | `{ items, page, size, totalElements, totalPages, unreadCount }` |
 | 하나 읽음 | `PATCH /api/notifications/{id}/read` | 알림 하나 |
+| 하나 삭제 | `DELETE /api/notifications/{id}` | `{ deleted, unreadCount }` |
+| 전체 삭제 | `DELETE /api/notifications` | `{ deleted, unreadCount }` |
 | 모두 읽음 | `POST /api/notifications/read-all` | `{ updated, unreadCount }` |
 | 읽지 않은 개수 | `GET /api/notifications/unread-count` | `{ unreadCount }` |
 | 알림 설정 | `GET · PUT /api/users/me/settings` | `{ notify, sound, updatedAt }` |
@@ -116,12 +118,14 @@
 | WINDOW_BLUR (= 기존 WINDOW_LEAVE) | 창 이탈 | O |
 | CAPTURE_SHORTCUT (= 기존 SHORTCUT_CAPTURE) | 캡처 단축키 | O |
 | COPY_ATTEMPT | 복사 시도 | O |
+| FULLSCREEN_EXIT / FULLSCREEN_LEAVE | 전체화면 이탈 | O |
+| DEVTOOLS_OPEN | 개발자 도구 열림 | O |
 | PASTE | 붙여넣기 (`length` 글자 수 선택) | X (채점 신호) |
 | AI_ANSWER_COPY | AI 답변 복사 (`conversationId` 선택) | X (채점 신호) |
 
 - 기존 두 이름도 계속 받습니다. 새 화면은 위 이름을 쓰면 됩니다.
 - questionId·length(0~10,000,000)·conversationId는 선택입니다. 본인 대화가 아닌 conversationId는 404 CONVERSATION_NOT_FOUND.
-- 시각 범위·분당 60건 제한·시작 후 제출 전만 가능한 조건은 기존과 같습니다(이제 5개 유형 합산).
+- 시각 범위·분당 60건 제한·시작 후 제출 전만 가능한 조건은 기존과 같습니다(FULLSCREEN_LEAVE 별칭 포함10개 유형 합산).
 - 교사 `GET .../participants/{pid}/learning-events`에 그대로 나오고(details에 `warning: true/false`), 학생별 경고 개수는 `submissions`의 `warningCount`에 들어갑니다.
 - 경고 기록만으로 부정행위를 판정하거나 감점하지 않습니다.
 

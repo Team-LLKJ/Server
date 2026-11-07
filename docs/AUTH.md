@@ -94,7 +94,7 @@ X-Participant-Token: {participantToken}
 평가 시작 후 신규 참여는 차단하고 기존 토큰 재접속만 허용합니다.
 토큰을 잃은 경우 닉네임만으로 기존 기록을 복구하지 않습니다. 재접속할 클라이언트가 토큰을 보관해야 합니다.
 
-비밀번호 찾기·재설정은 이번 개발 범위에서 제외했습니다. 신규 회원가입 인증을 위해서는 SMTP 메일 발송 설정이 필요합니다.
+비밀번호 찾기·재설정은 [PASSWORD_RESET.md](PASSWORD_RESET.md)에 정의합니다. `POST /api/auth/password-reset/request`(이메일), `/confirm`(token·newPassword)은 비로그인 공개 API입니다. 성공하면 모든 로그인 세션이 폐기됩니다. 신규 회원가입 인증을 위해서는 SMTP 메일 발송 설정이 필요합니다.
 
 ## 오류
 

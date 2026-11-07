@@ -12,6 +12,7 @@ public final class ProcessGradingModels {
     public static final String RUBRIC_VERSION="LIT_PROCESS_RUBRIC_V1";
     public static final String GLOBAL="GLOBAL";
     public enum Criterion { PURPOSE, SELF_DIRECTION, CRITICAL_REVIEW, CONTRIBUTION, TRANSPARENCY;
+        public String displayName(){return switch(this){case PURPOSE->"AI 활용 목적의 적절성";case SELF_DIRECTION->"자기 주도적 사고";case CRITICAL_REVIEW->"AI 답변의 비판적 검토";case CONTRIBUTION->"답안에 대한 학생의 기여";case TRANSPARENCY->"AI 활용 과정의 투명성";};}
         public int maxScore(){return switch(this){case PURPOSE,TRANSPARENCY->15;case SELF_DIRECTION,CONTRIBUTION->25;case CRITICAL_REVIEW->20;};}
     }
     public enum NoAiPolicy { HOLD, NOT_APPLICABLE, USE_RECORDED_EVIDENCE }
@@ -32,7 +33,12 @@ public final class ProcessGradingModels {
     public record Compliance(String status,String reason,List<Citation> evidence,List<String> limitations) {}
     public record AiOutput(Compliance compliance,List<Recommendation> recommendations) {}
     public record Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,
-                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations) {}
+                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations) {
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public int maxScore(){return criterion.maxScore();}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String criterionName(){return criterion.displayName();}
+    }
     public record Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations) {}
     public record Job(String id,String evaluationId,String participantId,int version,String status,String inputHash,
                       String rubricVersion,String model,Instant createdAt,Instant completedAt,Result result,String errorCode) {}

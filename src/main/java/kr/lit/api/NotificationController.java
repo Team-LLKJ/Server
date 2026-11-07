@@ -6,7 +6,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api")
 class NotificationController {
     private final NotificationService notifications;
-    NotificationController(NotificationService notifications) { this.notifications=notifications; }
+    private final NotificationDeletionService deletion;
+    NotificationController(NotificationService notifications,NotificationDeletionService deletion) { this.notifications=notifications;this.deletion=deletion; }
     record SettingsInput(@com.fasterxml.jackson.annotation.JsonProperty("notify") Boolean notifyEnabled,Boolean sound) {}
 
     @GetMapping("/notifications")
@@ -20,6 +21,10 @@ class NotificationController {
     NotificationService.Notification read(@PathVariable long id) { return notifications.read(id); }
     @PostMapping("/notifications/read-all")
     NotificationService.ReadAll readAll() { return notifications.readAll(); }
+    @DeleteMapping("/notifications/{id}")
+    NotificationDeletionService.DeleteResponse deleteNotification(@PathVariable long id) {return deletion.deleteNotification(id);}
+    @DeleteMapping("/notifications")
+    NotificationDeletionService.DeleteResponse deleteNotifications() {return deletion.deleteNotifications();}
     @GetMapping("/users/me/settings")
     NotificationService.Settings settings() { return notifications.settings(); }
     @PutMapping("/users/me/settings")

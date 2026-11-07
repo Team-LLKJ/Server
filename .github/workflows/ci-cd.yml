@@ -24,6 +24,8 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+      - name: Validate deployment configuration helper
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Verify
         run: chmod +x mvnw && ./mvnw -B verify
       - name: Test reports
@@ -110,6 +112,7 @@ jobs:
           persist-credentials: false
       - name: Deploy verified image on EC2
         env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
           IMAGE_REF: ${{ needs.image.outputs.reference }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
@@ -117,6 +120,7 @@ jobs:
           set -Eeuo pipefail
           [[ "$IMAGE_REF" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
           test -s /opt/lit/app.env
+          python3 scripts/configure-password-reset-url.py /opt/lit/app.env "$PRODUCTION_URL"
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           install -m 0644 infra/compose.yml /opt/lit/compose.yml
           install -m 0750 scripts/deploy.sh /opt/lit/deploy.sh

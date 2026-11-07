@@ -15,6 +15,7 @@ public final class TemplateModels {
                         @NotNull AiPolicy aiPolicy,@Size(max=10) List<?> criteria,
                         JsonNode antiCheat,@NotEmpty @Size(max=100) List<@NotNull @Valid QuestionInput> questions,
                         @Min(1) @Max(1440) Integer durationMinutes,@Min(1) Integer revision) {
+        public Input {if(aiPolicy==null)aiPolicy=AiPolicy.HINT_ONLY;}
         public Input(String title,String guidelines,AiPolicy aiPolicy,List<?> criteria,JsonNode antiCheat,List<QuestionInput> questions,Integer durationMinutes) {
             this(title,guidelines,aiPolicy,criteria,antiCheat,questions,durationMinutes,null);
         }
@@ -32,7 +33,10 @@ public final class TemplateModels {
     public record StartInput(@Min(1) @Max(1440) int expiresInMinutes) {}
     public record ClassView(String classId,String evaluationId,String assessmentId,String className,String state,String evaluationState,
                             String pin,String joinUrl,String qrUrl,Instant expiresAt,Instant endsAt,
-                            int participantCount,int submittedCount,int templateRevision) {}
+                            int participantCount,int submittedCount,int templateRevision) {
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String lobbyState() {return state.equals("READY")&&pin!=null?"WAITING":state;}
+    }
     public record View(String id,String title,String guidelines,AiPolicy aiPolicy,List<?> criteria,
                        JsonNode antiCheat,List<QuestionInput> questions,int durationMinutes,int revision,
                        int questionCount,int classCount,List<ClassView> classes,Instant createdAt,Instant updatedAt,Owner owner,String role,int collaboratorCount) {

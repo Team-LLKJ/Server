@@ -1,4 +1,7 @@
 spring:
+  web:
+    resources:
+      add-mappings: false
   datasource:
     url: ${DATABASE_URL:jdbc:h2:file:./data/lit}
     username: ${DATABASE_USER:sa}
@@ -61,6 +64,7 @@ lit:
       5: 1.0
   auth:
     mail-from: ${LIT_MAIL_FROM:}
+    password-reset-url: ${LIT_PASSWORD_RESET_URL:}
 
 management:
   endpoints:
