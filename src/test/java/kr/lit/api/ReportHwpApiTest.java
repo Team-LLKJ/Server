@@ -53,6 +53,34 @@ class ReportHwpApiTest extends AuthTestSupport {
         String qa=System.getProperty("lit.hwp.qa-dir");
         if(qa!=null){Files.createDirectories(Path.of(qa));Files.write(Path.of(qa,"lit-report-sample.hwp"),bytes);}
     }
+    @Test void exportsStyledTitleAndRealMetadataAndScoreTables() throws Exception {
+        var f=createFixture(true);
+        reports.saveReview(f.id(),f.pid(),new ReviewInput(0,Compliance.COMPLIANT,Arrays.stream(Criterion.values()).map(c->new Rating(c,3,"검토 근거")).toList(),"교사 의견"));
+        var report=reports.teacherGenerate(f.id(),f.pid());
+        var document=HWPReader.fromInputStream(new ByteArrayInputStream(hwp.exportReport(report,false)));
+        var section=document.getBodyText().getSectionList().get(0);
+        var title=section.getParagraph(0);
+        int charId=(int)title.getCharShape().getPositonShapeIdPairList().get(0).getShapeId();
+        var titleShape=document.getDocInfo().getCharShapeList().get(charId);
+        assertThat(titleShape.getBaseSize()).isEqualTo(2300);
+        assertThat(titleShape.getProperty().isBold()).isTrue();
+        assertThat(document.getDocInfo().getParaShapeList().get(title.getHeader().getParaShapeId()).getProperty1().getAlignment())
+                .isEqualTo(kr.dogfoot.hwplib.object.docinfo.parashape.Alignment.Center);
+        var tables=new ArrayList<kr.dogfoot.hwplib.object.bodytext.control.ControlTable>();
+        for(int i=0;i<section.getParagraphCount();i++) {
+            var controls=section.getParagraph(i).getControlList();
+            if(controls!=null)for(var control:controls)if(control instanceof kr.dogfoot.hwplib.object.bodytext.control.ControlTable table)tables.add(table);
+        }
+        assertThat(tables).hasSize(2);
+        assertThat(tables.get(0).getTable().getColumnCount()).isEqualTo(2);
+        assertThat(tables.get(0).getRowList()).hasSize(4);
+        var scores=tables.get(1);
+        assertThat(scores.getRowList()).hasSize(6);
+        assertThat(scores.getTable().getColumnCount()).isEqualTo(3);
+        assertThat(scores.getRowList().get(0).getCellList().get(0).getListHeader().getProperty().isTitleCell()).isTrue();
+        assertThat(scores.getTable().getProperty().isAutoRepeatTitleRow()).isTrue();
+        assertThat(extractText(hwp.exportReport(report,false))).contains("KST","1. 검토 상태 및 판단 한계","2. 5개 영역 - 교사 검토");
+    }
     @Test void exportedVersionsAreFrozenAndConversationOriginalsRequireOptIn() throws Exception {
         var f=createFixture(true);var first=reports.teacherGenerate(f.id(),f.pid());
         reports.saveReview(f.id(),f.pid(),new ReviewInput(0,Compliance.COMPLIANT,Arrays.stream(Criterion.values()).map(c->new Rating(c,4,"추가 검토 내용")).toList(),"두 번째 버전 의견"));

@@ -341,3 +341,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 ### 반별 대기실과 실제 시작
 
 ‘평가 시작하러 가기’는 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`(`{ "expiresInMinutes":60 }`)를 호출해 PIN·QR을 표시합니다. 학생 참가 중에는 WAITING을 유지하고, 대기실의 ‘평가 시작하기’에서 기존 `/start`(`{ "expiresInMinutes":45 }`)를 호출해야 풀이와 타이머가 시작됩니다. 학생은 기존 state 조회로 STARTED 전환을 확인합니다. 대기실 없이 start는409이며 프런트 두 버튼의 호출 분리가 필요합니다. [상세 흐름](docs/ASSESSMENT_CLASSES.md)을 참고하세요.
+
+### HWP 보고서 서식
+
+HWP 다운로드는 제목·학생 정보 표·영역별 점수표·섹션/문항 제목·검토 근거를 구분하는 보고서 서식을 제공합니다. 실제 HWP 표와 문단/글자 스타일을 사용하며 긴 답안은 일반 문단으로 보존합니다. API 경로·인증·저장 버전·원문 포함 옵션은 유지합니다. [HWP 내보내기](docs/HWP_EXPORT.md)를 참고하세요.
