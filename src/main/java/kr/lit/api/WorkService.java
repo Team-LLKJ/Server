@@ -244,7 +244,7 @@ public class WorkService {
         if(input.conversationId()!=null) details.put("conversationId",input.conversationId());
         long eventId=event(c,input.questionId(),input.type().name(),details);
         if(input.type().warning()) notifications.notifyOwner(id,NotificationService.Type.WARNING,"경고 이벤트 기록",
-                nickname(c.participantId())+" 학생에게 창 이탈·캡처·복사 시도 등 경고 이벤트가 기록되었습니다. 신고 기록만으로 부정행위를 판단하지 않습니다.",
+                nickname(c.participantId())+" 학생에게 창 이탈·캡처·복사 시도·전체화면 이탈·개발자 도구 열림 등 경고 이벤트가 기록되었습니다. 신고 기록만으로 부정행위를 판단하지 않습니다.",
                 c.participantId(),"warning:"+c.participantId());
         return db.queryForObject("SELECT * FROM learning_events WHERE id=?",(r,n)->new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),eventId);
     }

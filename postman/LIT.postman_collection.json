@@ -2328,7 +2328,7 @@
             "url": "{{baseUrl}}/api/teacher/assessments",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
+              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\",\n    \"FULLSCREEN_LEAVE\",\n    \"DEVTOOLS\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2392,7 +2392,7 @@
             "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
+              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\",\n    \"FULLSCREEN_LEAVE\",\n    \"DEVTOOLS\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2591,6 +2591,43 @@
             ],
             "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
           }
+        },
+        {
+          "name": "반 시작 및 PIN 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/start",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresInMinutes\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const r=pm.response.json(); pm.collectionVariables.set('pin', r.pin); pm.collectionVariables.set('evaluationId', r.evaluationId); }"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -3336,6 +3373,56 @@
             ],
             "url": "{{baseUrl}}/api/notifications",
             "description": "200 {deleted,unreadCount}. 현재 접근 가능한 본인 알림만 삭제. 반복은deleted=0."
+          }
+        }
+      ]
+    },
+    {
+      "name": "전체화면·개발자 도구 경고 이벤트",
+      "description": "antiCheat 설정 FULLSCREEN_LEAVE / DEVTOOLS. 이벤트는 설정 코드와 다른 FULLSCREEN_EXIT / DEVTOOLS_OPEN. 신고는 부정행위 확정·자동 감점이 아닙니다. 기존 이벤트와 합산60건/분.",
+      "item": [
+        {
+          "name": "전체화면 이탈 기록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"FULLSCREEN_EXIT\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"questionId\": \"{{questionId}}\"\n}"
+            },
+            "description": "201 Event(details.warning=true). 평가 시작 후 제출 전만 가능. 첫 경고만 교사 알림, warningCount와activity.warnings에 포함. 61번째 요청429 EVENT_RATE_LIMITED."
+          }
+        },
+        {
+          "name": "개발자 도구 열림 기록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"DEVTOOLS_OPEN\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"questionId\": \"{{questionId}}\"\n}"
+            },
+            "description": "201 Event(details.warning=true). 평가 시작 후 제출 전만 가능. 첫 경고만 교사 알림, warningCount와activity.warnings에 포함. 61번째 요청429 EVENT_RATE_LIMITED."
           }
         }
       ]

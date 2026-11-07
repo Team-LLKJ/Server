@@ -118,12 +118,14 @@
 | WINDOW_BLUR (= 기존 WINDOW_LEAVE) | 창 이탈 | O |
 | CAPTURE_SHORTCUT (= 기존 SHORTCUT_CAPTURE) | 캡처 단축키 | O |
 | COPY_ATTEMPT | 복사 시도 | O |
+| FULLSCREEN_EXIT | 전체화면 이탈 | O |
+| DEVTOOLS_OPEN | 개발자 도구 열림 | O |
 | PASTE | 붙여넣기 (`length` 글자 수 선택) | X (채점 신호) |
 | AI_ANSWER_COPY | AI 답변 복사 (`conversationId` 선택) | X (채점 신호) |
 
 - 기존 두 이름도 계속 받습니다. 새 화면은 위 이름을 쓰면 됩니다.
 - questionId·length(0~10,000,000)·conversationId는 선택입니다. 본인 대화가 아닌 conversationId는 404 CONVERSATION_NOT_FOUND.
-- 시각 범위·분당 60건 제한·시작 후 제출 전만 가능한 조건은 기존과 같습니다(이제 5개 유형 합산).
+- 시각 범위·분당 60건 제한·시작 후 제출 전만 가능한 조건은 기존과 같습니다(호환 이름 포함9개 유형 합산).
 - 교사 `GET .../participants/{pid}/learning-events`에 그대로 나오고(details에 `warning: true/false`), 학생별 경고 개수는 `submissions`의 `warningCount`에 들어갑니다.
 - 경고 기록만으로 부정행위를 판정하거나 감점하지 않습니다.
 

@@ -64,9 +64,9 @@ class GradingApiTest extends AuthTestSupport {
         var f=fixture(false);Instant at=Instant.now();
         for(var type:ClientEventType.values())work.recordClientEvent(f.id(),f.token(),new ClientEvent(type,at,f.q()));
         var turn=work.reserve(f.id(),f.token(),f.q(),new Ask("usage-chat","아이디어를 검증해줘"),"stub","local-stub");work.finish(turn,"응답",null);
-        var activity=grading.activity(f.id(),f.pid());assertThat(activity.studentContribution()).isNull();assertThat(activity.warningsTotal()).isEqualTo(5);
-        assertThat(activity.warnings().stream().map(ActivityWarning::type)).containsExactly("WINDOW_LEAVE","SHORTCUT_CAPTURE","WINDOW_BLUR","CAPTURE_SHORTCUT","COPY_ATTEMPT");
-        assertThat(activity.warnings().get(0).occurredAt()).isEqualTo(at);assertThat(activity.summary()).contains("AI 질문 1건","신고 5건");
+        var activity=grading.activity(f.id(),f.pid());assertThat(activity.studentContribution()).isNull();assertThat(activity.warningsTotal()).isEqualTo(7);
+        assertThat(activity.warnings().stream().map(ActivityWarning::type)).containsExactly("WINDOW_LEAVE","SHORTCUT_CAPTURE","WINDOW_BLUR","CAPTURE_SHORTCUT","COPY_ATTEMPT","FULLSCREEN_EXIT","DEVTOOLS_OPEN");
+        assertThat(activity.warnings().get(0).occurredAt()).isEqualTo(at);assertThat(activity.summary()).contains("AI 질문 1건","신고 7건");
         assertThat(activity.usage().stream().mapToDouble(Usage::percentage).sum()).isEqualTo(100.0);
         mvc.perform(request(get("/api/teacher/evaluations/"+f.id()+"/participants/"+f.pid()+"/learning-events"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("$[1].type").value("WINDOW_LEAVE"));
     }

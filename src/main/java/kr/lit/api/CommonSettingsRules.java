@@ -36,10 +36,10 @@ final class CommonSettingsRules {
         boolean valid=value.isObject()||value.isArray();
         if(value.isArray()) {
             var codes=new HashSet<String>();
-            for(var item:value)if(!item.isTextual()||!Set.of("TAB_LEAVE","PRINT_BLOCK").contains(item.asText())||!codes.add(item.asText()))valid=false;
+            for(var item:value)if(!item.isTextual()||!Set.of("TAB_LEAVE","PRINT_BLOCK","FULLSCREEN_LEAVE","DEVTOOLS").contains(item.asText())||!codes.add(item.asText()))valid=false;
         }
         if(!valid||value.toString().getBytes(StandardCharsets.UTF_8).length>16384)
-            throw new ApiError.Failure(HttpStatus.BAD_REQUEST,"INVALID_ANTI_CHEAT","antiCheat는 TAB_LEAVE·PRINT_BLOCK 코드 배열 또는16KiB 이하 JSON 객체여야 합니다.");
+            throw new ApiError.Failure(HttpStatus.BAD_REQUEST,"INVALID_ANTI_CHEAT","antiCheat는 TAB_LEAVE·PRINT_BLOCK·FULLSCREEN_LEAVE·DEVTOOLS 코드 배열 또는16KiB 이하 JSON 객체여야 합니다.");
         return value;
     }
     static String kind(List<?> criteria) {return criteria.isEmpty()||criteria.get(0) instanceof String?"TITLES":"RUBRIC";}

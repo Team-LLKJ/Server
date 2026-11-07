@@ -52,7 +52,7 @@ PDF 저장은 프런트의 브라우저 인쇄를 쓰므로 서버 API를 추가
 
 - 학생은 계정 없이 닉네임으로 참여하므로 `name`은 닉네임과 같은 값입니다.
 - `status`: 경고 이벤트가 1건 이상이면 `WARNING`, 아니면 제출 시 `SUBMITTED`, 그 외 `WRITING`. counts의 세 값은 겹치지 않으며 합이 totalElements입니다.
-- `warningCount`: WINDOW_LEAVE·SHORTCUT_CAPTURE·WINDOW_BLUR·CAPTURE_SHORTCUT·COPY_ATTEMPT 건수. PASTE·AI_ANSWER_COPY는 경고가 아니라 채점 신호라 세지 않습니다.
+- `warningCount`: WINDOW_LEAVE·SHORTCUT_CAPTURE·WINDOW_BLUR·CAPTURE_SHORTCUT·COPY_ATTEMPT·FULLSCREEN_EXIT·DEVTOOLS_OPEN 건수. PASTE·AI_ANSWER_COPY는 경고가 아니라 채점 신호라 세지 않습니다.
 - `totalScore`: 확정(`CONFIRMED`)이면 확정 총점, 아니면 AI 추천 총점. 미제출은 null.
 - `gradingStatus`: `NOT_STARTED`(교사 점수 없음) / `DRAFT`(일부 저장 또는 확정 뒤 수정) / `CONFIRMED`.
 - `submissionMode`: `MANUAL` / `AUTO_DEADLINE` / `AUTO_TEACHER_END`.

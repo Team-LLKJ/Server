@@ -34,6 +34,61 @@ class FrontendRequestedApiTest extends AuthTestSupport {
         mvc.perform(body(request(put("/api/teacher/evaluations/"+e.id()+"/configuration"),teacher),v)).andExpect(status().isOk()).andExpect(jsonPath("criteria[1]").value("자기 생각"));
         mvc.perform(request(get("/api/teacher/evaluations/"+e.id()+"/configuration"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("antiCheat[1]").value("PRINT_BLOCK"));
     }
+    @Test void fullscreenAndDevtoolsSettingsRoundTripThroughTemplateUpdatesAndWorkspace() throws Exception {
+        var input=templateInput();input.put("antiCheat",List.of("FULLSCREEN_LEAVE","DEVTOOLS"));
+        var t=ok(body(request(post("/api/teacher/assessments"),teacher),input));String id=t.path("id").asText();
+        assertThat(t.path("antiCheat")).isEqualTo(json.valueToTree(input.get("antiCheat")));
+        String classId=add(id).path("classId").asText();
+        input.put("revision",t.path("revision").asInt());input.put("antiCheat",List.of("TAB_LEAVE","PRINT_BLOCK","FULLSCREEN_LEAVE","DEVTOOLS"));
+        mvc.perform(body(request(put("/api/teacher/assessments/"+id),teacher),input)).andExpect(status().isOk())
+                .andExpect(jsonPath("antiCheat[2]").value("FULLSCREEN_LEAVE")).andExpect(jsonPath("antiCheat[3]").value("DEVTOOLS"));
+        mvc.perform(request(get("/api/teacher/assessments/"+id),teacher)).andExpect(status().isOk()).andExpect(jsonPath("antiCheat[3]").value("DEVTOOLS"));
+        mvc.perform(request(get("/api/teacher/evaluations/"+classId+"/configuration"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("antiCheat[2]").value("FULLSCREEN_LEAVE"));
+        var started=start(id,classId);as(teacher);var participant=evaluations.join(started.path("pin").asText(),"학생",null);
+        mvc.perform(get("/api/student/evaluations/"+classId+"/workspace").header("X-Participant-Token",participant.participantToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("antiCheat[3]").value("DEVTOOLS"));
+    }
+    @Test void newSettingsAreAcceptedByBothPutAliasesAndInvalidCodesStillFail() throws Exception {
+        var e=evaluations.create("전체화면 설정",60);var input=templateInput();input.remove("title");
+        input.put("antiCheat",List.of("FULLSCREEN_LEAVE","DEVTOOLS"));
+        for(String alias:List.of("questions","configuration")) {
+            mvc.perform(body(request(put("/api/teacher/evaluations/"+e.id()+"/"+alias),teacher),input))
+                    .andExpect(status().isOk()).andExpect(jsonPath("antiCheat[0]").value("FULLSCREEN_LEAVE"));
+            mvc.perform(request(get("/api/teacher/evaluations/"+e.id()+"/"+alias),teacher))
+                    .andExpect(status().isOk()).andExpect(jsonPath("antiCheat[1]").value("DEVTOOLS"));
+            for(var codes:List.of(List.of("DEVTOOLS","DEVTOOLS"),List.of("FULLSCREEN_EXIT"),List.of("UNKNOWN"))) {
+                var invalid=new LinkedHashMap<>(input);invalid.put("antiCheat",codes);
+                mvc.perform(body(request(put("/api/teacher/evaluations/"+e.id()+"/"+alias),teacher),invalid))
+                        .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_ANTI_CHEAT"));
+            }
+        }
+        var participant=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());
+        mvc.perform(get("/api/evaluations/"+e.id()+"/questions").header("X-Participant-Token",participant.participantToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("antiCheat[1]").value("DEVTOOLS"));
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"FULLSCREEN_EXIT","DEVTOOLS_OPEN"})
+    void newWarningsShareRateLimitCountInActivityAndNotifyOnlyOnce(String first) throws Exception {
+        var e=evaluations.create("경고 합산",60);work.configure(e.id(),new Configure(AiPolicy.DISABLED,List.of(new QuestionInput(1,"문항","문제"))));
+        var participant=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());
+        String other=first.equals("FULLSCREEN_EXIT")?"DEVTOOLS_OPEN":"FULLSCREEN_EXIT";
+        for(int i=0;i<60;i++) {
+            String type=i==0?first:i==1?other:i==2?"WINDOW_BLUR":"PASTE";
+            mvc.perform(body(post("/api/evaluations/"+e.id()+"/events").header("X-Participant-Token",participant.participantToken()),Map.of("type",type,"occurredAt",Instant.now())))
+                    .andExpect(status().isCreated()).andExpect(jsonPath("details.warning").value(i<3));
+            if(i==0)mvc.perform(request(get("/api/notifications/unread-count"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("unreadCount").value(1));
+        }
+        mvc.perform(body(post("/api/student/evaluations/"+e.id()+"/learning-events").header("X-Participant-Token",participant.participantToken()),Map.of("type","DEVTOOLS_OPEN","occurredAt",Instant.now())))
+                .andExpect(status().isTooManyRequests()).andExpect(jsonPath("code").value("EVENT_RATE_LIMITED"));
+        String base="/api/teacher/evaluations/"+e.id();
+        mvc.perform(request(get(base+"/students"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("items[0].warningCount").value(3));
+        mvc.perform(request(get(base+"/submissions"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("items[0].warningCount").value(3));
+        mvc.perform(request(get(base+"/students/"+participant.participantId()+"/activity"),teacher)).andExpect(status().isOk())
+                .andExpect(jsonPath("warningsTotal").value(3)).andExpect(jsonPath("warnings[0].type").value(first)).andExpect(jsonPath("warnings[1].type").value(other));
+        mvc.perform(request(get("/api/notifications/unread-count"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("unreadCount").value(1));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM grading_scores WHERE evaluation_id=?",Integer.class,e.id())).isZero();
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type IN ("+ClientEventType.clientSql()+")",Integer.class,participant.participantId())).isEqualTo(60);
+    }
     @Test void extensionUpdatesStudentDeadlineAndPreservesPinAndExistingAnswers() throws Exception {
         var e=evaluations.create("시간 연장",60);var conf=work.configure(e.id(),new Configure(AiPolicy.FULL,List.of(new QuestionInput(1,"문항","문제"))));
         var p=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());work.save(e.id(),p.participantToken(),conf.questions().get(0).id(),new SaveAnswer("기존 답안",0,AnswerSource.DIRECT,null));

@@ -43,9 +43,9 @@ public final class WorkModels {
     }
     public record SaveAnswer(@NotNull String content, @Min(0) int expectedVersion,
                              @NotNull AnswerSource source, @Size(max=64) String aiRequestId) {}
-    /** 학생 화면이 신고하는 이벤트. WINDOW_BLUR/CAPTURE_SHORTCUT은 기존 WINDOW_LEAVE/SHORTCUT_CAPTURE와 같은 경고로 취급합니다. */
+    /** 학생 화면이 신고하는 이벤트. 전체화면 이탈·개발자 도구 열림도 경고이며, 신고 자체가 부정행위 확정은 아닙니다. */
     public enum ClientEventType {
-        WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true),
+        WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true), FULLSCREEN_EXIT(true), DEVTOOLS_OPEN(true),
         PASTE(false), AI_ANSWER_COPY(false);
         private final boolean warning;
         ClientEventType(boolean warning) { this.warning=warning; }
