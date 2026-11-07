@@ -36,7 +36,7 @@ class CompletedContractApiTest extends AuthTestSupport {
         as(teacher);var p=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());
         var preview=work.review(e.id(),p.participantToken());work.submit(e.id(),p.participantToken(),preview.reviewToken());evaluations.participant(e.id(),p.participantToken(),true);
         String base="/api/evaluations/"+e.id();
-        mvc.perform(get(base+"/report/hwp").header("X-Participant-Token",p.participantToken())).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("REPORT_NOT_FOUND"));
+        mvc.perform(get(base+"/report/hwp").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(content().contentType("application/x-hwp"));
         mvc.perform(post(base+"/reports").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk());
         mvc.perform(get(base+"/report").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk());
         mvc.perform(get(base+"/report/hwp").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(content().contentType("application/x-hwp"));

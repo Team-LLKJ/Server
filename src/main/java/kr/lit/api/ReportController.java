@@ -19,6 +19,8 @@ class ReportController {
  Detail detail(@PathVariable String id,@PathVariable String participantId){return reports.detail(id,participantId);}
  @PutMapping("/teacher/evaluations/{id}/students/{participantId}/review")
  TeacherReview review(@PathVariable String id,@PathVariable String participantId,@Valid @RequestBody ReviewInput input){return reports.saveReview(id,participantId,input);}
+ @GetMapping({"/teacher/evaluations/{id}/students/{participantId}/ai-disclosure","/teacher/evaluations/{id}/participants/{participantId}/ai-disclosure"})
+ Object disclosure(@PathVariable String id,@PathVariable String participantId){return reports.teacherDisclosure(id,participantId);}
  @PostMapping("/teacher/evaluations/{id}/students/{participantId}/reports")
  UsageReport generate(@PathVariable String id,@PathVariable String participantId){return reports.teacherGenerate(id,participantId);}
  @GetMapping("/teacher/evaluations/{id}/students/{participantId}/reports")

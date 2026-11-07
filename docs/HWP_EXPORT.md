@@ -71,3 +71,7 @@ Cache-Control: no-store
 ## 공통 보고서 서식 개정
 
 PDF·HWP 공통 데이터와 레이아웃, participants 경로 별칭, KST/한글 표시 및 대화 부록 정책은 [REPORT_FORMAT.md](REPORT_FORMAT.md)를 참고하세요. feature/hwp-report-format 구현·미배포이며 기존 버전 저장 내용은 보존합니다.
+
+## 일괄 내보내기·최초 HWP 조회 보완
+
+feature/backend-integration-completion에서 ZIP 내보내기 및 version 생략·제출 완료·저장본 없음인 HWP 자동 생성을 추가했습니다. 미제출/버전 지정의404와 기존 버전은 유지합니다. [현재 계약](BACKEND_INTEGRATION_COMPLETION.md) 참고.

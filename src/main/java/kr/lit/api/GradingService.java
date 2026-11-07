@@ -39,8 +39,8 @@ public class GradingService {
             String qid=turn.path("questionId").asText();if(questionId!=null&&!questionId.equals(qid))continue;
             String key=turn.path("id").asText(turn.path("requestId").asText());
             var created=time(turn.path("createdAt"));var completed=time(turn.path("completedAt"));
-            messages.add(new Message(key+"-USER","USER",turn.path("questionText").asText(),qid,created,"COMPLETED",null));
-            messages.add(new Message(key+"-AI","AI",turn.path("answerText").isNull()?null:turn.path("answerText").asText(),qid,completed==null?created:completed,turn.path("state").asText(),turn.path("errorCode").isNull()?null:turn.path("errorCode").asText()));
+            messages.add(new Message(key+"-USER","USER",turn.path("questionText").asText(),qid,created,"COMPLETED",null,turn.has("id")?turn.path("id").asLong():null));
+            messages.add(new Message(key+"-AI","AI",turn.path("answerText").isNull()?null:turn.path("answerText").asText(),qid,completed==null?created:completed,turn.path("state").asText(),turn.path("errorCode").isNull()?null:turn.path("errorCode").asText(),turn.has("id")?turn.path("id").asLong():null));
         }
         messages.sort(Comparator.comparing(Message::createdAt,Comparator.nullsFirst(Comparator.naturalOrder())).thenComparing(m->m.role().equals("USER")?0:1).thenComparing(Message::id));
         return messages.stream().skip((long)page*size).limit(size).toList();

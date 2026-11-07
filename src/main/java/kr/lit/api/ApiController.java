@@ -20,10 +20,10 @@ class ApiController {
  private final EvaluationService service;
  @Value("${lit.join-base-url}") private String baseUrl;
  ApiController(EvaluationService service){this.service=service;}
- record Create(@NotBlank @Size(max=100) String title,@Min(1) @Max(1440) int expiresInMinutes,@Size(max=10000) String evaluationContent,@Size(max=10000) String guidelines,@Min(1) @Max(1440) Integer durationMinutes){}
+ record Create(@NotBlank @Size(max=100) String title,@Min(1) @Max(1440) int expiresInMinutes,@Size(max=10000) String evaluationContent,@Size(max=10000) String guidelines,@Min(1) @Max(1440) Integer durationMinutes,@Size(max=10) java.util.List<?> criteria,com.fasterxml.jackson.databind.JsonNode antiCheat){}
  record Join(String pin,String nickname,@Size(max=64) String participantToken){}
  @PostMapping("/teacher/evaluations") @ResponseStatus(HttpStatus.CREATED)
- Object create(@Valid @RequestBody Create body){return service.create(body.title(),body.expiresInMinutes(),Guidelines.resolve(body.evaluationContent(),body.guidelines()),body.durationMinutes());}
+ Object create(@Valid @RequestBody Create body){return service.create(body.title(),body.expiresInMinutes(),Guidelines.resolve(body.evaluationContent(),body.guidelines()),body.durationMinutes(),body.criteria(),body.antiCheat());}
  @GetMapping("/teacher/evaluations")
  Object mine(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size){return service.mine(page,size);}
  @GetMapping("/teacher/evaluations/{id}") Object details(@PathVariable String id){return service.details(id);}
