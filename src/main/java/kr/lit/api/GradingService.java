@@ -57,15 +57,11 @@ public class GradingService {
         }
         var purposes=new TreeMap<String,Integer>();int total=0;
         for(var classification:detail.analysis().classifications())for(String purpose:classification.purposes()){purposes.merge(purpose,1,Integer::sum);total++;}
-        var usage=new ArrayList<Usage>();
-        for(var entry:purposes.entrySet()) {
-            double percentage=Math.round(entry.getValue()*1000.0/total)/10.0;
-            usage.add(new Usage(purposeLabel(entry.getKey()),percentage,percentage>=50?"높음":percentage>=20?"보통":"낮음",entry.getKey().equals("UNCLASSIFIED")?"neutral":"blue"));
-        }
+        var usage=UsageDistribution.calculate(purposes);
         long warningCount=warnings.size();
         var recent=warnings.stream().skip(Math.max(0,warnings.size()-200)).toList();
         String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·캡처·복사 시도·전체화면 이탈·개발자 도구 열림 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";
-        return new Activity(null,usage,recent,warningCount,warningCount>200,summary,detail.analysis().method());
+        return new Activity(null,usage,recent,warningCount,warningCount>200,summary,detail.analysis().method(),AssessmentTrace.getPasteEvents(detail.work()),purposes.getOrDefault("UNCLASSIFIED",0));
     }
     private String purposeLabel(String purpose) {return switch(purpose) {
         case "IDEATION"->"아이디어 탐색";case "RESEARCH"->"자료 조사";case "STRUCTURING"->"구조화";

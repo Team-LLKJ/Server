@@ -236,6 +236,7 @@ public class WorkService {
     private String nickname(String participantId) {
         return db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,participantId);
     }
+    private boolean splitsSurrogate(String text,int at){return at>0&&at<text.length()&&Character.isHighSurrogate(text.charAt(at-1))&&Character.isLowSurrogate(text.charAt(at));}
     public Event recordClientEvent(String id,String token,ClientEvent input) {
         var c=authenticate(id,token);editable(c);
         if(input.questionId()!=null) question(id,input.questionId());
@@ -246,7 +247,16 @@ public class WorkService {
         if(count>=60) throw failure(HttpStatus.TOO_MANY_REQUESTS,"EVENT_RATE_LIMITED","이벤트 요청이 많습니다. 잠시 후 다시 시도해주세요.");
         if(input.conversationId()!=null&&db.queryForObject("SELECT COUNT(*) FROM ai_turns WHERE id=? AND participant_id=?",Integer.class,input.conversationId(),c.participantId())==0)
             throw failure(HttpStatus.NOT_FOUND,"CONVERSATION_NOT_FOUND","본인의 AI 대화가 아닙니다.");
+        boolean range=input.start()!=null||input.end()!=null||input.answerVersion()!=null;
+        if(range){
+            if(input.type()!=ClientEventType.PASTE||input.questionId()==null||input.start()==null||input.end()==null||input.answerVersion()==null||input.start()>input.end())throw failure(HttpStatus.BAD_REQUEST,"INVALID_PASTE_RANGE","붙여넣기 구간·문항·답안 버전을 확인해주세요.");
+            var saved=answer(c.participantId(),input.questionId());
+            if(saved.version()!=input.answerVersion())throw failure(HttpStatus.CONFLICT,"PASTE_VERSION_CONFLICT","최신 저장 답안 버전으로 전송해주세요.");
+            String text=String.join("\n",AssessmentAnalyzer.paragraphs(saved.content()));
+            if(input.end()>text.length()||splitsSurrogate(text,input.start())||splitsSurrogate(text,input.end()))throw failure(HttpStatus.BAD_REQUEST,"INVALID_PASTE_RANGE","정규화 답안 텍스트의 UTF-16 구간을 확인해주세요.");
+        }
         var details=new LinkedHashMap<String,Object>();
+        if(range){details.put("start",input.start());details.put("end",input.end());details.put("answerVersion",input.answerVersion());}
         details.put("occurredAt",input.occurredAt().toString());details.put("clientReported",true);
         details.put("warning",input.type().warning());
         if(input.length()!=null) details.put("length",input.length());

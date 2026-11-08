@@ -104,3 +104,7 @@ me/동의는 기존 active 참가 토큰을 요구하며 잘못된·다른 평�
 대기실 `POST /api/teacher/assessments/{assessmentId}/classes/{classId}/lobby`: state=READY, lobbyState=WAITING, PIN/QR 발급·반복 호출 PIN 유지. 별도 /start부터 타이머 시작.
 
 알림 `DELETE /api/notifications/{id}`, `DELETE /api/notifications`: {deleted,unreadCount}. 비밀번호 재설정 `POST /api/auth/password-reset/request` {email}, /confirm {token,newPassword}. 운영 배포 여부와 신규 기능의 미배포 여부를 구분하세요. 프런트 확정 화면·목 데이터 제거·로컬 환경설정은 수정하지 않습니다.
+
+## 구조화 근거·가입 동의 후속 계약
+
+분석 reasons/정확한 quote, 정규화 답안 segments·PASTE 기록, 학생 상태/lastWarningAt, SSE와 비동기 ZIP은 [SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md](SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md)에 정의합니다. 기존 동기 ZIP·대화 ID·feedback 계약은 유지합니다.

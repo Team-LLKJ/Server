@@ -374,3 +374,7 @@ PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합
 ### 프런트 연동 보완
 
 반·수행평가 폴더 보고서 ZIP, 최초 HWP 생성, 생성 시 criteria/antiCheat, 대화 연결 ID, AI 사용 설명 동결·교사 조회·보고서, 참가 정보 me와 안내 동의 API를 제공합니다. [경로·요청·오류·기존 기능 대조](docs/BACKEND_INTEGRATION_COMPLETION.md).
+
+### 가입 동의와 구조화 분석·실시간 연동
+
+가입 시 약관/개인정보 버전·동의를 필수 저장하고 공개 정책 버전을 제공합니다. 분석 reasons/evidence.quote·유사도 구간·버전별 PASTE 관측, 종합 평가, 학생 상태/lastWarningAt, SSE 및 비동기 ZIP 작업을 지원합니다. .mjs MIME 보정은 서버 배포 단계에 포함합니다. [요청·오류·프런트 연결 계약](docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md).

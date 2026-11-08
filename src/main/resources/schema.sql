@@ -273,3 +273,11 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
  invalidated_at TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id,created_at);
+
+CREATE TABLE IF NOT EXISTS report_archive_jobs (
+ id VARCHAR(36) PRIMARY KEY,user_id VARCHAR(36) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+ scope_id VARCHAR(36) NOT NULL,assessment BOOLEAN NOT NULL,class_id VARCHAR(36),format VARCHAR(3) NOT NULL,
+ include_conversations BOOLEAN NOT NULL,status VARCHAR(20) NOT NULL,file_path VARCHAR(2000),error_code VARCHAR(80),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,started_at TIMESTAMP WITH TIME ZONE,completed_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_archive_jobs_pending ON report_archive_jobs(status,created_at);

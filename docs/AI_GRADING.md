@@ -289,3 +289,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 ## 교사 근거 계약 보완
 
 level만 전송하면 feedback을 유지합니다. feedback의 서버 제한은2000자, 초과400 INVALID_REQUEST. feedback=""는 근거 삭제입니다. 확정 오류 missingCriteria 및 보고서의 교사 근거 우선 적용은 [GRADING_FEEDBACK.md](GRADING_FEEDBACK.md)를 참고하세요.
+
+## 구조화 근거·가입 동의 후속 계약
+
+분석 reasons/정확한 quote, 정규화 답안 segments·PASTE 기록, 학생 상태/lastWarningAt, SSE와 비동기 ZIP은 [SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md](SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md)에 정의합니다. 기존 동기 ZIP·대화 ID·feedback 계약은 유지합니다.

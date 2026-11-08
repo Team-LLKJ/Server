@@ -24,11 +24,12 @@ public class AuthService {
     private final SignupEmailService signupEmail;
     private final PasswordChangeService passwordChangeService;
     private final NicknameService nicknameService;
+    private final kr.lit.api.ConsentService consents;
     private final String dummyHash;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail,PasswordChangeService passwordChangeService,NicknameService nicknameService) {
+    public AuthService(JdbcTemplate db,PasswordEncoder encoder,SignupEmailService signupEmail,PasswordChangeService passwordChangeService,NicknameService nicknameService,kr.lit.api.ConsentService consents) {
         this.passwordChangeService=passwordChangeService;
-        this.nicknameService=nicknameService;
+        this.nicknameService=nicknameService;this.consents=consents;
         this.db=db;this.encoder=encoder;this.signupEmail=signupEmail;this.dummyHash=encoder.encode("non-user-timing-comparison-only");
     }
     public static String hash(String value) {
@@ -53,8 +54,11 @@ public class AuthService {
         return me(id);
     }
     public User signupTeacher(TeacherSignup s) {
+        var request=new kr.lit.api.ConsentModels.ConsentRequest(s.termsVersion(),s.termsAccepted(),s.privacyVersion(),s.privacyAccepted());
+        consents.validateConsent(request);
         signupEmail.consumeVerification(s.email(),s.emailVerificationToken());
-        return signup(s.username(),s.password(),s.email(),s.name(),"",Role.TEACHER,null,null,null);
+        var user=signup(s.username(),s.password(),s.email(),s.name(),"",Role.TEACHER,null,null,null);
+        consents.recordSignupConsents(user.id(),request);return user;
     }
     private Tokens issue(String userId,String familyId,OffsetDateTime familyExpiry) {
         String access=secret(),refresh=secret(),id=UUID.randomUUID().toString();var timestamp=now();

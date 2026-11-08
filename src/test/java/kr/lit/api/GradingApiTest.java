@@ -35,7 +35,7 @@ class GradingApiTest extends AuthTestSupport {
         assertThat(all.path("items")).isEqualTo(all.path("students"));assertThat(all.path("students").size()).isEqualTo(1);
         var filtered=ok(request(get(path).param("query","하"),teacher));assertThat(filtered.path("totalElements").asInt()).isEqualTo(2);
         as(teacher);var warning=reports.students(e.id(),0,100).students().stream().filter(s->s.participantId().equals(third.participantId())).findFirst().orElseThrow();
-        assertThat(warning.status()).isEqualTo("WARNING");assertThat(warning.submissionStatus()).isEqualTo("SUBMITTED");
+        assertThat(warning.status()).isEqualTo("SUBMITTED");assertThat(warning.submissionStatus()).isEqualTo("SUBMITTED");
         mvc.perform(request(get(path).param("query","%"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("totalElements").value(0));
         mvc.perform(request(get(path).param("size","101"),teacher)).andExpect(status().isBadRequest());
     }

@@ -21,7 +21,7 @@ public final class ReportModels {
   public TeacherReview(int version,Compliance compliance,List<Rating> ratings,String comment,String teacherId,Instant reviewedAt){this(version,compliance,ratings,comment,teacherId,reviewedAt,4);}
  }
  public record Student(String participantId,String nickname,String presence,String submissionStatus,
-                       String workStatus,boolean warning,Instant submittedAt,Integer reportVersion,String reviewStatus,String status,boolean activityWarning,int warningCount,Instant lastEventAt) {}
+                       String workStatus,boolean warning,Instant submittedAt,Integer reportVersion,String reviewStatus,String status,boolean activityWarning,int warningCount,Instant lastEventAt,Instant lastWarningAt) {}
  public record Counts(long submitted,long warning,long writing) {}
  public record Students(List<Student> items,int page,int size,long totalElements,long totalPages,Counts counts,List<Student> students) {}
  public record ScoreInput(@com.fasterxml.jackson.annotation.JsonProperty(required=true) @Min(0) @Max(20) Integer score,
@@ -34,7 +34,7 @@ public final class ReportModels {
  public record Message(String id,String role,String content,String questionId,Instant createdAt,String status,String errorCode,Long conversationId) {}
  public record Usage(String name,double percentage,String level,String colorKey) {}
  public record ActivityWarning(long eventId,String type,String questionId,Instant occurredAt,Instant receivedAt,boolean clientReported) {}
- public record Activity(Double studentContribution,List<Usage> usage,List<ActivityWarning> warnings,long warningsTotal,boolean hasMoreWarnings,String summary,String analysisMethod) {}
+ public record Activity(Double studentContribution,List<Usage> usage,List<ActivityWarning> warnings,long warningsTotal,boolean hasMoreWarnings,String summary,String analysisMethod,List<AssessmentModels.PasteObservation> pasteEvents,int unclassifiedCount) {}
  public record Classification(String requestId,String questionId,List<String> purposes,List<String> stages,
                               String evidence,String confidence) {}
  public record Analysis(String method,String status,List<Classification> classifications,List<String> missingData,

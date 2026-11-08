@@ -16,7 +16,7 @@ import java.util.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:authenticated;DB_CLOSE_DELAY=-1","lit.ai.provider=stub","lit.evaluation.expiry-check-ms=3600000","lit.cors.allowed-origins=https://frontend.example.test","lit.evaluation.end-grace-seconds=0","lit.grading.job-interval-ms=3600000","lit.grading.process-interval-ms=3600000"})
+@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:authenticated;DB_CLOSE_DELAY=-1","lit.ai.provider=stub","lit.evaluation.expiry-check-ms=3600000","lit.cors.allowed-origins=https://frontend.example.test","lit.evaluation.end-grace-seconds=0","lit.grading.job-interval-ms=3600000","lit.grading.process-interval-ms=3600000","lit.archive.interval-ms=3600000","lit.events.interval-ms=3600000"})
 @AutoConfigureMockMvc
 abstract class AuthTestSupport {
     @Autowired MockMvc mvc;
@@ -34,7 +34,7 @@ abstract class AuthTestSupport {
     Tokens newTeacher() {
         String suffix=unique(),email=suffix+"@example.test";
         String token=createVerifiedEmail(email);
-        var u=auth.signupTeacher(new TeacherSignup("t_"+suffix,PASSWORD,email,"교사",token));
+        var u=auth.signupTeacher(new TeacherSignup("t_"+suffix,PASSWORD,email,"교사",token,"v1",true,"v1",true));
         return auth.login(new Login(u.username(),PASSWORD));
     }
     // 인증 API 자체는 SignupEmailApiTest에서 메일 대역으로 검증합니다.

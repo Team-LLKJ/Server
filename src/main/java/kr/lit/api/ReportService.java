@@ -38,7 +38,7 @@ public class ReportService {
    String status=submitted!=null?"SUBMITTED":closed?"CLOSED_UNSUBMITTED":"NOT_SUBMITTED";
    return new Student(pid,r.getString("nickname"),!active?"LEFT":connected?"CONNECTED":"DISCONNECTED",status,
      submitted!=null?"SUBMITTED":e.state().equals("ENDED")?"ENDED":closed?"EXPIRED":e.state().equals("STARTED")?"IN_PROGRESS":"WAITING",
-     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),warningCount>0?"WARNING":submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt);
+     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt,db.queryForObject("SELECT MAX(created_at) last_warning_at FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",(w,index)->instant(w,"last_warning_at"),pid));
   },pid,id).get(0);
  }
  public Students students(String id,int page,int size){return students(id,page,size,"");}

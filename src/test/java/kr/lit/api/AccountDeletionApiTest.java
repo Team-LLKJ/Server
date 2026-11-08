@@ -35,7 +35,7 @@ class AccountDeletionApiTest extends AuthTestSupport {
         as(other);var otherEvaluation=evaluations.create("다른 사람 평가",60);as(teacher);
         var secondSession=auth.login(new Login(teacher.user().username(),PASSWORD));
         db.update("INSERT INTO user_settings(user_id,updated_at) VALUES (?,CURRENT_TIMESTAMP)",teacher.user().id());
-        db.update("INSERT INTO user_policy_consents VALUES (?,'TERMS_OF_SERVICE','v1',CURRENT_TIMESTAMP)",teacher.user().id());
+        db.update("INSERT INTO user_policy_consents VALUES (?,'TERMS_OF_SERVICE','legacy-v0',CURRENT_TIMESTAMP)",teacher.user().id());
         // 다른 소유자의 채점 이력에 남는 익명 작성자 참조가 FK 오류를 내지 않는지 확인합니다.
         db.update("INSERT INTO assessment_collaborators VALUES (?,?,?,CURRENT_TIMESTAMP)",fixture.templateId(),other.user().id(),teacher.user().id());
         mvc.perform(body(request(delete("/api/users/me"),teacher),Map.of("currentPassword",PASSWORD,"deleteOwnedData",true))).andExpect(status().isOk());
@@ -53,7 +53,7 @@ class AccountDeletionApiTest extends AuthTestSupport {
         }
         mvc.perform(body(request(post("/api/auth/login"),null),new Login(teacher.user().username(),PASSWORD))).andExpect(status().isUnauthorized());
         String proof=createVerifiedEmail(teacher.user().email());
-        assertThat(auth.signupTeacher(new TeacherSignup(teacher.user().username(),PASSWORD,teacher.user().email(),"재가입",proof)).id()).isNotEqualTo(teacher.user().id());
+        assertThat(auth.signupTeacher(new TeacherSignup(teacher.user().username(),PASSWORD,teacher.user().email(),"재가입",proof,"v1",true,"v1",true)).id()).isNotEqualTo(teacher.user().id());
     }
     @Test void rejectWrongPasswordMissingConsentAndRunningEvaluationWithoutDeletingAnything() throws Exception {
         as(teacher);var evaluation=evaluations.create("진행 중 평가",60);evaluations.join(evaluation.pin(),"참가자",null);evaluations.start(evaluation.id());

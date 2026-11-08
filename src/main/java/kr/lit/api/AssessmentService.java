@@ -118,7 +118,7 @@ public class AssessmentService {
     private Analysis stored(String id,String pid,boolean computeIfMissing) {
         if(!submitted(pid)) return null;
         var rows=db.query("SELECT analysis_status,result_json FROM grading_analyses WHERE participant_id=?",(r,n)->new String[]{r.getString("analysis_status"),r.getString("result_json")},pid);
-        if(!rows.isEmpty()&&"DONE".equals(rows.get(0)[0])&&rows.get(0)[1]!=null) return decode(rows.get(0)[1],new TypeReference<Analysis>(){});
+        if(!rows.isEmpty()&&"DONE".equals(rows.get(0)[0])&&rows.get(0)[1]!=null) {var saved=decode(rows.get(0)[1],new TypeReference<Analysis>(){});if(AssessmentAnalyzer.MODEL.equals(saved.model()))return saved;}
         if(!computeIfMissing) return null;
         return analyzeAndStore(id,pid);
     }
@@ -130,6 +130,7 @@ public class AssessmentService {
                 pid,id,encode(result),analyzedAt,analyzedAt);
         return result;
     }
+    public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
     public Analysis analysis(String id,String pid) {
         teacher(id);person(id,pid);
         var result=stored(id,pid,true);
@@ -187,7 +188,7 @@ public class AssessmentService {
         var out=new ArrayList<CriterionScore>();double ai=0,teacher=0,current=0;boolean allTeacher=true,anyAi=false;int recommendedMax=0;var missingAi=new ArrayList<String>();
         for(var c:list) {
             var ind=c.indicator()==Indicator.MANUAL?null:indicators.get(c.indicator());
-            AiScore aiScore=ind==null||ind.level()==null?null:new AiScore(ind.level(),score(c.maxScore(),ind.level()),ind.reason(),ind.evidence());
+            AiScore aiScore=ind==null||ind.level()==null?null:new AiScore(ind.level(),score(c.maxScore(),ind.level()),ind.reason(),ind.evidence(),ind.reasons());
             var row=teacherRows.get(c.criterionId());
             TeacherScore t=row==null?null:new TeacherScore(row.level(),score(c.maxScore(),row.level()),row.feedback(),row.updatedAt());
             if(aiScore!=null) { ai+=aiScore.score();anyAi=true;recommendedMax+=c.maxScore(); } else missingAi.add(c.name());
@@ -199,7 +200,7 @@ public class AssessmentService {
         var compliance=new ComplianceReview(analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),
                 result==null||result.decision()==null?null:ComplianceDecision.valueOf(result.decision()),result==null?null:result.note());
         return new Scores(pid,out,anyAi?round2(ai):null,allTeacher&&!list.isEmpty()?round2(teacher):null,round2(current),status,
-                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi);
+                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi,analysis==null?"제출 후 분석할 수 있습니다.":analysis.summary());
     }
     private static double round2(double v) { return Math.round(v*100)/100.0; }
     public Scores scores(String id,String pid) { teacher(id);person(id,pid);return scoresView(id,pid,stored(id,pid,true)); }
@@ -304,9 +305,9 @@ public class AssessmentService {
             }
             var view=scoresView(id,pid,analysis);
             Double totalScore="CONFIRMED".equals(view.status())?view.confirmedTotal():null;
-            items.add(new SubmissionRow(pid,(String)row[1],(String)row[1],warnings>0?"WARNING":done?"SUBMITTED":"WRITING",done,
+            items.add(new SubmissionRow(pid,(String)row[1],(String)row[1],done?"SUBMITTED":"WRITING",done,
                     done?"SUBMITTED":"NOT_SUBMITTED",at,(String)row[3],warnings,view.status(),totalScore,view.totalAi(),
-                    analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),done?(analysis==null?"FAILED":analysis.status()):"NOT_SUBMITTED",view.recommendedMaxScore(),(Instant)row[5]));
+                    analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),done?(analysis==null?"FAILED":analysis.status()):"NOT_SUBMITTED",view.recommendedMaxScore(),(Instant)row[5],db.queryForObject("SELECT MAX(created_at) last_warning_at FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",(r,n)->instant(r,"last_warning_at"),pid)));
         }
         return new Submissions(id,items,page,size,total,(total+size-1)/size,new SubmissionCounts(submittedCount,warning,total-warning-submittedCount,confirmed));
     }

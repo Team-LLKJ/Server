@@ -262,7 +262,7 @@
             "url": "{{baseUrl}}/api/auth/signup/teacher",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -289,7 +289,7 @@
             "url": "{{baseUrl}}/api/auth/signup/teacher",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3713,6 +3713,112 @@
               "mode": "raw",
               "raw": "{\n  \"title\": \"평가\",\n  \"expiresInMinutes\": 60,\n  \"criteria\": [\n    \"비판적 검토\"\n  ],\n  \"antiCheat\": [\n    \"FULLSCREEN\",\n    \"DEVTOOLS\"\n  ]\n}"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "가입 동의·구조화 분석·실시간·비동기 ZIP",
+      "item": [
+        {
+          "name": "공개 정책 버전",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/policies/current",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "분석 정의",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/analysis/definition",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "붙여넣기 구간 신고",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PASTE\",\n  \"occurredAt\": \"2026-11-08T08:00:00Z\",\n  \"questionId\": \"{{questionId}}\",\n  \"length\": 12,\n  \"start\": 0,\n  \"end\": 12,\n  \"answerVersion\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "실시간 이벤트 SSE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/live-events?afterId=0",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 작업 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/report-archive-jobs?format=HWP",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 상태",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/report-archive-jobs/{{archiveJobId}}",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 다운로드",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/report-archive-jobs/{{archiveJobId}}/download",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
           }
         }
       ]

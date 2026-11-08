@@ -63,7 +63,9 @@ public final class WorkModels {
     }
     public record ClientEvent(@NotNull ClientEventType type, @NotNull Instant occurredAt,
                               @Size(max=36) String questionId,
-                              @Min(0) @Max(10000000) Integer length, @Min(1) Long conversationId) {
+                              @Min(0) @Max(10000000) Integer length, @Min(1) Long conversationId,
+                              @Min(0) @Max(10000000) Integer start,@Min(0) @Max(10000000) Integer end,@Min(0) Integer answerVersion) {
+        public ClientEvent(ClientEventType type,Instant occurredAt,String questionId,Integer length,Long conversationId){this(type,occurredAt,questionId,length,conversationId,null,null,null);}
         public ClientEvent(ClientEventType type,Instant occurredAt,String questionId) { this(type,occurredAt,questionId,null,null); }
     }
     public record Disclosure(@NotNull @Size(max=500) String tools, @NotNull @Size(max=4000) String usedParts,
