@@ -1,0 +1,29 @@
+name: Configure LIT domain HTTPS
+on:
+  push:
+    branches: [feature/automatic-ai-disclosure]
+    paths: ['.github/workflows/domain-https.yml', 'scripts/configure-domain-https.py']
+permissions:
+  contents: read
+concurrency:
+  group: lit-domain-https
+  cancel-in-progress: false
+jobs:
+  configure:
+    runs-on: [self-hosted, linux, x64, lit-production]
+    timeout-minutes: 10
+    steps:
+      - name: Inspect current HTTPS configuration
+        run: |
+          set -eu
+          sudo -n nginx -T
+          if command -v certbot >/dev/null; then sudo -n certbot certificates; fi
+          command -v certbot || true
+          systemctl list-timers --all --no-pager | grep -E 'certbot|acme' || true
+          sudo -n find /etc/letsencrypt/renewal /opt/lit -maxdepth 1 -name '*.conf' -o -name '*cert*' 2>/dev/null || true
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          keys={'LIT_CORS_ALLOWED_ORIGINS','LIT_JOIN_BASE_URL','LIT_PASSWORD_RESET_URL'}
+          for line in Path('/opt/lit/app.env').read_text().splitlines():
+              if line.partition('=')[0] in keys: print(line)
+          PY
