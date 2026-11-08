@@ -13,17 +13,13 @@ jobs:
     runs-on: [self-hosted, linux, x64, lit-production]
     timeout-minutes: 10
     steps:
-      - name: Inspect current HTTPS configuration
+      - name: Inspect certificate renewal and prepare disk space
         run: |
           set -eu
-          sudo -n nginx -T
-          if command -v certbot >/dev/null; then sudo -n certbot certificates; fi
-          command -v certbot || true
-          systemctl list-timers --all --no-pager | grep -E 'certbot|acme' || true
-          sudo -n find /etc/letsencrypt/renewal /opt/lit -maxdepth 1 -name '*.conf' -o -name '*cert*' 2>/dev/null || true
-          sudo -n python3 - <<'PY'
-          from pathlib import Path
-          keys={'LIT_CORS_ALLOWED_ORIGINS','LIT_JOIN_BASE_URL','LIT_PASSWORD_RESET_URL'}
-          for line in Path('/opt/lit/app.env').read_text().splitlines():
-              if line.partition('=')[0] in keys: print(line)
-          PY
+          df -h /opt
+          docker builder prune --all --force
+          df -h /opt
+          sudo -n find /opt /etc/cron.d /etc/systemd/system /usr/local/bin -maxdepth 4 \( -iname '*certbot*' -o -iname '*acme*' -o -iname '*renew*' \) -print 2>/dev/null || true
+          sudo -n awk '/^(authenticator|installer|server|webroot_path|account|cert|privkey|chain|fullchain|key_type|pre_hook|post_hook|renew_hook|deploy_hook|archive_dir|version|profile|preferred_profile|preferred_challenges) / {print}' /etc/letsencrypt/renewal/lit-api-ip.conf
+          sudo -n find /etc/letsencrypt/renewal-hooks -maxdepth 2 -type f -print 2>/dev/null || true
+          docker ps --format '{{.Names}} {{.Image}}'
