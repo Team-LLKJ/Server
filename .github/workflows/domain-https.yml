@@ -13,13 +13,9 @@ jobs:
     runs-on: [self-hosted, linux, x64, lit-production]
     timeout-minutes: 10
     steps:
-      - name: Inspect certificate renewal and prepare disk space
+      - name: Inspect existing renewal runner
         run: |
           set -eu
+          sudo -n systemctl cat lit-cert-renew.service lit-cert-renew.timer
+          docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}'
           df -h /opt
-          docker builder prune --all --force
-          df -h /opt
-          sudo -n find /opt /etc/cron.d /etc/systemd/system /usr/local/bin -maxdepth 4 \( -iname '*certbot*' -o -iname '*acme*' -o -iname '*renew*' \) -print 2>/dev/null || true
-          sudo -n awk '/^(authenticator|installer|server|webroot_path|account|cert|privkey|chain|fullchain|key_type|pre_hook|post_hook|renew_hook|deploy_hook|archive_dir|version|profile|preferred_profile|preferred_challenges) / {print}' /etc/letsencrypt/renewal/lit-api-ip.conf
-          sudo -n find /etc/letsencrypt/renewal-hooks -maxdepth 2 -type f -print 2>/dev/null || true
-          docker ps --format '{{.Names}} {{.Image}}'
