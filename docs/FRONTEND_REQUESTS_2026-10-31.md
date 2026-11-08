@@ -100,7 +100,7 @@
 - `PUT /api/users/me/settings` 본문 `{ "notify": false, "sound": true }` — 보낸 값만 바뀝니다. 기본값은 둘 다 true.
 - `notify: false`면 그동안 서버가 새 알림을 **만들지 않습니다**. `sound`는 서버가 저장만 하고 재생 여부는 프런트가 정합니다.
 - `PATCH /api/users/me` 본문 `{ "name": "박애란" }` (1~50자).
-- `POST /api/users/me/password` 본문 `{ "currentPassword", "newPassword" }`(새 비밀번호 10~128자). 현재 비밀번호가 틀리면 400 INVALID_CURRENT_PASSWORD, 같으면 400 PASSWORD_UNCHANGED. 성공하면 **지금 기기를 뺀 다른 로그인은 모두 해제**됩니다.
+- `POST /api/users/me/password` 본문 `{ "currentPassword", "newPassword" }`(새 비밀번호 8~128자). 현재 비밀번호가 틀리면 400 INVALID_CURRENT_PASSWORD, 같으면 400 PASSWORD_UNCHANGED. 성공하면 **지금 기기를 뺀 다른 로그인은 모두 해제**됩니다.
 - 이용약관·개인정보 처리방침 문구는 백엔드에서 정하지 않습니다. 학교·운영 담당과 확정이 필요합니다.
 
 ## 5. 경고 이벤트 저장

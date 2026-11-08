@@ -12,7 +12,7 @@ public class PasswordChangeService {
     private final PasswordEncoder encoder;
     public PasswordChangeService(PasswordChangeRepository repository,PasswordEncoder encoder) {this.repository=repository;this.encoder=encoder;}
     public void changePassword(Principal principal,String currentPassword,String newPassword) {
-        if(currentPassword==null||currentPassword.isBlank()||currentPassword.length()>128||newPassword==null||newPassword.isBlank()||newPassword.length()<10||newPassword.length()>128)
+        if(currentPassword==null||currentPassword.isBlank()||currentPassword.length()>128||newPassword==null||newPassword.isBlank()||newPassword.length()<8||newPassword.length()>128)
             throw new ApiError.Failure(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","비밀번호 형식과 길이를 확인해주세요.");
         var hashes=repository.lockPassword(principal.userId());
         var families=repository.getSessionFamily(principal.userId(),principal.sessionId());

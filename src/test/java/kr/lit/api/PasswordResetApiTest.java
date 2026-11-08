@@ -117,4 +117,10 @@ class PasswordResetApiTest extends AuthTestSupport {
         mvc.perform(body(request(post("/api/auth/password-reset/request"),null),Map.of("email",teacher.user().email())))
                 .andExpect(status().isTooManyRequests()).andExpect(jsonPath("code").value("RATE_LIMITED"));
     }
+    @Test void resetAcceptsEightCharactersAndRejectsSevenWithoutConsumingLink() throws Exception {
+        String token=sendReset();
+        mvc.perform(body(request(post("/api/auth/password-reset/confirm"),null),Map.of("token",token,"newPassword","Abc123!"))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+        mvc.perform(body(request(post("/api/auth/password-reset/confirm"),null),Map.of("token",token,"newPassword","Abc123!x"))).andExpect(status().isOk());
+        mvc.perform(body(request(post("/api/auth/login"),null),new AuthModels.Login(teacher.user().username(),"Abc123!x"))).andExpect(status().isOk());
+    }
 }
