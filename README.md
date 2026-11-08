@@ -380,3 +380,5 @@ PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합
 가입 시 약관/개인정보 버전·동의를 필수 저장하고 공개 정책 버전을 제공합니다. 분석 reasons/evidence.quote·유사도 구간·버전별 PASTE 관측, 종합 평가, 학생 상태/lastWarningAt, SSE 및 비동기 ZIP 작업을 지원합니다. .mjs MIME 보정은 서버 배포 단계에 포함합니다. [요청·오류·프런트 연결 계약](docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md).
 
 AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOMATIC_AI_DISCLOSURE.md).
+
+운영 도메인 연결: `scripts/configure-domain-https.py`는 승인된 `llkj.itslit.r-e.kr`을 기존 IP 인증서에 추가하고 Nginx·참가/비밀번호 재설정 URL을 설정합니다. 기존 Certbot 갱신 타이머를 재사용하며, 설정을 `/opt/lit/backups/domain-https-*`에 백업하고 적용 검증 실패 시 되돌립니다. 앱 이미지는 기존 배포본을 사용합니다.

@@ -13,9 +13,14 @@ jobs:
     runs-on: [self-hosted, linux, x64, lit-production]
     timeout-minutes: 10
     steps:
-      - name: Inspect existing renewal runner
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Validate domain configuration helper
+        run: python3 -m unittest discover -s scripts -p 'test_domain_https.py'
+      - name: Configure approved production domain
+        run: sudo -n python3 scripts/configure-domain-https.py
+      - name: Verify public domain
         run: |
-          set -eu
-          sudo -n systemctl cat lit-cert-renew.service lit-cert-renew.timer
-          docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}'
-          df -h /opt
+          curl --fail --silent --show-error --retry 3 --max-time 15 https://llkj.itslit.r-e.kr/actuator/health/readiness
+          curl --fail --silent --show-error --max-time 15 --head https://llkj.itslit.r-e.kr/
