@@ -264,15 +264,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 | 사용한 AI 도구·활용 부분·선택 이유 | `GET·PUT /api/evaluations/{id}/ai-disclosure` (`/api/student/...` 별칭) | 신규 |
 | 질문 유형 | 서버가 대화 조회·분석 시 붙입니다 | 프런트 작업 없음 |
 
-`PUT /api/evaluations/{id}/ai-disclosure` (학생 `X-Participant-Token`)
-
-```json
-{ "tools": "LIT 내장 AI", "usedParts": "문항 2 첫 문단", "reason": "개념만 확인하고 예시는 직접 찾았습니다." }
-```
-
-- 세 필드 모두 필수 문자열(빈 문자열 가능), 최대 500 / 4000 / 4000자. 시작 후·제출 전·종료 전만 저장할 수 있습니다(제출 후 409 ALREADY_SUBMITTED).
-- GET 응답: `{ evaluationId, participantId, tools, usedParts, reason, updatedAt, editable }`. 저장 전에는 빈 문자열과 updatedAt=null입니다.
-- 제출 화면에 이 칸을 두면 ②의 "선택 이유", ⑤ 투명성의 근거가 됩니다. 비워 두면 해당 항목이 0으로 계산됩니다.
+현재 AI 사용 기록은 시스템 자동 생성입니다. 학생 GET은 읽기 전용이며, 기존 PUT은 입력을 저장하지 않는 호환 엔드포인트입니다. 제출/자동 종료 때 tools·usedParts·reason, status, conversationIds, evidence를 한 번 생성해 저장합니다. 자동 기록은 학생 자기 공개에 대한 점수 근거로 사용하지 않습니다. [전체 계약](AUTOMATIC_AI_DISCLOSURE.md)을 참고하세요.
 
 
 ## 통합 검증 후 보완 (2026-10-31)

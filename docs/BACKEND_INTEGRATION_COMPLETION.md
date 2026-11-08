@@ -75,9 +75,9 @@ criteria는 제목 배열(최대10, 중복 없는1~100자) 또는 합계100점 �
 
 ## 4. AI 사용 설명
 
-기존 학생 GET/PUT `/api/evaluations/{id}/ai-disclosure` 및 `/api/student/evaluations/{id}/ai-disclosure`를 사용합니다. PUT {tools,usedParts,reason}, 최대500/4000/4000자, 제출 전만 수정 가능.
+학생 GET `/api/evaluations/{id}/ai-disclosure` 및 `/api/student/evaluations/{id}/ai-disclosure`, 교사 GET `/api/teacher/evaluations/{id}/students/{pid}/ai-disclosure` (participants 별칭)을 유지합니다. 이제 시스템 자동 생성이며 editable=false, status/source/conversationIds/evidence를 반환합니다. PUT은 호환용으로 입력을 무시합니다.
 
-교사 조회 신규: `GET /api/teacher/evaluations/{id}/students/{pid}/ai-disclosure` (participants 별칭도 지원). tools/usedParts/reason/updatedAt/frozen 반환. 학생 제출·자동 제출의 snapshot.aiDisclosure에 저장하고, 교사 상세 work.aiDisclosure 및 보고서 AI 활용 표에서 조회합니다. 새 제출본은 frozen=true입니다. 과거 제출본에 설명 스냅샷이 없으면 기존 저장된 ai_disclosures를 읽되 frozen=false로 표시합니다. 예전 기록을 제출 당시 동결됐다고 주장하지 않습니다. 과정 평가 새 제출본도 동결된 설명을 근거로 사용합니다. 기존 보고서 버전은 소급 수정하지 않습니다.
+제출·자동 종료 시 한 번 저장하며 이전 제출은 첫 조회 때 원본 스냅샷에서 생성합니다. frozen은 생성 결과가 보관됐다는 뜻이며 과거 제출 시각에 생성됐다는 뜻이 아닙니다. updatedAt이 실제 생성 시각입니다. 기존 보고서 버전은 소급 수정하지 않습니다. 자동 요약은 학생 자기 공개 채점 근거로 취급하지 않습니다. [상세 계약](AUTOMATIC_AI_DISCLOSURE.md).
 
 ## 5. 참가 정보·동의
 

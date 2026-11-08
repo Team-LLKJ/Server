@@ -71,7 +71,11 @@ public final class WorkModels {
     public record Disclosure(@NotNull @Size(max=500) String tools, @NotNull @Size(max=4000) String usedParts,
                              @NotNull @Size(max=4000) String reason) {}
     public record DisclosureView(String evaluationId, String participantId, String tools, String usedParts, String reason,
-                                 Instant updatedAt, boolean editable) {}
+                                 Instant updatedAt, boolean editable, String status, String source, String errorCode,
+                                 String failureReason, List<Long> conversationIds, List<DisclosureEvidence> evidence) {
+        public DisclosureView(String evaluationId,String participantId,String tools,String usedParts,String reason,Instant updatedAt,boolean editable){this(evaluationId,participantId,tools,usedParts,reason,updatedAt,editable,"READY","STUDENT_REPORTED",null,null,List.of(),List.of());}
+    }
+    public record DisclosureEvidence(long conversationId,String questionId,String purpose,String messageRole,String quote,List<Integer> matchingAnswerParagraphs,int answerVersion) {}
     public record Ask(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,64}") String requestId,
                       @NotBlank @Size(max=4000) String text) {}
     public record Confirm(@NotBlank @Pattern(regexp="[a-f0-9]{64}") String reviewToken) {}

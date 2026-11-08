@@ -281,3 +281,9 @@ CREATE TABLE IF NOT EXISTS report_archive_jobs (
  created_at TIMESTAMP WITH TIME ZONE NOT NULL,started_at TIMESTAMP WITH TIME ZONE,completed_at TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX IF NOT EXISTS idx_archive_jobs_pending ON report_archive_jobs(status,created_at);
+
+CREATE TABLE IF NOT EXISTS system_ai_disclosures (
+ participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ disclosure_json CLOB NOT NULL
+);

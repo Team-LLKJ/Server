@@ -48,7 +48,8 @@ public class ReportLayout {
         else counts.forEach((name,count)->usage.add(List.of(name,count+"건")));
         var disclosure=c.submission().path("aiDisclosure");
         if(!disclosure.isMissingNode()&&!disclosure.isNull()) {
-            usage.add(List.of("사용 AI 도구",disclosure.path("tools").asText().isBlank()?"미작성":disclosure.path("tools").asText()));
+            usage.add(List.of("생성 상태",disclosure.path("status").asText("READY")));
+            usage.add(List.of("사용 AI 도구",disclosure.path("tools").asText().isBlank()?"기록된 완료 응답 없음":disclosure.path("tools").asText()));
             usage.add(List.of("사용한 부분",disclosure.path("usedParts").asText().isBlank()?"미작성":disclosure.path("usedParts").asText()));
             usage.add(List.of("선택·활용 이유",disclosure.path("reason").asText().isBlank()?"미작성":disclosure.path("reason").asText()));
         }

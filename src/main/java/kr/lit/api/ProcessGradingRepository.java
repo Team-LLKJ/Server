@@ -46,7 +46,7 @@ public class ProcessGradingRepository {
         for(var e:snapshot.path("learningEvents"))if(WorkModels.ClientEventType.warningNames().contains(e.path("type").asText()))
             sources.add(new Source("warning:"+e.path("id").asText(),e.path("questionId").isNull()?GLOBAL:e.path("questionId").asText(),"WARNING",e.path("type").asText()+" (브라우저 신고·참고용)",e.path("createdAt").asText(null),null));
         if(snapshot.hasNonNull("aiDisclosure")) {
-            var disclosure=snapshot.path("aiDisclosure");for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,"DISCLOSURE",disclosure.path(field).asText()));
+            var disclosure=snapshot.path("aiDisclosure");if(!"SYSTEM_GENERATED".equals(disclosure.path("source").asText()))for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,"DISCLOSURE",disclosure.path(field).asText()));
         }else {
         var disclosures=db.queryForList("SELECT tools,used_parts,reason FROM ai_disclosures WHERE participant_id=?",pid);
         if(!disclosures.isEmpty())for(String field:List.of("TOOLS","USED_PARTS","REASON"))sources.add(new Source("disclosure:"+field,GLOBAL,"DISCLOSURE",Objects.toString(disclosures.get(0).get(field),"")));

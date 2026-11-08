@@ -111,7 +111,9 @@ public class AssessmentService {
         return rows.isEmpty()?AssessmentAnalyzer.DisclosureInput.EMPTY:rows.get(0);
     }
     private Analysis compute(String id,String pid,JsonNode source) {
-        var saved=source.path("aiDisclosure");var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):disclosure(pid);
+        var saved=source.path("aiDisclosure");boolean automatic="SYSTEM_GENERATED".equals(saved.path("source").asText());
+        if(automatic)saved=source.path("studentAiDisclosure");
+        var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):automatic?AssessmentAnalyzer.DisclosureInput.EMPTY:disclosure(pid);
         return analyzer.analyze(pid,source,disclosure,Instant.now());
     }
     /** 저장된 분석을 읽고, 없거나 PENDING/FAILED면 즉시 계산해 저장합니다. 미제출이면 null. */

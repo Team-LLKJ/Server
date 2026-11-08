@@ -2148,7 +2148,8 @@
                 "value": "{{participantToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure"
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure",
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {
@@ -2169,7 +2170,8 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tools\": \"LIT 내장 AI\",\n  \"usedParts\": \"문항 1 둘째 문단\",\n  \"reason\": \"개념만 확인하고 예시는 직접 찾았습니다.\"\n}"
-            }
+            },
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         }
       ]
@@ -3632,7 +3634,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/ai-disclosure",
-            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {

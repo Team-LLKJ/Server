@@ -14,9 +14,11 @@ import static kr.lit.api.ReportModels.*;
 @Service
 @Transactional
 public class ReportService {
+ private final AutomaticDisclosureService automaticDisclosure;
  private final JdbcTemplate db; private final ObjectMapper json; private final EvaluationService evaluations;
  private final ParticipantAccess participants; private final WorkService work; private final ReportGradingService grading;
- public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work,ReportGradingService grading) {
+ public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work,ReportGradingService grading,AutomaticDisclosureService automaticDisclosure) {
+  this.automaticDisclosure=automaticDisclosure;
   this.db=db;this.json=json;this.evaluations=evaluations;this.participants=participants;this.work=work;this.grading=grading;
  }
  private ApiError.Failure fail(HttpStatus status,String code,String message){return new ApiError.Failure(status,code,message);}
@@ -59,7 +61,9 @@ public class ReportService {
   var stored=db.queryForList("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,pid);
   if(!stored.isEmpty()) {
    var snapshot=(com.fasterxml.jackson.databind.node.ObjectNode)decode(stored.get(0));boolean frozen=snapshot.hasNonNull("aiDisclosure");
-   if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));snapshot.put("aiDisclosureFrozen",frozen);return snapshot;
+   if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));
+   if(!"SYSTEM_GENERATED".equals(snapshot.path("aiDisclosure").path("source").asText()))snapshot.set("studentAiDisclosure",snapshot.path("aiDisclosure"));
+   snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.generateDisclosure(id,pid,snapshot)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
   }
   var root=json.createObjectNode();root.put("evaluationId",id);root.put("participantId",pid);
   var policy=db.queryForList("SELECT ai_policy FROM evaluation_settings WHERE evaluation_id=?",String.class,id);
@@ -80,7 +84,8 @@ public class ReportService {
    var completed=instant(r,"completed_at");t.put("completedAt",completed==null?null:completed.toString());
   },pid);
   root.set("learningEvents",json.valueToTree(work.teacherEvents(id,pid,0,Integer.MAX_VALUE)));
-  root.set("aiDisclosure",readDisclosure(pid));root.put("aiDisclosureFrozen",false);
+  boolean closed="ENDED".equals(db.queryForObject("SELECT state FROM evaluations WHERE id=?",String.class,id));
+  root.set("aiDisclosure",json.valueToTree(closed?automaticDisclosure.generateDisclosure(id,pid,root):automaticDisclosure.getDisclosure(id,pid)));root.put("aiDisclosureFrozen",closed);
   return root;
  }
  private JsonNode readDisclosure(String pid){

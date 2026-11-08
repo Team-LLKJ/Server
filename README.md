@@ -378,3 +378,5 @@ PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합
 ### 가입 동의와 구조화 분석·실시간 연동
 
 가입 시 약관/개인정보 버전·동의를 필수 저장하고 공개 정책 버전을 제공합니다. 분석 reasons/evidence.quote·유사도 구간·버전별 PASTE 관측, 종합 평가, 학생 상태/lastWarningAt, SSE 및 비동기 ZIP 작업을 지원합니다. .mjs MIME 보정은 서버 배포 단계에 포함합니다. [요청·오류·프런트 연결 계약](docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md).
+
+AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOMATIC_AI_DISCLOSURE.md).

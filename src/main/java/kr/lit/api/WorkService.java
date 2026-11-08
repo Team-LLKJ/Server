@@ -16,6 +16,7 @@ import static kr.lit.api.WorkModels.*;
 @Service
 @Transactional
 public class WorkService {
+    private final AutomaticDisclosureService automaticDisclosure;
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final NotificationService notifications;
@@ -24,7 +25,8 @@ public class WorkService {
     private final ProcessGradingRepository processGrading;
     private final ParticipantSessionService sessions;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions) {
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions,AutomaticDisclosureService automaticDisclosure) {
+        this.automaticDisclosure=automaticDisclosure;
         this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;this.sessions=sessions;
     }
 
@@ -267,24 +269,19 @@ public class WorkService {
                 c.participantId(),"warning:"+c.participantId());
         return db.queryForObject("SELECT * FROM learning_events WHERE id=?",(r,n)->new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),eventId);
     }
-    /** 투명성 영역 근거: 학생이 직접 적는 사용 AI 도구·활용 부분·선택 이유. 제출 전까지만 수정할 수 있습니다. */
     private DisclosureView snapshotDisclosure(Context c) {
-        var rows=db.query("SELECT * FROM ai_disclosures WHERE participant_id=?",(r,n)->new DisclosureView(c.evaluationId(),c.participantId(),r.getString("tools"),r.getString("used_parts"),r.getString("reason"),instant(r,"updated_at"),false),c.participantId());
-        return rows.isEmpty()?new DisclosureView(c.evaluationId(),c.participantId(),"","","",null,false):rows.get(0);
+        return automaticDisclosure.getDisclosure(c.evaluationId(),c.participantId());
     }
     public DisclosureView disclosure(String id,String token) {
-        var c=authenticate(id,token);started(c);
-        boolean editable=!submitted(c)&&c.state().equals("STARTED")&&c.expiresAt().isAfter(Instant.now());
-        var rows=db.query("SELECT * FROM ai_disclosures WHERE participant_id=?",(r,n)->new DisclosureView(id,c.participantId(),r.getString("tools"),
-                r.getString("used_parts"),r.getString("reason"),instant(r,"updated_at"),editable),c.participantId());
-        return rows.isEmpty()?new DisclosureView(id,c.participantId(),"","","",null,editable):rows.get(0);
+        var c=authenticate(id,token);return snapshotDisclosure(c);
     }
+    /** Compatibility endpoint: client input is deliberately ignored. */
     public DisclosureView saveDisclosure(String id,String token,Disclosure input) {
-        var c=authenticate(id,token);editable(c);
-        db.update("MERGE INTO ai_disclosures(participant_id,evaluation_id,tools,used_parts,reason,updated_at) KEY(participant_id) VALUES (?,?,?,?,?,?)",
-                c.participantId(),id,input.tools().strip(),input.usedParts().strip(),input.reason().strip(),OffsetDateTime.now(ZoneOffset.UTC));
-        event(c,null,"AI_DISCLOSURE_SAVED",Map.of("toolsLength",input.tools().strip().length(),"usedPartsLength",input.usedParts().strip().length(),"reasonLength",input.reason().strip().length()));
         return disclosure(id,token);
+    }
+    private ReviewContent finalizeDisclosure(Context c,ReviewContent content){
+        var disclosure=automaticDisclosure.generateDisclosure(c.evaluationId(),c.participantId(),json.valueToTree(content));
+        return new ReviewContent(content.evaluationId(),content.participantId(),content.aiPolicy(),content.answers(),content.conversations(),content.learningEvents(),disclosure);
     }
     private Turn turn(ResultSet r,int n) throws SQLException {
         return new Turn(r.getLong("id"),r.getString("request_id"),r.getString("question_id"),r.getString("question_text"),
@@ -338,7 +335,7 @@ public class WorkService {
         if(!review.canConfirm()) throw failure(HttpStatus.CONFLICT,"AI_IN_PROGRESS","AI 응답 완료 후 제출해주세요.");
         if(!review.reviewToken().equals(reviewToken)) throw failure(HttpStatus.CONFLICT,"REVIEW_CHANGED","답안 또는 대화가 변경되었습니다. 제출 내용을 다시 확인해주세요.");
         var now=OffsetDateTime.now(ZoneOffset.UTC);
-        db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(review.content()),now);
+        db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(finalizeDisclosure(c,review.content())),now);
         event(c,null,"SUBMITTED",Map.of("reviewToken",reviewToken));
         requestAnalysis(id,c.participantId());
         notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",
@@ -370,13 +367,20 @@ public class WorkService {
             event(new Context(id,pid,"ENDED",e.expiresAt()),turn.questionId(),"AI_FAILED",Map.of("requestId",turn.requestId(),"errorCode","EVALUATION_CLOSED"));
         }
         db.update("UPDATE ai_turns SET state='FAILED',error_code='EVALUATION_CLOSED',completed_at=CURRENT_TIMESTAMP WHERE evaluation_id=? AND state='PENDING'",id);
-        if(!wasStarted)return;
+        if(!wasStarted){
+            for(String pid:db.queryForList("SELECT id FROM participants WHERE evaluation_id=?",String.class,id)){
+                var context=new Context(id,pid,"ENDED",e.expiresAt());
+                automaticDisclosure.generateDisclosure(id,pid,json.valueToTree(new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context))));
+            }
+            return;
+        }
         var participants=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? ORDER BY id",String.class,id);
         int autoSubmitted=0;
         for(String pid:participants) {
             var context=new Context(id,pid,"ENDED",e.expiresAt());
             if(submitted(context))continue;
             var snapshot=new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context),snapshotDisclosure(context));
+            snapshot=finalizeDisclosure(context,snapshot);
             String content=encode(snapshot),hash;
             try {hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8)));}
             catch(NoSuchAlgorithmException ex){throw new IllegalStateException(ex);}
