@@ -287,3 +287,5 @@ CREATE TABLE IF NOT EXISTS system_ai_disclosures (
  evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
  disclosure_json CLOB NOT NULL
 );
+
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS expelled_at TIMESTAMP WITH TIME ZONE;

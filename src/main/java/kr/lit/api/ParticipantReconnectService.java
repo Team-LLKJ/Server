@@ -21,6 +21,7 @@ public class ParticipantReconnectService {
         var participant=repository.findParticipant(evaluationId,token).orElseThrow(()->new ApiError.Failure(
                 HttpStatus.UNAUTHORIZED,"INVALID_PARTICIPANT_TOKEN","기존 참가자 토큰을 확인해주세요. PIN·닉네임만으로는 복귀할 수 없습니다."));
         var evaluation=evaluations.details(evaluationId);
+        repository.requireNotExpelled(evaluationId,participant.participantId());
         repository.activateParticipant(evaluationId,participant.participantId());
         // 마감이 지났다면 기존 자동 제출 처리를 먼저 수행해 읽기 전용 상태로 복귀시킵니다.
         var lobby=evaluations.participant(evaluationId,token,false);

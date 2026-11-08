@@ -40,7 +40,7 @@ public class ReportService {
    String status=submitted!=null?"SUBMITTED":closed?"CLOSED_UNSUBMITTED":"NOT_SUBMITTED";
    return new Student(pid,r.getString("nickname"),!active?"LEFT":connected?"CONNECTED":"DISCONNECTED",status,
      submitted!=null?"SUBMITTED":e.state().equals("ENDED")?"ENDED":closed?"EXPIRED":e.state().equals("STARTED")?"IN_PROGRESS":"WAITING",
-     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt,db.queryForObject("SELECT MAX(created_at) last_warning_at FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",(w,index)->instant(w,"last_warning_at"),pid));
+     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt,db.queryForObject("SELECT MAX(created_at) last_warning_at FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",(w,index)->instant(w,"last_warning_at"),pid),r.getObject("expelled_at")!=null,instant(r,"expelled_at"));
   },pid,id).get(0);
  }
  public Students students(String id,int page,int size){return students(id,page,size,"");}
@@ -165,8 +165,10 @@ public class ReportService {
  private UsageReport generate(String id,String pid){
   person(id,pid);requireSubmitted(pid);var e=evaluations.details(id);var src=source(id,pid);
   String snapshotHash=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,pid);
-  var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),review(pid)!=null&&review(pid).maxScore()==20?"PROVISIONAL_FIVE_CRITERIA_0_TO_20":"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
-    List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."),grading.getSnapshot(id,pid));
+  var gradingSnapshot=grading.getSnapshot(id,pid);
+  boolean processV3=gradingSnapshot!=null&&ProcessGradingModels.RUBRIC_VERSION.equals(gradingSnapshot.rubricVersion());
+  var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),processV3?ProcessGradingModels.RUBRIC_VERSION:review(pid)!=null&&review(pid).maxScore()==20?"PROVISIONAL_FIVE_CRITERIA_0_TO_20":"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
+    processV3?List.of("AI 추천과 교사 확정은 별도로 보존합니다.","입력 경로·문장 유사도는 학생의 사고 기여 점수와 구분합니다.","부족한 자료는 판단 보류하며 확인된 배점을100점으로 환산하지 않습니다."):List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."),gradingSnapshot);
   String hash=AuthService.hash(encode(content));
   var existing=db.queryForList("SELECT id FROM usage_reports WHERE participant_id=? AND source_hash=?",String.class,pid,hash);
   if(!existing.isEmpty())return getReport(id,pid,null,existing.get(0));

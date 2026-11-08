@@ -40,7 +40,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
         }
         var disclosure=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")).findFirst().orElseThrow();
         recommendations.add(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,4,"활용 공개","추가 이유 부족",List.of(new Condition("TRANSPARENCY_L4",List.of(new Citation(disclosure.id(),disclosure.text())))),List.of(),List.of()));
-        return new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations);
+        return V3GradingTestData.explain(input,new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations));
     }
     @Test void submissionFreezesInputsAndWorkerPublishesSeventyFiveWithVersionedReview() throws Exception {
         var f=fixture(true,true);var job=latest(f);var input=repository.getInput(job.id());
@@ -104,7 +104,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
     @Test void fabricatedEvidenceIsHeldAndCannotBeConfirmedWithoutTeacherCompletion() throws Exception {
         var f=fixture(true,true);var job=latest(f);var output=validOutput(repository.getInput(job.id()));var records=new ArrayList<>(output.recommendations());var r=records.get(0);
         records.set(0,new Recommendation(r.questionId(),r.criterion(),r.level(),r.reason(),r.unmetNextLevel(),List.of(new Condition("PURPOSE_L4",List.of(new Citation("foreign-student","위조 인용")))),List.of(),List.of()));
-        when(ai.recommendLevels(any())).thenReturn(new AiOutput(output.compliance(),records));worker.processJob(job.id());assertThat(latest(f).result().total()).isNull();
+        when(ai.recommendLevels(any())).thenReturn(new AiOutput(output.compliance(),records,output.summary()));worker.processJob(job.id());assertThat(latest(f).result().total()).isNull();
         String path=root(f)+"/"+job.id();
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),"CONFIRMED_OK","검토"))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isConflict());

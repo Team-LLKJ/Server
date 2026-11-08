@@ -41,8 +41,13 @@ public final class WorkModels {
             return aiPolicy!=null?aiPolicy:AiPolicy.ofLevel(aiLevel);
         }
     }
+    public enum InputOperationType { DIRECT, PASTE, AI_INSERT, DELETE, FORMAT }
+    public record InputOperation(@NotNull InputOperationType type,@Min(0) int start,@Min(0) int end,@NotNull @Size(max=100000) String text,@Min(1) Long conversationId) {}
     public record SaveAnswer(@NotNull String content, @Min(0) int expectedVersion,
-                             @NotNull AnswerSource source, @Size(max=64) String aiRequestId) {}
+                             @NotNull AnswerSource source, @Size(max=64) String aiRequestId,
+                             @Size(max=500) List<@NotNull @Valid InputOperation> inputOperations) {
+        public SaveAnswer(String content,int expectedVersion,AnswerSource source,String aiRequestId){this(content,expectedVersion,source,aiRequestId,null);}
+    }
     /** 학생 화면이 신고하는 이벤트. 전체화면 이탈·개발자 도구 열림도 경고이며, 신고 자체가 부정행위 확정은 아닙니다. */
     public enum ClientEventType {
         WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true), FULLSCREEN_EXIT(true), FULLSCREEN_LEAVE(true), DEVTOOLS_OPEN(true), FULLSCREEN(true), DEVTOOLS(true),

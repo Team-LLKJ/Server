@@ -28,7 +28,7 @@ public class ClassEventService {
             var principal=auth.authenticate(connection.token);var context=SecurityContextHolder.createEmptyContext();context.setAuthentication(new UsernamePasswordAuthenticationToken(principal,null,List.of(new SimpleGrantedAuthority("ROLE_TEACHER"))));SecurityContextHolder.setContext(context);
             evaluations.details(connection.id);
             var events=repository.getEvents(connection.id,connection.cursor);
-            for(var event:events){emitter.send(SseEmitter.event().id(Long.toString(event.eventId())).name(event.type().equals("SUBMITTED")?"submission":"warning").data(event));connection.cursor=event.eventId();}
+            for(var event:events){emitter.send(SseEmitter.event().id(Long.toString(event.eventId())).name(switch(event.type()){case "SUBMITTED"->"submission";case "PARTICIPANT_EXPELLED"->"participant-expelled";default->"warning";}).data(event));connection.cursor=event.eventId();}
             if(++connection.ticks%20==0)emitter.send(SseEmitter.event().comment("keepalive"));
         }catch(Exception failure){connections.remove(emitter);emitter.complete();}finally{SecurityContextHolder.setContext(previous);}
     }}

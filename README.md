@@ -382,3 +382,7 @@ PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합
 AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOMATIC_AI_DISCLOSURE.md).
 
 운영 도메인 연결: `scripts/configure-domain-https.py`는 승인된 `llkj.itslit.r-e.kr`을 기존 IP 인증서에 추가하고 Nginx·참가/비밀번호 재설정 URL을 설정합니다. 기존 Certbot 갱신 타이머를 재사용하며, 설정을 `/opt/lit/backups/domain-https-*`에 백업하고 적용 검증 실패 시 되돌립니다. 앱 이미지는 기존 배포본을 사용합니다.
+
+평가 알고리즘 V3: 1~5단계·근거 기반 설명, 사전 제외/부분 배점, 편집 기록 기반 입력 경로와 질문당1 가중치 목적 분석을 제공합니다. 기존 분석·보고서 버전은 보존합니다. 기존 0~4단계 API와 혼용하지 마세요. [API 계약·연동 예시](docs/EVALUATION_ALGORITHM_V3.md).
+
+참여자 추방: `DELETE /api/teacher/evaluations/{id}/participants/{participantId}`는 기록을 보존하고 학생 접근·재접속을 차단합니다. 채점 답안의 minChars/maxChars 및 SSE participant-expelled도 제공합니다. [정확한 프런트 연동 계약](docs/FRONTEND_INTEGRATION_REFERENCE.md).

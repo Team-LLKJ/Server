@@ -44,6 +44,8 @@ class WorkController {
     QuestionAnswer select(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token) {
         return work.select(id,token,questionId);
     }
+    @GetMapping({"/evaluations/{id}/questions/{questionId}/input-paths","/student/evaluations/{id}/questions/{questionId}/input-paths"})
+    InputPathAnalyzer.QuestionPath getInputPath(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token){return work.getInputPath(id,token,questionId);}
     @GetMapping({"/evaluations/{id}/questions/{questionId}/answer","/student/evaluations/{id}/questions/{questionId}/answer"})
     Answer getAnswer(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token) {
         return work.getAnswer(id,token,questionId);

@@ -170,6 +170,11 @@ public class WorkService {
         var c=authenticate(id,token);started(c);
         return new QuestionAnswer(question(id,questionId),answer(c.participantId(),questionId));
     }
+    public InputPathAnalyzer.QuestionPath getInputPath(String id,String token,String questionId){
+        var context=authenticate(id,token);started(context);question(id,questionId);
+        var snapshot=json.valueToTree(Map.of("answers",answers(context),"learningEvents",events(context)));
+        return new InputPathAnalyzer().analyzePaths(snapshot).questions().stream().filter(q->q.questionId().equals(questionId)).findFirst().orElseThrow();
+    }
     public Answer getAnswer(String id,String token,String questionId) {
         return select(id,token,questionId).answer();
     }
@@ -192,12 +197,25 @@ public class WorkService {
         } else if(input.aiRequestId()!=null) {
             throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_REFERENCE","직접 작성에는 AI 대화 ID를 지정하지 않습니다.");
         }
+        if(input.inputOperations()!=null){
+            try{
+                if(!InputPathAnalyzer.normalizeText(safeContent).equals(InputPathAnalyzer.replayText(InputPathAnalyzer.normalizeText(old.content()),input.inputOperations())))
+                    throw new IllegalArgumentException("INPUT_TRACE_MISMATCH");
+                for(var operation:input.inputOperations()){
+                    if(operation.type()==InputOperationType.AI_INSERT){
+                        var responses=db.queryForList("SELECT answer_text FROM ai_turns WHERE id=? AND participant_id=? AND question_id=? AND state='COMPLETED'",String.class,operation.conversationId(),c.participantId(),questionId);
+                        if(operation.conversationId()==null||operation.text().isBlank()||responses.isEmpty()||!InputPathAnalyzer.normalizeText(responses.get(0)).contains(operation.text()))throw new IllegalArgumentException("INVALID_AI_INSERT_REFERENCE");
+                    }else if(operation.conversationId()!=null)throw new IllegalArgumentException("INVALID_AI_INSERT_REFERENCE");
+                }
+            }catch(IllegalArgumentException invalid){throw failure(HttpStatus.BAD_REQUEST,invalid.getMessage(),"편집 이력의 구간·버전·결과 텍스트·AI 인용을 확인해주세요.");}
+        }
         var timestamp=OffsetDateTime.now(ZoneOffset.UTC);
         db.update("MERGE INTO answers(participant_id,question_id,content,version,updated_at) KEY(participant_id,question_id) VALUES (?,?,?,?,?)",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
         var change=new LinkedHashMap<String,Object>();
         change.put("previousContent",old.content());change.put("content",safeContent);
         change.put("previousVersion",old.version());change.put("version",old.version()+1);
         change.put("source",input.source());change.put("aiRequestId",input.aiRequestId());
+        if(input.inputOperations()!=null)change.put("inputOperations",input.inputOperations());
         if(late) change.put("lateSave",true);
         event(c,questionId,"ANSWER_SAVED",change);
         if(late) refreshAutoSubmission(c);

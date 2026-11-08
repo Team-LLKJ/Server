@@ -80,10 +80,8 @@ public class EvaluationService {
  public Joined join(String pin,String nickname,String token){
   var e=byPin(pin);available(e);
   if(token!=null&&!token.isBlank()) {
-   var ids=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND ((token_hashed=TRUE AND token=?) OR (token_hashed=FALSE AND token=?))",String.class,e.id(),kr.lit.auth.AuthService.hash(token),token);
-   if(ids.isEmpty()||!token.matches("[a-f0-9]{64}"))throw fail(HttpStatus.UNAUTHORIZED,"INVALID_PARTICIPANT_TOKEN","재접속 토큰이 올바르지 않습니다.");
-   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=?",ids.get(0));
-   var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(e.id(),token);
+   var guest=new kr.lit.auth.ParticipantAccess(db).authenticateReconnect(e.id(),token);
+   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=? AND expelled_at IS NULL",guest.participantId());
    return new Joined(guest.participantId(),token,personalLobby(e,guest.participantId()));
   }
   if(!e.state().equals("WAITING")&&e.assessmentId()==null)throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작된 평가에는 새로 참여할 수 없습니다.");
