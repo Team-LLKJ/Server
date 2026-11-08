@@ -41,8 +41,13 @@ public final class WorkModels {
             return aiPolicy!=null?aiPolicy:AiPolicy.ofLevel(aiLevel);
         }
     }
+    public enum InputOperationType { DIRECT, PASTE, AI_INSERT, DELETE, FORMAT }
+    public record InputOperation(@NotNull InputOperationType type,@Min(0) int start,@Min(0) int end,@NotNull @Size(max=100000) String text,@Min(1) Long conversationId) {}
     public record SaveAnswer(@NotNull String content, @Min(0) int expectedVersion,
-                             @NotNull AnswerSource source, @Size(max=64) String aiRequestId) {}
+                             @NotNull AnswerSource source, @Size(max=64) String aiRequestId,
+                             @Size(max=500) List<@NotNull @Valid InputOperation> inputOperations) {
+        public SaveAnswer(String content,int expectedVersion,AnswerSource source,String aiRequestId){this(content,expectedVersion,source,aiRequestId,null);}
+    }
     /** 학생 화면이 신고하는 이벤트. 전체화면 이탈·개발자 도구 열림도 경고이며, 신고 자체가 부정행위 확정은 아닙니다. */
     public enum ClientEventType {
         WINDOW_LEAVE(true), SHORTCUT_CAPTURE(true), WINDOW_BLUR(true), CAPTURE_SHORTCUT(true), COPY_ATTEMPT(true), FULLSCREEN_EXIT(true), FULLSCREEN_LEAVE(true), DEVTOOLS_OPEN(true), FULLSCREEN(true), DEVTOOLS(true),
@@ -63,13 +68,19 @@ public final class WorkModels {
     }
     public record ClientEvent(@NotNull ClientEventType type, @NotNull Instant occurredAt,
                               @Size(max=36) String questionId,
-                              @Min(0) @Max(10000000) Integer length, @Min(1) Long conversationId) {
+                              @Min(0) @Max(10000000) Integer length, @Min(1) Long conversationId,
+                              @Min(0) @Max(10000000) Integer start,@Min(0) @Max(10000000) Integer end,@Min(0) Integer answerVersion) {
+        public ClientEvent(ClientEventType type,Instant occurredAt,String questionId,Integer length,Long conversationId){this(type,occurredAt,questionId,length,conversationId,null,null,null);}
         public ClientEvent(ClientEventType type,Instant occurredAt,String questionId) { this(type,occurredAt,questionId,null,null); }
     }
     public record Disclosure(@NotNull @Size(max=500) String tools, @NotNull @Size(max=4000) String usedParts,
                              @NotNull @Size(max=4000) String reason) {}
     public record DisclosureView(String evaluationId, String participantId, String tools, String usedParts, String reason,
-                                 Instant updatedAt, boolean editable) {}
+                                 Instant updatedAt, boolean editable, String status, String source, String errorCode,
+                                 String failureReason, List<Long> conversationIds, List<DisclosureEvidence> evidence) {
+        public DisclosureView(String evaluationId,String participantId,String tools,String usedParts,String reason,Instant updatedAt,boolean editable){this(evaluationId,participantId,tools,usedParts,reason,updatedAt,editable,"READY","STUDENT_REPORTED",null,null,List.of(),List.of());}
+    }
+    public record DisclosureEvidence(long conversationId,String questionId,String purpose,String messageRole,String quote,List<Integer> matchingAnswerParagraphs,int answerVersion) {}
     public record Ask(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,64}") String requestId,
                       @NotBlank @Size(max=4000) String text) {}
     public record Confirm(@NotBlank @Pattern(regexp="[a-f0-9]{64}") String reviewToken) {}

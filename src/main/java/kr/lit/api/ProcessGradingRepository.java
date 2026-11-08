@@ -30,13 +30,16 @@ public class ProcessGradingRepository {
             String q=a.path("question").path("id").asText();ids.add(q);
             sources.add(new Source("task:"+q,q,"TASK",a.path("question").path("title").asText()+"\n"+plain(a.path("question").path("content").asText())));
             var paragraphs=AssessmentAnalyzer.paragraphs(a.path("answer").path("content").asText());
-            for(int i=0;i<paragraphs.size();i++)sources.add(new Source("answer:"+q+":"+(i+1),q,"FINAL_ANSWER",paragraphs.get(i),a.path("answer").path("updatedAt").asText(null),a.path("answer").path("version").asInt()));
+            int offset=0;for(int i=0;i<paragraphs.size();i++){
+                sources.add(new Source("answer:"+q+":"+(i+1),q,"FINAL_ANSWER",paragraphs.get(i),a.path("answer").path("updatedAt").asText(null),a.path("answer").path("version").asInt(),null,null,offset));offset+=paragraphs.get(i).length()+1;
+            }
         }
         for(var t:snapshot.path("conversations")) {
             if(!"COMPLETED".equals(t.path("state").asText()))limitations.add("대화 "+t.path("id").asText()+" 상태="+t.path("state").asText()+": 완료된 AI 응답이 없음");
             String q=t.path("questionId").asText(),key="turn:"+t.path("id").asText();
-            sources.add(new Source(key+":question",q,"STUDENT_QUESTION",t.path("questionText").asText(),t.path("createdAt").asText(null),t.path("answerVersion").asInt()));
-            if("COMPLETED".equals(t.path("state").asText()))sources.add(new Source(key+":answer",q,"AI_RESPONSE",t.path("answerText").asText(),t.path("completedAt").asText(null),t.path("answerVersion").asInt()));
+            sources.add(new Source(key+":tool",q,"AI_TOOL_METADATA","provider="+t.path("provider").asText("미기록")+"; model="+t.path("model").asText("미기록")));
+            sources.add(new Source(key+":question",q,"STUDENT_QUESTION",t.path("questionText").asText(),t.path("createdAt").asText(null),t.path("answerVersion").asInt(),t.path("id").asLong(),"USER",0));
+            if("COMPLETED".equals(t.path("state").asText()))sources.add(new Source(key+":answer",q,"AI_RESPONSE",t.path("answerText").asText(),t.path("completedAt").asText(null),t.path("answerVersion").asInt(),t.path("id").asLong(),"AI",0));
         }
         for(var e:snapshot.path("learningEvents"))if(e.path("type").asText().equals("ANSWER_SAVED")) {
             String q=e.path("questionId").asText(),key="event:"+e.path("id").asText();
@@ -46,7 +49,7 @@ public class ProcessGradingRepository {
         for(var e:snapshot.path("learningEvents"))if(WorkModels.ClientEventType.warningNames().contains(e.path("type").asText()))
             sources.add(new Source("warning:"+e.path("id").asText(),e.path("questionId").isNull()?GLOBAL:e.path("questionId").asText(),"WARNING",e.path("type").asText()+" (브라우저 신고·참고용)",e.path("createdAt").asText(null),null));
         if(snapshot.hasNonNull("aiDisclosure")) {
-            var disclosure=snapshot.path("aiDisclosure");for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,"DISCLOSURE",disclosure.path(field).asText()));
+            var disclosure=snapshot.path("aiDisclosure");if(!"SYSTEM_GENERATED".equals(disclosure.path("source").asText()))for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,"DISCLOSURE",disclosure.path(field).asText()));
         }else {
         var disclosures=db.queryForList("SELECT tools,used_parts,reason FROM ai_disclosures WHERE participant_id=?",pid);
         if(!disclosures.isEmpty())for(String field:List.of("TOOLS","USED_PARTS","REASON"))sources.add(new Source("disclosure:"+field,GLOBAL,"DISCLOSURE",Objects.toString(disclosures.get(0).get(field),"")));
@@ -54,9 +57,13 @@ public class ProcessGradingRepository {
         }
         limitations.add("외부 AI·저장되지 않은 입력·실제 외부 자료 열람은 자동 관측할 수 없습니다.");
         limitations.add("최종 제출본과 저장 이력에 존재하는 문장만 근거로 사용합니다.");
-        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights())).orElse(null);
+        limitations.add("별도 참고 자료의 원문·조사 방법은 확보하지 못했습니다.");
+        var paths=new InputPathAnalyzer().analyzePaths(snapshot);
+        if(paths.status().equals("PARTIAL"))limitations.add("일부 답안 입력 경로를 확인할 편집 이력이 없습니다.");
+        if(sources.stream().noneMatch(s->s.kind().equals("DISCLOSURE")&&!s.text().isBlank()))limitations.add("학생이 작성한 별도 활용 설명이 없습니다. 자동 생성 설명은 학생 설명과 구분합니다.");
+        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights(),old.excludedCriteria())).orElse(null);
         var input=new Input(id,pid,(String)row.get("REVIEW_TOKEN"),(String)row.get("TITLE"),snapshot.path("aiPolicy").asText(),policy,ids,List.copyOf(sources),
-                List.copyOf(limitations));
+                List.copyOf(limitations),new AnalysisScope(List.copyOf(ids),java.util.stream.StreamSupport.stream(snapshot.path("answers").spliterator(),false).map(a->new AnswerVersion(a.path("question").path("id").asText(),a.path("answer").path("version").asInt())).toList(),java.util.stream.StreamSupport.stream(snapshot.path("conversations").spliterator(),false).map(t->t.path("id").asLong()).toList(),List.copyOf(limitations)),paths,new PurposeUsageAnalyzer().analyzeUsage(snapshot));
         return insertJob(input);
     }
     private String plain(String text){return Jsoup.parseBodyFragment(text).wholeText();}

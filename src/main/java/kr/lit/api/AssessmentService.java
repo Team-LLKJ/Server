@@ -111,14 +111,16 @@ public class AssessmentService {
         return rows.isEmpty()?AssessmentAnalyzer.DisclosureInput.EMPTY:rows.get(0);
     }
     private Analysis compute(String id,String pid,JsonNode source) {
-        var saved=source.path("aiDisclosure");var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):disclosure(pid);
+        var saved=source.path("aiDisclosure");boolean automatic="SYSTEM_GENERATED".equals(saved.path("source").asText());
+        if(automatic)saved=source.path("studentAiDisclosure");
+        var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):automatic?AssessmentAnalyzer.DisclosureInput.EMPTY:disclosure(pid);
         return analyzer.analyze(pid,source,disclosure,Instant.now());
     }
     /** 저장된 분석을 읽고, 없거나 PENDING/FAILED면 즉시 계산해 저장합니다. 미제출이면 null. */
     private Analysis stored(String id,String pid,boolean computeIfMissing) {
         if(!submitted(pid)) return null;
         var rows=db.query("SELECT analysis_status,result_json FROM grading_analyses WHERE participant_id=?",(r,n)->new String[]{r.getString("analysis_status"),r.getString("result_json")},pid);
-        if(!rows.isEmpty()&&"DONE".equals(rows.get(0)[0])&&rows.get(0)[1]!=null) return decode(rows.get(0)[1],new TypeReference<Analysis>(){});
+        if(!rows.isEmpty()&&"DONE".equals(rows.get(0)[0])&&rows.get(0)[1]!=null) {var saved=decode(rows.get(0)[1],new TypeReference<Analysis>(){});if(AssessmentAnalyzer.MODEL.equals(saved.model()))return saved;}
         if(!computeIfMissing) return null;
         return analyzeAndStore(id,pid);
     }
@@ -130,6 +132,7 @@ public class AssessmentService {
                 pid,id,encode(result),analyzedAt,analyzedAt);
         return result;
     }
+    public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
     public Analysis analysis(String id,String pid) {
         teacher(id);person(id,pid);
         var result=stored(id,pid,true);
@@ -187,7 +190,7 @@ public class AssessmentService {
         var out=new ArrayList<CriterionScore>();double ai=0,teacher=0,current=0;boolean allTeacher=true,anyAi=false;int recommendedMax=0;var missingAi=new ArrayList<String>();
         for(var c:list) {
             var ind=c.indicator()==Indicator.MANUAL?null:indicators.get(c.indicator());
-            AiScore aiScore=ind==null||ind.level()==null?null:new AiScore(ind.level(),score(c.maxScore(),ind.level()),ind.reason(),ind.evidence());
+            AiScore aiScore=ind==null||ind.level()==null?null:new AiScore(ind.level(),score(c.maxScore(),ind.level()),ind.reason(),ind.evidence(),ind.reasons());
             var row=teacherRows.get(c.criterionId());
             TeacherScore t=row==null?null:new TeacherScore(row.level(),score(c.maxScore(),row.level()),row.feedback(),row.updatedAt());
             if(aiScore!=null) { ai+=aiScore.score();anyAi=true;recommendedMax+=c.maxScore(); } else missingAi.add(c.name());
@@ -199,7 +202,7 @@ public class AssessmentService {
         var compliance=new ComplianceReview(analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),
                 result==null||result.decision()==null?null:ComplianceDecision.valueOf(result.decision()),result==null?null:result.note());
         return new Scores(pid,out,anyAi?round2(ai):null,allTeacher&&!list.isEmpty()?round2(teacher):null,round2(current),status,
-                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi);
+                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi,analysis==null?"제출 후 분석할 수 있습니다.":analysis.summary());
     }
     private static double round2(double v) { return Math.round(v*100)/100.0; }
     public Scores scores(String id,String pid) { teacher(id);person(id,pid);return scoresView(id,pid,stored(id,pid,true)); }
@@ -291,9 +294,9 @@ public class AssessmentService {
         long warning=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+">0",Long.class,id,q);
         long submittedCount=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+"=0 AND EXISTS (SELECT 1 FROM submissions s WHERE s.participant_id=p.id)",Long.class,id,q);
         long confirmed=db.queryForObject("SELECT COUNT(*)"+filter+" AND EXISTS (SELECT 1 FROM grading_results g WHERE g.participant_id=p.id AND g.grading_status='CONFIRMED')",Long.class,id,q);
-        var rows=db.query("SELECT p.id,p.nickname,s.submitted_at,s.submission_mode,"+warn+" warnings,(SELECT MAX(e.created_at) FROM learning_events e WHERE e.participant_id=p.id) last_event_at FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id"
+        var rows=db.query("SELECT p.id,p.nickname,p.expelled_at,s.submitted_at,s.submission_mode,"+warn+" warnings,(SELECT MAX(e.created_at) FROM learning_events e WHERE e.participant_id=p.id) last_event_at FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id"
                         +" WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0 ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",
-                (r,n)->new Object[]{r.getString("id"),r.getString("nickname"),instant(r,"submitted_at"),r.getString("submission_mode"),r.getInt("warnings"),instant(r,"last_event_at")},id,q,size,(long)page*size);
+                (r,n)->new Object[]{r.getString("id"),r.getString("nickname"),instant(r,"submitted_at"),r.getString("submission_mode"),r.getInt("warnings"),instant(r,"last_event_at"),instant(r,"expelled_at")},id,q,size,(long)page*size);
         var items=new ArrayList<SubmissionRow>();
         for(var row:rows) {
             String pid=(String)row[0];Instant at=(Instant)row[2];int warnings=(Integer)row[4];boolean done=at!=null;
@@ -304,9 +307,9 @@ public class AssessmentService {
             }
             var view=scoresView(id,pid,analysis);
             Double totalScore="CONFIRMED".equals(view.status())?view.confirmedTotal():null;
-            items.add(new SubmissionRow(pid,(String)row[1],(String)row[1],warnings>0?"WARNING":done?"SUBMITTED":"WRITING",done,
+            items.add(new SubmissionRow(pid,(String)row[1],(String)row[1],done?"SUBMITTED":"WRITING",done,
                     done?"SUBMITTED":"NOT_SUBMITTED",at,(String)row[3],warnings,view.status(),totalScore,view.totalAi(),
-                    analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),done?(analysis==null?"FAILED":analysis.status()):"NOT_SUBMITTED",view.recommendedMaxScore(),(Instant)row[5]));
+                    analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),done?(analysis==null?"FAILED":analysis.status()):"NOT_SUBMITTED",view.recommendedMaxScore(),(Instant)row[5],db.queryForObject("SELECT MAX(created_at) last_warning_at FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",(r,n)->instant(r,"last_warning_at"),pid),row[6]!=null,(Instant)row[6]));
         }
         return new Submissions(id,items,page,size,total,(total+size-1)/size,new SubmissionCounts(submittedCount,warning,total-warning-submittedCount,confirmed));
     }
@@ -325,7 +328,7 @@ public class AssessmentService {
             try { if(!a.path("updatedAt").isNull()&&!a.path("updatedAt").isMissingNode()) updated=Instant.parse(a.path("updatedAt").asText()); } catch(DateTimeException ignored) {}
             var paragraphs=byQuestion.getOrDefault(qid,List.of());
             questions.add(new AnswerQuestion(qid,q.path("position").asInt(),q.path("title").asText(),q.path("content").asText(),a.path("content").asText(""),
-                    a.path("version").asInt(),updated,paragraphs.isEmpty()?null:paragraphs.get(0).declaredSource(),paragraphs));
+                    a.path("version").asInt(),updated,paragraphs.isEmpty()?null:paragraphs.get(0).declaredSource(),paragraphs,q.path("minChars").asInt()>0?q.path("minChars").asInt():null,q.path("maxChars").asInt()>0?q.path("maxChars").asInt():null));
         }
         var sub=db.query("SELECT submitted_at,submission_mode FROM submissions WHERE participant_id=?",(r,n)->new Object[]{instant(r,"submitted_at"),r.getString("submission_mode")},pid);
         String nickname=db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,pid);

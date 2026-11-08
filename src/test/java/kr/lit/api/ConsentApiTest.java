@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class ConsentApiTest extends AuthTestSupport {
+    @org.junit.jupiter.api.BeforeEach void simulateLegacyAccount(){db.update("DELETE FROM user_policy_consents WHERE user_id=?",teacher.user().id());}
     private static final String PATH="/api/users/me/consents";
     @Autowired ConsentRepository repository;
     Map<String,Object> consentRequest() {
@@ -49,7 +50,7 @@ class ConsentApiTest extends AuthTestSupport {
         assertThat(repository.findConsentHistory(teacher.user().id())).isEmpty();
     }
     @Test void accountIsolationAndClientCannotChooseAnotherUserOrAcceptanceTime() throws Exception {
-        var other=newTeacher();var input=consentRequest();input.put("userId",other.user().id());input.put("acceptedAt","2000-01-01T00:00:00Z");
+        var other=newTeacher();db.update("DELETE FROM user_policy_consents WHERE user_id=?",other.user().id());var input=consentRequest();input.put("userId",other.user().id());input.put("acceptedAt","2000-01-01T00:00:00Z");
         ok(body(request(post(PATH),teacher),input));
         assertThat(repository.findConsentHistory(other.user().id())).isEmpty();
         mvc.perform(request(get(PATH),other)).andExpect(status().isOk()).andExpect(jsonPath("requiresAcceptance").value(true));

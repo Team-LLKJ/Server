@@ -12,6 +12,7 @@ class AssessmentController {
     private final AssessmentService assessment;
     AssessmentController(AssessmentService assessment) { this.assessment=assessment; }
 
+    @GetMapping("/analysis/definition") Object getAnalysisDefinition(@PathVariable String id){return assessment.getAnalysisDefinition(id);}
     @GetMapping("/submissions")
     Submissions submissions(@PathVariable String id,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="100") int size,
                             @RequestParam(defaultValue="") String query) { return assessment.submissions(id,page,size,query); }

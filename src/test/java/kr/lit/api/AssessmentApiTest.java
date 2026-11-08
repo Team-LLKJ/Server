@@ -62,7 +62,7 @@ class AssessmentApiTest extends AuthTestSupport {
         JsonNode subs=ok(request(get(root(f)+"/submissions"),teacher));
         JsonNode mine=null,other=null;
         for(var row:subs.path("items")) { if(row.path("participantId").asText().equals(f.pid())) mine=row; else other=row; }
-        assertThat(mine.path("status").asText()).isEqualTo("WARNING");assertThat(mine.path("warningCount").asInt()).isEqualTo(1);
+        assertThat(mine.path("status").asText()).isEqualTo("SUBMITTED");assertThat(mine.path("warningCount").asInt()).isEqualTo(1);
         assertThat(mine.path("totalAi").isNumber()).isTrue();assertThat(mine.path("gradingStatus").asText()).isEqualTo("NOT_STARTED");
         assertThat(other.path("status").asText()).isEqualTo("WRITING");assertThat(other.path("totalScore").isNull()).isTrue();
 

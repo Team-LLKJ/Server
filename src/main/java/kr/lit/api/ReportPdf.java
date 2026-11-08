@@ -65,6 +65,9 @@ public class ReportPdf {
    for(int r=0;r<table.rows().size();r++) {
     var lines=new ArrayList<List<String>>();int max=1;
     for(int c=0;c<widths.length;c++){var wrapped=wrap(table.rows().get(r).get(c),11,widths[c]-12);lines.add(wrapped);max=Math.max(max,wrapped.size());}
+    float rowHeight=max*17+12;
+    float pageCapacity=PDRectangle.A4.getHeight()-TOP-BOTTOM-(table.header()&&r>0?29:0);
+    if(rowHeight<=pageCapacity&&y-rowHeight<BOTTOM){newPage();if(table.header()&&r>0)drawHeader(table.rows().get(0),widths);}
     int offset=0;
     while(offset<max) {
      if(y-BOTTOM<29){newPage();if(table.header()&&r>0)drawHeader(table.rows().get(0),widths);}

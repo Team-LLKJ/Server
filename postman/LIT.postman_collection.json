@@ -262,7 +262,7 @@
             "url": "{{baseUrl}}/api/auth/signup/teacher",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -289,7 +289,7 @@
             "url": "{{baseUrl}}/api/auth/signup/teacher",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1736,7 +1736,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/answers"
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/answers",
+            "description": " questions[].minChars/maxChars 추가. 제한 없으면null, 제출 후에는동결된제출문항기준."
           }
         },
         {
@@ -1858,7 +1859,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/answers"
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/answers",
+            "description": " questions[].minChars/maxChars 추가. 제한 없으면null, 제출 후에는동결된제출문항기준."
           }
         },
         {
@@ -2148,7 +2150,8 @@
                 "value": "{{participantToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure"
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure",
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {
@@ -2169,7 +2172,8 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tools\": \"LIT 내장 AI\",\n  \"usedParts\": \"문항 1 둘째 문단\",\n  \"reason\": \"개념만 확인하고 예시는 직접 찾았습니다.\"\n}"
-            }
+            },
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         }
       ]
@@ -3632,7 +3636,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/ai-disclosure",
-            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {
@@ -3713,6 +3717,343 @@
               "mode": "raw",
               "raw": "{\n  \"title\": \"평가\",\n  \"expiresInMinutes\": 60,\n  \"criteria\": [\n    \"비판적 검토\"\n  ],\n  \"antiCheat\": [\n    \"FULLSCREEN\",\n    \"DEVTOOLS\"\n  ]\n}"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "가입 동의·구조화 분석·실시간·비동기 ZIP",
+      "item": [
+        {
+          "name": "공개 정책 버전",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/policies/current",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "분석 정의",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/analysis/definition",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "붙여넣기 구간 신고",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PASTE\",\n  \"occurredAt\": \"2026-11-08T08:00:00Z\",\n  \"questionId\": \"{{questionId}}\",\n  \"length\": 12,\n  \"start\": 0,\n  \"end\": 12,\n  \"answerVersion\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "실시간 이벤트 SSE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/live-events?afterId=0",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 작업 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/report-archive-jobs?format=HWP",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 상태",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/report-archive-jobs/{{archiveJobId}}",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 다운로드",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/report-archive-jobs/{{archiveJobId}}/download",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        }
+      ]
+    },
+    {
+      "name": "평가 알고리즘 V3 (로컬·미배포)",
+      "item": [
+        {
+          "name": "학생: 편집 이력 포함 답안 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "student",
+                "evaluations",
+                "{{evaluationId}}",
+                "questions",
+                "{{questionId}}",
+                "answer"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"직접 붙여\",\n  \"expectedVersion\": 0,\n  \"source\": \"DIRECT\",\n  \"aiRequestId\": null,\n  \"inputOperations\": [\n    {\n      \"type\": \"DIRECT\",\n      \"start\": 0,\n      \"end\": 0,\n      \"text\": \"직접 \",\n      \"conversationId\": null\n    },\n    {\n      \"type\": \"PASTE\",\n      \"start\": 3,\n      \"end\": 3,\n      \"text\": \"붙여\",\n      \"conversationId\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "학생: 정규화 답안·입력 경로 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/questions/{{questionId}}/input-paths",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "student",
+                "evaluations",
+                "{{evaluationId}}",
+                "questions",
+                "{{questionId}}",
+                "input-paths"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: 입력 경로 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/input-paths",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "students",
+                "{{participantId}}",
+                "input-paths"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: 목적별 가중치·대표 질문 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/usage-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "students",
+                "{{participantId}}",
+                "usage-analysis"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: V3 종합 분석",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "process-grading",
+                "participants",
+                "{{participantId}}",
+                "analysis"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: V3 사전 정책·제외 항목 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "process-grading",
+                "policy"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expectedVersion\": 0,\n  \"taskGoal\": \"학교 조건에 맞는 해결책\",\n  \"allowedRules\": \"AI 생성 후 학생 검토 허용\",\n  \"noAiPolicy\": \"HOLD\",\n  \"questionWeights\": [\n    {\n      \"questionId\": \"{{questionId}}\",\n      \"weight\": 100\n    }\n  ],\n  \"excludedCriteria\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "참여자 추방 (로컬·미배포)",
+      "item": [
+        {
+          "name": "교사: 참여자 추방 (기록 보존)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "participants",
+                "{{participantId}}"
+              ]
+            },
+            "description": "성공204·반복204. 답안/제출 이력보존, 토큰접근·재접속403 PARTICIPANT_EXPELLED. 대기/진행중만 새추방. docs/FRONTEND_INTEGRATION_REFERENCE.md 참조."
           }
         }
       ]

@@ -16,7 +16,7 @@ class ProcessGradingEngineTest {
             sources.add(new Source("answer:"+q,q,"FINAL_ANSWER","학생의 판단을 최종 답안에 반영했습니다."));
         }
         sources.add(new Source("disclosure",GLOBAL,"DISCLOSURE","선택한 방법과 제외한 이유를 기록했습니다."));
-        return new Input("evaluation","participant","hash","과제","TASK_ASSIST",new Policy(1,RUBRIC_VERSION,"과제 목표","생성 허용",NoAiPolicy.HOLD,weights),ids,sources,List.of());
+        return new Input("evaluation","participant","hash","과제","TASK_ASSIST",new Policy(1,PREVIOUS_RUBRIC_VERSION,"과제 목표","생성 허용",NoAiPolicy.HOLD,weights),ids,sources,List.of());
     }
     AiOutput output(Input input,int... levels) {
         var recommendations=new ArrayList<Recommendation>();

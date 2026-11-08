@@ -38,9 +38,9 @@ class ProcessGradingApiTest extends AuthTestSupport {
             var src=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")&&s.questionId().equals(q)).findFirst().orElseThrow();
             recommendations.add(new Recommendation(q,c,4,"과제 조건에 연결함","발전·반영의 추가 근거 부족",List.of(new Condition(engine.requiredConditions(c,4).get(0),List.of(new Citation(src.id(),src.text())))),List.of(),List.of()));
         }
-        var disclosure=input.sources().stream().filter(s->s.kind().equals("DISCLOSURE")).findFirst().orElseThrow();
+        var disclosure=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")).findFirst().orElseThrow();
         recommendations.add(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,4,"활용 공개","추가 이유 부족",List.of(new Condition("TRANSPARENCY_L4",List.of(new Citation(disclosure.id(),disclosure.text())))),List.of(),List.of()));
-        return new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations);
+        return V3GradingTestData.explain(input,new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations));
     }
     @Test void submissionFreezesInputsAndWorkerPublishesSeventyFiveWithVersionedReview() throws Exception {
         var f=fixture(true,true);var job=latest(f);var input=repository.getInput(job.id());
@@ -67,7 +67,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
         service.savePolicy(e.id(),new PolicyRequest(0,"학교 과제","생성 허용",NoAiPolicy.HOLD,weights));
         var p=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());
         for(var q:configured.questions())work.save(e.id(),p.participantToken(),q.id(),new SaveAnswer("학생이 과제 조건과 근거를 설명한 최종 답안입니다.",0,AnswerSource.DIRECT,null));
-        work.saveDisclosure(e.id(),p.participantToken(),new Disclosure("LIT","최종 답안","조건을 확인해서 선택했습니다."));
+        var observed=work.reserve(e.id(),p.participantToken(),configured.questions().get(0).id(),new Ask("batch-observed","개념 설명해줘"),"stub","test");work.finish(observed,"개념 설명",null);
         var preview=work.review(e.id(),p.participantToken());work.submit(e.id(),p.participantToken(),preview.reviewToken());
         var job=service.getRuns(e.id(),p.participantId()).get(0);
         when(ai.recommendLevels(any())).thenAnswer(call->validOutput(call.getArgument(0)));worker.processJob(job.id());
@@ -104,7 +104,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
     @Test void fabricatedEvidenceIsHeldAndCannotBeConfirmedWithoutTeacherCompletion() throws Exception {
         var f=fixture(true,true);var job=latest(f);var output=validOutput(repository.getInput(job.id()));var records=new ArrayList<>(output.recommendations());var r=records.get(0);
         records.set(0,new Recommendation(r.questionId(),r.criterion(),r.level(),r.reason(),r.unmetNextLevel(),List.of(new Condition("PURPOSE_L4",List.of(new Citation("foreign-student","위조 인용")))),List.of(),List.of()));
-        when(ai.recommendLevels(any())).thenReturn(new AiOutput(output.compliance(),records));worker.processJob(job.id());assertThat(latest(f).result().total()).isNull();
+        when(ai.recommendLevels(any())).thenReturn(new AiOutput(output.compliance(),records,output.summary()));worker.processJob(job.id());assertThat(latest(f).result().total()).isNull();
         String path=root(f)+"/"+job.id();
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),"CONFIRMED_OK","검토"))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isConflict());

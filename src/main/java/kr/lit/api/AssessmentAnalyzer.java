@@ -16,7 +16,7 @@ import static kr.lit.api.AssessmentModels.*;
  */
 @Component
 public class AssessmentAnalyzer {
-    public static final String MODEL="LIT_RULE_BASED_RUBRIC_V1";
+    public static final String MODEL="LIT_RULE_BASED_EXPLAINED_V2";
     public record DisclosureInput(String tools,String usedParts,String reason) {
         static final DisclosureInput EMPTY=new DisclosureInput("","","");
     }
@@ -36,6 +36,7 @@ public class AssessmentAnalyzer {
         for(var rule:RULES) if(rule.getValue().matcher(t).find()) return rule.getKey();
         return QuestionType.OTHER;
     }
+    static Pattern getClassificationPattern(QuestionType type){return RULES.stream().filter(rule->rule.getKey()==type).map(rule->Pattern.compile(rule.getValue().pattern(),Pattern.CASE_INSENSITIVE|Pattern.UNICODE_CASE)).findFirst().orElse(null);}
     private static final Pattern FOLLOW_UP_REFERENCE=Pattern.compile("(방금|위에서|앞에서|말한|제안한|네\\s*답|너의\\s*답|그\\s*중|그중|그\\s*부분|이\\s*부분|그렇다면|그러면)");
 
     // ---------- 문단 추출 ----------
@@ -133,7 +134,7 @@ public class AssessmentAnalyzer {
                 double score=best;
                 if(best>0&&copyQuestions.contains(qid)) score=Math.min(1,best+config.getCopyEventBonus());
                 String src=score>=config.getAiUsedThreshold()?"AI_USED":score>=config.getAiReferencedThreshold()?"AI_REFERENCED":"DIRECT";
-                paragraphs.add(new Paragraph("q"+pos+"-p"+(i+1),qid,pos,text,src,round(best,3),src.equals("DIRECT")?1.0:round(1-best,3),
+                paragraphs.add(new Paragraph("q"+pos+"-p"+(i+1),qid,pos,text,src,best,src.equals("DIRECT")?1.0:round(1-best,3),
                         src.equals("DIRECT")?null:bestId,true,declared.getOrDefault(qid,null)));
             }
         }
@@ -171,6 +172,7 @@ public class AssessmentAnalyzer {
 
         // 5~7. 지표·수준·근거
         var indicators=new ArrayList<IndicatorResult>();
+        var explanations=new EnumMap<Indicator,List<Reason>>(Indicator.class);
         // ① 목적 적절성
         if(totalQuestions==0) indicators.add(unavailable(Indicator.PURPOSE,"AI 질문 기록이 없어 목적 적절성을 판단할 근거가 없습니다 (교사 확인 필요).",List.of()));
         else {
@@ -179,6 +181,11 @@ public class AssessmentAnalyzer {
                 if(config.getAppropriateTypes().contains(c.type().name())) appropriate++;
                 if(c.type()==QuestionType.ANSWER_DRAFTING) ev.add(new Evidence(c.conversationId(),null,null,"답안 대리 작성 요청"));
             }
+            var purposeReasons=new ArrayList<Reason>();
+            if(appropriate>0)purposeReasons.add(new Reason("CREDIT","AI 질문 "+totalQuestions+"건 중 "+appropriate+"건이 학습·탐색 목적 분류에 포함됐습니다.",null));
+            if(totalQuestions>appropriate)purposeReasons.add(new Reason("DEDUCTION","학습·탐색 목적 분류 밖의 질문은 "+(totalQuestions-appropriate)+"건입니다.",null));
+            if(drafting>0)purposeReasons.add(new Reason("DEDUCTION","답안 작성 요청 "+drafting+"건이 목적 적절성 산식에 반영됐습니다.",null));
+            explanations.put(Indicator.PURPOSE,purposeReasons);
             double s=clamp((double)appropriate/totalQuestions-config.getDraftingPenalty()*drafting/totalQuestions);
             indicators.add(result(Indicator.PURPOSE,s,"질문 "+totalQuestions+"개 중 "+appropriate+"개가 개념 이해·자료 탐색·아이디어 구체화 목적"
                     +(drafting>0?", 답안 대리 작성 요청 "+drafting+"건 감점":""),ev.isEmpty()?classified.stream().limit(5).map(c->new Evidence(c.conversationId(),null,null,c.label())).toList():ev));
@@ -208,6 +215,13 @@ public class AssessmentAnalyzer {
             double b=followUps==0?0:(double)specific/followUps;
             // (c) 선택 이유 작성 여부
             double c=disclosure.reason().isBlank()?0:1;
+            var selfReasons=new ArrayList<Reason>();long prior=askedQuestions.stream().filter(savedBefore::contains).count();
+            if(prior>0)selfReasons.add(new Reason("CREDIT","AI 질문 전 답안 저장 "+prior+"/"+askedQuestions.size()+"문항",null));
+            if(prior<askedQuestions.size())selfReasons.add(new Reason("DEDUCTION","AI 질문 전 답안 저장 미관측 "+(askedQuestions.size()-prior)+"/"+askedQuestions.size()+"문항",null));
+            if(specific>0)selfReasons.add(new Reason("CREDIT","구체화 규칙 충족 "+specific+"/"+followUps+"건",null));
+            if(specific<followUps)selfReasons.add(new Reason("DEDUCTION","구체화 규칙 미충족 "+(followUps-specific)+"/"+followUps+"건",null));
+            selfReasons.add(new Reason(c>0?"CREDIT":"DEDUCTION","AI 선택 이유 "+(c>0?"작성":"미작성"),null));
+            explanations.put(Indicator.SELF_DIRECTION,selfReasons);
             double s=(a+b+c)/3;
             indicators.add(result(Indicator.SELF_DIRECTION,s,String.format(Locale.ROOT,
                     "첫 AI 질문 전 자기 답안 작성 %d/%d문항, 구체적인 추가 질문 %d/%d건, AI 선택 이유 %s",
@@ -227,6 +241,10 @@ public class AssessmentAnalyzer {
                 if(!action) for(var p:paragraphs) if(p.source().equals("AI_REFERENCED")&&Objects.equals(p.conversationId(),id)) { action=true;note="AI 내용을 수정해 반영 ("+p.id()+")";break; }
                 if(action) { acted++; ev.add(new Evidence(id,null,null,note)); }
             }
+            var reviewReasons=new ArrayList<Reason>();
+            if(acted>0)reviewReasons.add(new Reason("CREDIT","완료 응답 "+completed.size()+"건 중 "+acted+"건에서 후속 검증·부분 유사도 수정 신호가 관측됐습니다.",null));
+            if(acted<completed.size())reviewReasons.add(new Reason("DEDUCTION","완료 응답 "+(completed.size()-acted)+"건에서는 검토 신호를 확인하지 못했습니다.",null));
+            explanations.put(Indicator.CRITICAL_REVIEW,reviewReasons);
             double s=(double)acted/completed.size();
             indicators.add(result(Indicator.CRITICAL_REVIEW,s,"AI 응답 "+completed.size()+"건 중 "+acted+"건에서 확인·반박·수정 행동이 있었습니다",ev));
         }
@@ -236,6 +254,11 @@ public class AssessmentAnalyzer {
         if(!aiUsed) indicators.add(unavailable(Indicator.TRANSPARENCY,"AI 사용 기록이 없어 기록할 대상이 없습니다 (교사 확인 필요).",List.of()));
         else {
             int recorded=(signals.disclosedTools()?1:0)+(totalQuestions>0?1:0)+(signals.disclosedUsedParts()?1:0);
+            var transparencyReasons=new ArrayList<Reason>();
+            transparencyReasons.add(new Reason(signals.disclosedTools()?"CREDIT":"DEDUCTION","AI 도구명 "+(signals.disclosedTools()?"작성":"미작성"),null));
+            transparencyReasons.add(new Reason(totalQuestions>0?"CREDIT":"DEDUCTION","서버 질문 기록 "+totalQuestions+"건",null));
+            transparencyReasons.add(new Reason(signals.disclosedUsedParts()?"CREDIT":"DEDUCTION","답안 활용 부분 "+(signals.disclosedUsedParts()?"작성":"미작성"),null));
+            explanations.put(Indicator.TRANSPARENCY,transparencyReasons);
             indicators.add(result(Indicator.TRANSPARENCY,recorded/3.0,"필수 기록 3개 중 "+recorded+"개 (사용 AI 도구 "+(signals.disclosedTools()?"O":"X")
                     +", 질문 기록 "+(totalQuestions>0?"O":"X")+", 답안 활용 부분 "+(signals.disclosedUsedParts()?"O":"X")+")",List.of()));
         }
@@ -248,16 +271,20 @@ public class AssessmentAnalyzer {
         }
         usage.sort(Comparator.comparingInt(Usage::count).reversed().thenComparing(u->u.type().ordinal()));
 
-        String summary=summary(totalQuestions,counts,contribution,compliance,paragraphs.isEmpty());
+        var structured=indicators.stream().map(i->new IndicatorResult(i.indicator(),i.value(),i.level(),i.reason(),i.level()==null?i.evidence():AssessmentTrace.getEvidence(i.indicator(),turns,paragraphs,config.getAppropriateTypes(),config.getSpecificQuestionMinLength()),List.copyOf(explanations.getOrDefault(i.indicator(),List.of())))).toList();
+        var trace=AssessmentTrace.buildTextTrace(source,paragraphs,config.getCopyEventBonus());
+        contribution=new Contribution(contribution.direct(),contribution.aiReferenced(),contribution.aiUsed(),contribution.basis(),trace.segments());
+        String summary=summary(totalQuestions,counts,contribution,compliance,paragraphs.isEmpty())+" 판단 요인: "+structured.stream().flatMap(i->i.reasons().stream()).map(r->(r.type().equals("CREDIT")?"가점 요인: ":"감점 요인: ")+r.text()).collect(java.util.stream.Collectors.joining(" · "));
         return new Analysis(participantId,"DONE",MODEL,policy.name(),policy.level(),compliance,contribution,usage,classified,paragraphs,
-                indicators,signals,summary,now,List.of(
+                structured,signals,summary,now,List.of(
                         "규칙 기반 추천 점수이며 근거가 없으면 null입니다. 최종 점수는 교사가 확정합니다.",
                         "텍스트 유사도 비율은 실제 학생 기여도가 아니며 이 영역의 추천 점수는 제공하지 않습니다.",
                         "질문 분류는 키워드 규칙 기반이며 LLM 분류는 사용하지 않습니다. 기타(RULE_UNMATCHED)는 교사 확인이 필요합니다.",
                         "문단 출처는 AI 응답과의 문장 유사도·복사 기록으로 추정한 값입니다(estimated=true). 외부 AI·저장되지 않은 입력은 관측할 수 없습니다.",
-                        "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다."));
+                        "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다.","구조화 사유는 기존 규칙 산식의 관측 요인이며 개별 점수 증감량을 분리할 수 없어 scoreDelta를 생략합니다."),trace.texts(),AssessmentTrace.getPasteEvents(source),getDefinition());
     }
 
+    public Map<String,Object> getDefinition(){return Map.of("model",MODEL,"basis","TEXT_SIMILARITY_ESTIMATE","aiUsedThreshold",config.getAiUsedThreshold(),"aiReferencedThreshold",config.getAiReferencedThreshold(),"copyEventBonus",config.getCopyEventBonus(),"indexUnit","UTF16_END_EXCLUSIVE","textNormalization","answerTexts.text (문단 사이 LF, HTML 제거·표 셀은 | 구분)","usageMediumPercentage",20,"usageHighPercentage",50,"studentContribution","실제 작성 비율은 제공하지 않음");}
     private String summary(int questions,Map<QuestionType,Integer> counts,Contribution c,Compliance compliance,boolean empty) {
         var sb=new StringBuilder();
         if(questions==0) sb.append("AI 질문 기록이 없습니다. ");

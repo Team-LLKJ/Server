@@ -12,7 +12,9 @@ public final class AuthModels {
         @NotBlank @Size(min=10,max=128) String password,
         @NotBlank @Email @Size(max=254) String email,
         @NotBlank @Size(max=50) String name,
-        @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String emailVerificationToken) {}
+        @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String emailVerificationToken,
+        @NotBlank @Size(max=64) String termsVersion,@NotNull Boolean termsAccepted,
+        @NotBlank @Size(max=64) String privacyVersion,@NotNull Boolean privacyAccepted) {}
     public record Login(@NotBlank @Size(max=100) String username, @NotBlank @Size(max=128) String password) {}
     public record Refresh(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String refreshToken) {}
     public record Invite(@Min(1) @Max(168) int expiresInHours) {}

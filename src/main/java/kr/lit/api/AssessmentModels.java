@@ -33,27 +33,39 @@ public final class AssessmentModels {
 
     // ---- 분석 ----
     public record Compliance(ComplianceResult result,List<String> reasons) {}
-    public record Contribution(int direct,int aiReferenced,int aiUsed,String basis) {}
+    public record Reason(String type,String text,@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Double scoreDelta) {}
+    public record Segment(String questionId,int start,int end,String type,double similarity,double effectiveSimilarity,boolean estimated,int answerVersion) {}
+    public record AnswerText(String questionId,String text,int answerVersion) {}
+    public record PasteObservation(long eventId,String questionId,String occurredAt,Integer length,Integer start,Integer end,Integer answerVersion,boolean matchesFinalAnswer,boolean clientReported) {}
+    public record Contribution(int direct,int aiReferenced,int aiUsed,String basis,List<Segment> segments) {
+        public Contribution(int direct,int aiReferenced,int aiUsed,String basis){this(direct,aiReferenced,aiUsed,basis,List.of());}
+    }
     public record Usage(QuestionType type,String label,int count,double share,String level) {}
     public record ClassifiedQuestion(long conversationId,String requestId,String questionId,QuestionType type,String label,String method) {}
     public record Paragraph(String id,String questionId,int questionPosition,String text,String source,double similarity,
                             double changedRatio,Long conversationId,boolean estimated,String declaredSource) {}
-    public record Evidence(Long conversationId,String paragraphId,Long eventId,String note) {}
-    public record IndicatorResult(Indicator indicator,Double value,Integer level,String reason,List<Evidence> evidence) {}
+    public record Evidence(Long conversationId,String paragraphId,Long eventId,String note,String type,String messageRole,String quote,String reason) {
+        public Evidence(Long conversationId,String paragraphId,Long eventId,String note){this(conversationId,paragraphId,eventId,note,null,null,null,null);}
+    }
+    public record IndicatorResult(Indicator indicator,Double value,Integer level,String reason,List<Evidence> evidence,List<Reason> reasons) {
+        public IndicatorResult(Indicator indicator,Double value,Integer level,String reason,List<Evidence> evidence){this(indicator,value,level,reason,evidence,List.of());}
+    }
     public record Signals(int aiQuestions,int completedResponses,int pasteEvents,int aiCopyEvents,int warningEvents,
                           boolean disclosedTools,boolean disclosedUsedParts,boolean disclosedReason,boolean aiUsed) {}
     public record Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,
                            Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,
-                           List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations) {}
+                           List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition) {
+        public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of());}
+    }
     public record AnalysisRun(String evaluationId,int queued,String status) {}
 
     // ---- 점수 ----
-    public record AiScore(int level,double score,String reason,List<Evidence> evidence) {}
+    public record AiScore(int level,double score,String reason,List<Evidence> evidence,List<Reason> reasons) {}
     public record TeacherScore(int level,double score,String feedback,Instant updatedAt) {}
     public record CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted) {}
     public record ComplianceReview(ComplianceResult ai,ComplianceDecision decision,String note) {}
     public record Scores(String participantId,List<CriterionScore> criteria,Double totalAi,Double totalTeacher,double totalCurrent,
-                         String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria) {}
+                         String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria,String summary) {}
     public record ScoreInput(@Min(0) @Max(4) Integer level,@Size(max=2000) String feedback) {}
     public record ConfirmInput(Boolean acceptAiForMissing) {}
     public record ComplianceInput(@NotNull ComplianceDecision decision,@Size(max=1000) String note) {}
@@ -62,11 +74,11 @@ public final class AssessmentModels {
     // ---- 제출 현황·답안·대화 ----
     public record SubmissionRow(String participantId,String name,String nickname,String status,boolean submitted,String submissionStatus,
                                 Instant submittedAt,String submissionMode,int warningCount,String gradingStatus,Double totalScore,
-                                Double totalAi,ComplianceResult compliance,String analysisStatus,int recommendedMaxScore,Instant lastEventAt) {}
+                                Double totalAi,ComplianceResult compliance,String analysisStatus,int recommendedMaxScore,Instant lastEventAt,Instant lastWarningAt,boolean expelled,Instant expelledAt) {}
     public record SubmissionCounts(long submitted,long warning,long writing,long confirmed) {}
     public record Submissions(String evaluationId,List<SubmissionRow> items,int page,int size,long totalElements,long totalPages,SubmissionCounts counts) {}
     public record AnswerQuestion(String questionId,int position,String title,String content,String answerHtml,int version,Instant updatedAt,
-                                 String declaredSource,List<Paragraph> paragraphs) {}
+                                 String declaredSource,List<Paragraph> paragraphs,Integer minChars,Integer maxChars) {}
     public record Answers(String participantId,String nickname,String status,Instant submittedAt,String submissionMode,List<AnswerQuestion> questions,boolean sourcesEstimated) {}
     public record Conversation(long conversationId,String requestId,String questionId,String question,String answer,String status,String errorCode,
                                Instant createdAt,Instant completedAt,QuestionType questionType,String questionTypeLabel) {}
