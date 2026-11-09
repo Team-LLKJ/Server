@@ -22,7 +22,7 @@ feature/signup-consent-analysis-evidence 구현·미배포. 최신 develop ea8be
 }
 ```
 
-네 동의 필드가 추가로 필수입니다. 누락/형식 오류400 INVALID_REQUEST, 둘 중 false면400 CONSENT_REQUIRED, 현재 문서 버전과 다르면409 POLICY_VERSION_MISMATCH입니다. 불일치는 이메일 인증 토큰 소비 전에 검사합니다. 사용자 생성·이메일 인증 소비·두 동의 레코드는 같은 트랜잭션이며 저장 실패 시 전부 롤백됩니다. 두 문서는 같은 서버 동의 시각을 기록합니다. 가입 직후 로그인한 사용자의 GET /api/users/me/consents는 requiresAcceptance=false입니다. 기존 계정의 동의를 소급 생성하지 않습니다. 기존 POST consents API의 버전/거절 규칙·중복 요청 시 시각 보존은 유지합니다.
+가입 비밀번호는 8~20자입니다. 네 동의 필드가 추가로 필수입니다. 누락/형식 오류400 INVALID_REQUEST, 둘 중 false면400 CONSENT_REQUIRED, 현재 문서 버전과 다르면409 POLICY_VERSION_MISMATCH입니다. 불일치는 이메일 인증 토큰 소비 전에 검사합니다. 사용자 생성·이메일 인증 소비·두 동의 레코드는 같은 트랜잭션이며 저장 실패 시 전부 롤백됩니다. 두 문서는 같은 서버 동의 시각을 기록합니다. 가입 직후 로그인한 사용자의 GET /api/users/me/consents는 requiresAcceptance=false입니다. 기존 계정의 동의를 소급 생성하지 않습니다. 기존 POST consents API의 버전/거절 규칙·중복 요청 시 시각 보존은 유지합니다.
 
 **프런트가 새 필드를 보내지 않으면 가입이 거절되므로 배포 시 함께 연결해야 합니다.**
 

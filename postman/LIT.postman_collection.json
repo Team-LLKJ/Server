@@ -260,6 +260,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/signup/teacher",
+            "description": "가입 비밀번호는 8~20자이며 공백만 입력할 수 없습니다. 길이 위반 시 400 INVALID_REQUEST를 반환합니다.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
@@ -287,6 +288,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/signup/teacher",
+            "description": "가입 비밀번호는 8~20자이며 공백만 입력할 수 없습니다. 길이 위반 시 400 INVALID_REQUEST를 반환합니다.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
