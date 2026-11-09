@@ -68,16 +68,16 @@
 
 ```json
 {
-  "content":"직접 붙여 AI","expectedVersion":0,"source":"DIRECT","aiRequestId":null,
+  "content":"직접 추가 AI","expectedVersion":0,"source":"DIRECT","aiRequestId":null,
   "inputOperations":[
     {"type":"DIRECT","start":0,"end":0,"text":"직접 ","conversationId":null},
-    {"type":"PASTE","start":3,"end":3,"text":"붙여 ","conversationId":null},
+    {"type":"DIRECT","start":3,"end":3,"text":"추가 ","conversationId":null},
     {"type":"AI_INSERT","start":6,"end":6,"text":"AI","conversationId":73}
   ]
 }
 ```
 
-작업은 배열 순서로 적용하며 각 start/end는 바로 이전 작업까지 반영된 정규화 문자열 기준입니다. 기준 버전은 expectedVersion입니다. DIRECT/PASTE/AI_INSERT는 `[start,end)`를 text로 교체합니다. DELETE는 text=""이며 FORMAT도 text=""이고 문자열·경로를 바꾸지 않습니다. UTF-16 서로게이트 중간 위치는 거절합니다.
+작업은 배열 순서로 적용하며 각 start/end는 바로 이전 작업까지 반영된 정규화 문자열 기준입니다. 기준 버전은 expectedVersion입니다. DIRECT/AI_INSERT는 `[start,end)`를 text로 교체합니다. PASTE 작업이 포함된 저장은 400 `PASTE_NOT_ALLOWED`로 거절하며 답안과 버전을 변경하지 않습니다. DELETE는 text=""이며 FORMAT도 text=""이고 문자열·경로를 바꾸지 않습니다. UTF-16 서로게이트 중간 위치는 거절합니다. `inputOperations`가 생략되거나 부정확하면 서버는 붙여넣기 여부를 판별할 수 없습니다.
 
 AI_INSERT는 본인·해당 문항·완료된 대화의 conversationId와 삽입 문구가 일치해야 합니다. AI 응답은 서버의 정규화 텍스트로 비교합니다. 마크다운을 별도 방식으로 바꾼 문구는 일치하지 않을 수 있으므로 반환된 텍스트와 위치 계약을 지켜야 합니다. AI_INSERT 외 작업에 conversationId를 보내지 마세요.
 

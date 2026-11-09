@@ -26,7 +26,7 @@ class InputPathV3ApiTest extends AuthTestSupport {
     }
     @Test void replaysMixedPathsDeletesAndFormatPreservationAndFreezesAtSubmission()throws Exception {
         var f=createFixture();var turn=work.reserve(f.id(),f.token(),f.qid(),new Ask("path-ai","개념을 설명해줘"),"stub","test");work.finish(turn,"AI",null);
-        var operations=List.of(new InputOperation(InputOperationType.DIRECT,0,0,"직접 ",null),new InputOperation(InputOperationType.PASTE,3,3,"붙여 ",null),new InputOperation(InputOperationType.AI_INSERT,6,6,"AI",turn.turn().id()));
+        var operations=List.of(new InputOperation(InputOperationType.DIRECT,0,0,"직접 ",null),new InputOperation(InputOperationType.DIRECT,3,3,"붙여 ",null),new InputOperation(InputOperationType.AI_INSERT,6,6,"AI",turn.turn().id()));
         work.save(f.id(),f.token(),f.qid(),new SaveAnswer("직접 붙여 AI",0,AnswerSource.DIRECT,null,operations));
         var path=work.getInputPath(f.id(),f.token(),f.qid());assertThat(path.status()).isEqualTo("COMPLETE");assertThat(path.shares().stream().mapToLong(InputPathAnalyzer.Share::characters).sum()).isEqualTo(6);assertThat(path.shares().stream().mapToDouble(InputPathAnalyzer.Share::percentage).sum()).isEqualTo(100);
         work.save(f.id(),f.token(),f.qid(),new SaveAnswer("직접  AI",1,AnswerSource.DIRECT,null,List.of(new InputOperation(InputOperationType.DELETE,3,5,"",null))));
@@ -45,6 +45,13 @@ class InputPathV3ApiTest extends AuthTestSupport {
         }
         var result=mvc.perform(body(put("/api/student/evaluations/"+f.id()+"/questions/"+f.qid()+"/answer").header("X-Participant-Token",f.token()),Map.of("content","직접","expectedVersion",0,"source","DIRECT","inputOperations",List.of(Map.of("type","DIRECT","start",0,"end",0,"text","다른 내용"))))).andExpect(status().isBadRequest()).andReturn();
         assertThat(result.getResponse().getContentAsString()).contains("INPUT_TRACE_MISMATCH");
+    }
+    @Test void reportedPasteIsRejectedWithoutChangingSavedAnswer()throws Exception {
+        var f=createFixture();
+        var input=Map.of("content","붙여넣은 답안","expectedVersion",0,"source","DIRECT","inputOperations",List.of(Map.of("type","PASTE","start",0,"end",0,"text","붙여넣은 답안")));
+        mvc.perform(body(put("/api/student/evaluations/"+f.id()+"/questions/"+f.qid()+"/answer").header("X-Participant-Token",f.token()),input))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("PASTE_NOT_ALLOWED"));
+        assertThat(work.getAnswer(f.id(),f.token(),f.qid()).version()).isZero();
     }
     @Test void legacyDirectSaveAndPasteSignalDoNotBecomeProvenanceProof(){
         var f=createFixture();work.save(f.id(),f.token(),f.qid(),new SaveAnswer("😀 직접",0,AnswerSource.DIRECT,null));

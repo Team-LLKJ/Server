@@ -198,6 +198,8 @@ public class WorkService {
             throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_REFERENCE","직접 작성에는 AI 대화 ID를 지정하지 않습니다.");
         }
         if(input.inputOperations()!=null){
+            if(input.inputOperations().stream().anyMatch(operation->operation.type()==InputOperationType.PASTE))
+                throw failure(HttpStatus.BAD_REQUEST,"PASTE_NOT_ALLOWED","답안에 붙여넣기를 사용할 수 없습니다.");
             try{
                 if(!InputPathAnalyzer.normalizeText(safeContent).equals(InputPathAnalyzer.replayText(InputPathAnalyzer.normalizeText(old.content()),input.inputOperations())))
                     throw new IllegalArgumentException("INPUT_TRACE_MISMATCH");
