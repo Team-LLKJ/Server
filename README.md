@@ -63,7 +63,7 @@ Access Token은 2시간, Refresh Token은 최초 로그인 기준 최대 14일�
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
-| POST | `/api/auth/signup/teacher` | 이메일 인증 완료 후 가입 |
+| POST | `/api/auth/signup/teacher` | 이메일 인증 완료 후 가입, 비밀번호 8~20자 |
 | POST | `/api/auth/login` | 공통 로그인 |
 | POST | `/api/auth/refresh` | 토큰 교체 |
 | GET | `/api/auth/me` | 본인 계정 |

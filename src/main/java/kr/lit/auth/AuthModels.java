@@ -9,7 +9,7 @@ public final class AuthModels {
     public record Principal(String userId, Role role, String sessionId) {}
     public record TeacherSignup(
         @NotBlank @Pattern(regexp="[A-Za-z0-9_]{4,30}") String username,
-        @NotBlank @Size(min=10,max=128) String password,
+        @NotBlank @Size(min=8,max=20) String password,
         @NotBlank @Email @Size(max=254) String email,
         @NotBlank @Size(max=50) String name,
         @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{43}") String emailVerificationToken,
