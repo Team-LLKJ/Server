@@ -47,9 +47,9 @@ lit:
   grading:
     process-interval-ms: ${LIT_PROCESS_GRADING_INTERVAL_MS:3000}
     # AI 활용 채점 알고리즘 가중치·경계값 (docs/AI_GRADING.md 참고)
-    ai-used-threshold: ${LIT_GRADING_AI_USED_THRESHOLD:0.8}
+    # 답안 출처 판정 V2: 문장 3-gram 포함률 기준, 정규화 후 그대로 이어지는 최소 일치 글자 수
     ai-referenced-threshold: ${LIT_GRADING_AI_REFERENCED_THRESHOLD:0.4}
-    copy-event-bonus: ${LIT_GRADING_COPY_EVENT_BONUS:0.15}
+    min-span-length: ${LIT_GRADING_MIN_SPAN_LENGTH:20}
     drafting-penalty: ${LIT_GRADING_DRAFTING_PENALTY:1.0}
     specific-question-min-length: ${LIT_GRADING_SPECIFIC_QUESTION_MIN_LENGTH:20}
     usage-high-share: 0.5

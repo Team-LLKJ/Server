@@ -122,7 +122,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
             .andExpect(jsonPath("rubricVersion").value(RUBRIC_VERSION)).andExpect(jsonPath("total").value(75))
             .andExpect(jsonPath("criteria.length()").value(5)).andExpect(jsonPath("studentContribution.level").value(4))
             .andExpect(jsonPath("studentContribution.score").value(18.75)).andExpect(jsonPath("studentContribution.label").value("잘함"))
-            .andExpect(jsonPath("textSimilarity.basis").value("TEXT_SIMILARITY_ESTIMATE"));
+            .andExpect(jsonPath("textSimilarity.basis").value("TEXT_SIMILARITY_ESTIMATE_V2"));
         as(teacher);service.saveReview(f.id(),f.pid(),job.id(),new ReviewRequest(0,List.of(new LevelOverride(f.question(),Criterion.CONTRIBUTION,5,"학생의 핵심 판단 확인")),"CONFIRMED_OK","확인"));
         mvc.perform(request(get(path),teacher)).andExpect(jsonPath("studentContribution.level").value(5)).andExpect(jsonPath("total").value(81.25)).andExpect(jsonPath("confirmed").value(false));
         mvc.perform(request(get(path),newTeacher())).andExpect(status().isNotFound());

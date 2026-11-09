@@ -44,6 +44,12 @@ public final class AssessmentModels {
     public record ClassifiedQuestion(long conversationId,String requestId,String questionId,QuestionType type,String label,String method) {}
     public record Paragraph(String id,String questionId,int questionPosition,String text,String source,double similarity,
                             double changedRatio,Long conversationId,boolean estimated,String declaredSource) {}
+    /**
+     * 답안 출처 판정 V2의 문장별 결과. source는 DIRECT 또는 AI_REFERENCED, reason은 SPAN_MATCH(최장 일치 구간)·GRAM_OVERLAP(3-gram 포함률)·null(DIRECT).
+     * start/end는 answerTexts[].text 기준 UTF-16 위치(end 미포함)입니다.
+     */
+    public record Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
+                           double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated) {}
     public record Evidence(Long conversationId,String paragraphId,Long eventId,String note,String type,String messageRole,String quote,String reason) {
         public Evidence(Long conversationId,String paragraphId,Long eventId,String note){this(conversationId,paragraphId,eventId,note,null,null,null,null);}
     }
@@ -54,8 +60,8 @@ public final class AssessmentModels {
                           boolean disclosedTools,boolean disclosedUsedParts,boolean disclosedReason,boolean aiUsed) {}
     public record Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,
                            Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,
-                           List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition) {
-        public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of());}
+                           List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition,List<Sentence> sentences) {
+        public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of(),List.of());}
     }
     public record AnalysisRun(String evaluationId,int queued,String status) {}
 

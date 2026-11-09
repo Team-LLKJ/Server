@@ -68,7 +68,7 @@ class AssessmentApiTest extends AuthTestSupport {
 
         JsonNode answers=ok(request(get(root(f)+"/participants/"+f.pid()+"/answers"),teacher));
         JsonNode q2=answers.path("questions").get(1);
-        assertThat(q2.path("paragraphs").get(0).path("source").asText()).isEqualTo("AI_USED");
+        assertThat(q2.path("paragraphs").get(0).path("source").asText()).isEqualTo("AI_REFERENCED");
         assertThat(q2.path("paragraphs").get(1).path("source").asText()).isEqualTo("DIRECT");
 
         JsonNode conv=ok(request(get(root(f)+"/participants/"+f.pid()+"/conversations"),teacher));
@@ -78,7 +78,9 @@ class AssessmentApiTest extends AuthTestSupport {
         assertThat(analysis.path("status").asText()).isEqualTo("DONE");
         assertThat(analysis.at("/compliance/result").asText()).isEqualTo("CHECK");
         var c=analysis.path("contribution");
-        assertThat(c.path("direct").asInt()+c.path("aiReferenced").asInt()+c.path("aiUsed").asInt()).isEqualTo(100);
+        assertThat(c.path("direct").asInt()+c.path("aiReferenced").asInt()).isEqualTo(100);assertThat(c.path("aiUsed").asInt()).isZero();
+        assertThat(c.path("basis").asText()).isEqualTo("TEXT_SIMILARITY_ESTIMATE_V2");
+        assertThat(texts(analysis.path("sentences"),"source")).containsOnly("DIRECT","AI_REFERENCED").contains("AI_REFERENCED");
         mvc.perform(request(get(root(f)+"/participants/"+f.otherPid()+"/analysis"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("status").value("NOT_SUBMITTED"));
 
         String score=root(f)+"/participants/"+f.pid()+"/rubric-scores";

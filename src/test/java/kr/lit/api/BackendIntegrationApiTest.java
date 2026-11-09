@@ -27,7 +27,7 @@ class BackendIntegrationApiTest extends AuthTestSupport {
         var f=fixture();submit(f);var scores=assessment.scores(f.id(),f.pid());var analysis=assessment.analysis(f.id(),f.pid());
         assertThat(scores.criteria()).allMatch(c->c.ai()==null);assertThat(scores.totalAi()).isNull();assertThat(scores.recommendedMaxScore()).isZero();
         assertThat(scores.missingAiCriteria()).hasSize(5);assertThat(analysis.indicators()).allMatch(i->i.level()==null&&i.value()==null);
-        assertThat(analysis.contribution().basis()).isEqualTo("TEXT_SIMILARITY_ESTIMATE");assertThat(grading.activity(f.id(),f.pid()).studentContribution()).isNull();
+        assertThat(analysis.contribution().basis()).isEqualTo("TEXT_SIMILARITY_ESTIMATE_V2");assertThat(grading.activity(f.id(),f.pid()).studentContribution()).isNull();
         assertThatThrownBy(()->assessment.confirm(f.id(),f.pid(),true)).isInstanceOfSatisfying(ApiError.Failure.class,e->assertThat(e.code).isEqualTo("GRADING_INCOMPLETE"));
         assertThat(assessment.scores(f.id(),f.pid()).status()).isEqualTo("NOT_STARTED");
     }
@@ -61,6 +61,7 @@ class BackendIntegrationApiTest extends AuthTestSupport {
     }
     @Test void invalidGradingConfigurationFailsValidation() {
         var config=new GradingConfig();assertThat(validator.validate(config)).isEmpty();
-        config.setAiReferencedThreshold(0.9);config.setAiUsedThreshold(0.8);assertThat(validator.validate(config)).isNotEmpty();
+        config.setAiReferencedThreshold(0);assertThat(validator.validate(config)).isNotEmpty();
+        config.setAiReferencedThreshold(0.4);config.setMinSpanLength(2);assertThat(validator.validate(config)).isNotEmpty();config.setMinSpanLength(20);
         config.setAiReferencedThreshold(0.4);config.setUsageHighShare(Double.NaN);assertThat(validator.validate(config)).isNotEmpty();
     }}

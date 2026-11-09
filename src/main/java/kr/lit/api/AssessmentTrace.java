@@ -1,7 +1,6 @@
 package kr.lit.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import java.text.BreakIterator;
 import java.util.*;
 import java.util.regex.Pattern;
 import static kr.lit.api.AssessmentModels.*;
@@ -10,20 +9,15 @@ import static kr.lit.api.AssessmentModels.*;
 final class AssessmentTrace {
     private AssessmentTrace() {}
     record TextTrace(List<AnswerText> texts,List<Segment> segments) {}
-    static TextTrace buildTextTrace(JsonNode source,List<Paragraph> paragraphs,double copyBonus) {
-        var texts=new ArrayList<AnswerText>();var segments=new ArrayList<Segment>();
+    /** 문항별 답안 텍스트(문단 사이 LF). 문장 판정 구간(segments)은 AssessmentAnalyzer가 같은 좌표로 계산합니다. */
+    static TextTrace buildTextTrace(JsonNode source,List<Paragraph> paragraphs) {
+        var texts=new ArrayList<AnswerText>();
         for(var a:source.path("answers")) {
-            String q=a.path("question").path("id").asText();int version=a.path("answer").path("version").asInt();var lines=paragraphs.stream().filter(p->q.equals(p.questionId())).toList();
-            String text=String.join("\n",lines.stream().map(Paragraph::text).toList());texts.add(new AnswerText(q,text,version));int offset=0;
-            boolean copied=false;for(var event:source.path("learningEvents"))if(q.equals(event.path("questionId").asText())&&"AI_ANSWER_COPY".equals(event.path("type").asText()))copied=true;
-            for(var p:lines) {
-                double effective=p.similarity()>0&&copied?Math.min(1,p.similarity()+copyBonus):p.similarity();
-                var iterator=BreakIterator.getSentenceInstance(Locale.KOREAN);iterator.setText(p.text());int start=iterator.first();
-                for(int end=iterator.next();end!=BreakIterator.DONE;start=end,end=iterator.next())segments.add(new Segment(q,offset+start,offset+end,p.source().equals("DIRECT")?"STUDENT":p.source(),p.similarity(),effective,true,version));
-                offset+=p.text().length()+1;
-            }
+            String q=a.path("question").path("id").asText();int version=a.path("answer").path("version").asInt();
+            var lines=paragraphs.stream().filter(p->q.equals(p.questionId())).map(Paragraph::text).toList();
+            texts.add(new AnswerText(q,String.join("\n",lines),version));
         }
-        return new TextTrace(List.copyOf(texts),List.copyOf(segments));
+        return new TextTrace(List.copyOf(texts),List.of());
     }
     static List<PasteObservation> getPasteEvents(JsonNode source) {
         var out=new ArrayList<PasteObservation>();
@@ -43,7 +37,7 @@ final class AssessmentTrace {
         if(end-start>2000){start=Math.max(start,hit-200);end=Math.min(end,start+2000);}if(start>0&&Character.isLowSurrogate(text.charAt(start)))start--;end=Math.min(end,start+2000);if(end<text.length()&&Character.isHighSurrogate(text.charAt(end-1)))end--;
         return new Evidence(turn.path("id").asLong(),null,null,reason,type,role,text.substring(start,end),reason);
     }
-    static List<Evidence> getEvidence(Indicator indicator,List<JsonNode> turns,List<Paragraph> paragraphs,List<String> appropriate,int specificLength) {
+    static List<Evidence> getEvidence(Indicator indicator,List<JsonNode> turns,List<Sentence> sentences,List<String> appropriate,int specificLength) {
         var evidence=new ArrayList<Evidence>();var seen=new HashSet<String>();var questionCounts=new HashMap<String,Integer>();for(var turn:turns)questionCounts.merge(turn.path("questionId").asText(),1,Integer::sum);boolean hasFollowups=questionCounts.values().stream().anyMatch(count->count>1);
         for(int i=0;i<turns.size()&&evidence.size()<100;i++) {
             var turn=turns.get(i);var type=AssessmentAnalyzer.classify(turn.path("questionText").asText());boolean first=seen.add(turn.path("questionId").asText());Evidence item=null;
@@ -52,7 +46,7 @@ final class AssessmentTrace {
             if(indicator==Indicator.CRITICAL_REVIEW&&turn.path("state").asText().equals("COMPLETED")) {
                 JsonNode follow=null;for(int j=i+1;j<turns.size();j++)if(turn.path("questionId").asText().equals(turns.get(j).path("questionId").asText())){follow=turns.get(j);break;}
                 if(follow!=null&&AssessmentAnalyzer.classify(follow.path("questionText").asText())==QuestionType.VERIFICATION)item=quote(follow,"USER","CREDIT","이전 AI 응답에 이어 검증 질문을 보낸 기록입니다.");
-                else {boolean changed=paragraphs.stream().anyMatch(p->p.source().equals("AI_REFERENCED")&&Objects.equals(p.conversationId(),turn.path("id").asLong()));item=quote(turn,"AI",changed?"CREDIT":"DEDUCTION",changed?"이 응답과 부분 유사도를 보이는 답안이 있어 수정 반영 신호로 사용됐습니다.":"이 응답 이후의 검토 신호가 관측되지 않았습니다. 응답 자체의 오류를 뜻하지 않습니다.");}
+                else {boolean changed=sentences.stream().anyMatch(x->AssessmentAnalyzer.REASON_GRAM.equals(x.reason())&&Objects.equals(x.conversationId(),turn.path("id").asLong()));item=quote(turn,"AI",changed?"CREDIT":"DEDUCTION",changed?"이 응답 내용을 고쳐 쓴 것으로 추정되는 문장이 있어 수정 반영 신호로 사용됐습니다.":"이 응답 이후의 검토 신호가 관측되지 않았습니다. 응답 자체의 오류를 뜻하지 않습니다.");}
             }
             if(indicator==Indicator.TRANSPARENCY)item=quote(turn,"USER","CREDIT","서버에 저장된 질문 기록으로 투명성의 대화 기록 항목을 확인합니다.");
             if(item!=null)evidence.add(item);
