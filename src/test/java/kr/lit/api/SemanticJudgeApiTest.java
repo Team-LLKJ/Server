@@ -112,4 +112,33 @@ class SemanticJudgeApiTest extends AuthTestSupport {
         assertThat(sentence(a,PARAPHRASE)).matches(s->s.source().equals("DIRECT")&&s.needsReview());
         assertThat(a.contribution().aiReferenced()).isZero();
     }
+    void expireRetryWait(String pid){db.update("UPDATE grading_analyses SET semantic_failed_at=DATEADD('MINUTE',-2,CURRENT_TIMESTAMP) WHERE participant_id=?",pid);}
+    int attempts(String pid){return db.queryForObject("SELECT semantic_attempts FROM grading_analyses WHERE participant_id=?",Integer.class,pid);}
+    @Test void geminiFailureIsRetriedAfterOneMinuteWithCachedHaiku() {
+        when(client.judgeWithHaiku(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?2:0));
+        when(client.judgeWithGemini(any())).thenThrow(new JudgeFailure("JUDGE_GEMINI_HTTP_503")).thenAnswer(call->answer(call.getArgument(0),s->3));
+        var f=submit("");job.process(f.id(),f.pid());
+        assertThat(assessment.analysis(f.id(),f.pid()).semanticStatus()).isEqualTo("PARTIAL");assertThat(attempts(f.pid())).isEqualTo(1);
+        // 1분이 지나기 전에는 다시 시도하지 않습니다.
+        assessment.requeueFailedSemantic();
+        assertThat(db.queryForObject("SELECT semantic_status FROM grading_analyses WHERE participant_id=?",String.class,f.pid())).isEqualTo("PARTIAL");
+        expireRetryWait(f.pid());assessment.requeueFailedSemantic();
+        assertThat(db.queryForObject("SELECT semantic_status FROM grading_analyses WHERE participant_id=?",String.class,f.pid())).isEqualTo("PENDING");
+        // 기다리는 동안 화면은 직전(PARTIAL) 결과를 그대로 보여줍니다.
+        assertThat(assessment.analysis(f.id(),f.pid()).semanticStatus()).isEqualTo("PARTIAL");
+        job.process(f.id(),f.pid());
+        var a=assessment.analysis(f.id(),f.pid());
+        assertThat(a.semanticStatus()).isEqualTo("DONE");
+        assertThat(sentence(a,PARAPHRASE)).matches(s->s.source().equals("AI_REFERENCED")&&s.semantic().geminiLevel()==3&&!s.needsReview());
+        verify(client,times(1)).judgeWithHaiku(any());verify(client,times(2)).judgeWithGemini(any());
+        assertThat(attempts(f.pid())).isEqualTo(1);
+    }
+    @Test void stopsRetryingAfterThreeAttempts() {
+        when(client.judgeWithHaiku(any())).thenThrow(new JudgeFailure("JUDGE_ANTHROPIC_TIMEOUT"));
+        var f=submit("");job.process(f.id(),f.pid());
+        for(int i=0;i<4;i++){expireRetryWait(f.pid());assessment.requeueFailedSemantic();job.process(f.id(),f.pid());}
+        assertThat(attempts(f.pid())).isEqualTo(3);
+        verify(client,times(3)).judgeWithHaiku(any());
+        assertThat(assessment.analysis(f.id(),f.pid()).semanticStatus()).isEqualTo("UNAVAILABLE");
+    }
 }

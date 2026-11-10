@@ -143,7 +143,7 @@ public class AssessmentService {
     private Analysis analyzeAndStore(String id,String pid) {
         var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
         var analyzedAt=OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC);
-        int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=? WHERE participant_id=?",encode(result),analyzedAt,result.semanticStatus(),pid);
+        int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",encode(result),analyzedAt,result.semanticStatus(),pid);
         if(updated==0) db.update("INSERT INTO grading_analyses(participant_id,evaluation_id,analysis_status,result_json,requested_at,analyzed_at,semantic_status) VALUES (?,?,'DONE',?,?,?,?)",
                 pid,id,encode(result),analyzedAt,analyzedAt,result.semanticStatus());
         return result;
@@ -171,7 +171,7 @@ public class AssessmentService {
         if(pending.isEmpty()||!pending.get(0)[0].equals("PENDING")||!((OffsetDateTime)pending.get(0)[1]).isEqual(requestVersion))return;
         var src=reportsWorkWithoutAuth(id,pid);
         var result=compute(id,pid,src);
-        db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=? WHERE participant_id=?",
+        db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
     }
     /** 스케줄러 전용: 2단계 판정이 필요한(semantic_status=PENDING) 분석의 LLM 후보를 만듭니다. 대상이 아니면 null. */
@@ -190,11 +190,20 @@ public class AssessmentService {
         if(rows.isEmpty()) return;
         var result=compute(id,pid,reportsWorkWithoutAuth(id,pid),failure);
         // 실패 없이도 캐시가 채워지지 않았다면(예: 그사이 제출본 변경) PENDING으로 남아 다음 주기에 다시 판정합니다.
-        db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=? WHERE participant_id=?",
-                encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
+        boolean failed=SemanticJudge.STATUS_PARTIAL.equals(result.semanticStatus())||SemanticJudge.STATUS_UNAVAILABLE.equals(result.semanticStatus());
+        db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=?,semantic_attempts=semantic_attempts+?,semantic_failed_at=? WHERE participant_id=?",
+                encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),failed?1:0,failed?now():null,pid);
     }
     public void markSemanticUnavailable(String pid) {
-        db.update("UPDATE grading_analyses SET semantic_status='UNAVAILABLE' WHERE participant_id=? AND semantic_status='PENDING'",pid);
+        db.update("UPDATE grading_analyses SET semantic_status='UNAVAILABLE',semantic_attempts=semantic_attempts+1,semantic_failed_at=? WHERE participant_id=? AND semantic_status='PENDING'",now(),pid);
+    }
+    /**
+     * 스케줄러 전용: LLM 오류로 PARTIAL/UNAVAILABLE이 된 판정을 RETRY_AFTER 뒤 다시 PENDING으로 돌립니다(최대 MAX_ATTEMPTS회).
+     * 이미 저장된 Haiku·Gemini 판정은 캐시를 쓰므로 실패했던 호출만 다시 합니다. 그동안 화면은 직전 결과를 그대로 보여줍니다.
+     */
+    public int requeueFailedSemantic() {
+        return db.update("UPDATE grading_analyses SET semantic_status='PENDING' WHERE analysis_status='DONE' AND semantic_status IN ('PARTIAL','UNAVAILABLE') "+
+                "AND semantic_attempts<? AND semantic_failed_at<?",SemanticJudge.MAX_ATTEMPTS,now().minus(SemanticJudge.RETRY_AFTER));
     }
     public void markFailed(String pid,OffsetDateTime requestVersion,String code) {
         db.update("UPDATE grading_analyses SET analysis_status='FAILED',error_code=? WHERE participant_id=? AND analysis_status='PENDING' AND requested_at=?",code,pid,requestVersion);

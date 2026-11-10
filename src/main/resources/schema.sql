@@ -298,4 +298,6 @@ CREATE TABLE IF NOT EXISTS semantic_judgments (
  created_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_status VARCHAR(20);
+ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_failed_at TIMESTAMP WITH TIME ZONE;
 CREATE INDEX IF NOT EXISTS idx_grading_analyses_semantic ON grading_analyses(semantic_status);
