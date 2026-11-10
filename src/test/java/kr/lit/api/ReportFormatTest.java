@@ -33,8 +33,19 @@ class ReportFormatTest {
         String hwpText=TextExtractor.extract(hwp,TextExtractMethod.InsertControlTextBetweenParagraphText);
         String qa=System.getProperty("lit.report-format.qa-dir");
         if(qa!=null){var dir=java.nio.file.Path.of(qa);java.nio.file.Files.createDirectories(dir);byte[] bytes=new ReportPdf().render(report,false);java.nio.file.Files.write(dir.resolve("report-template.pdf"),bytes);java.nio.file.Files.write(dir.resolve("report-template.hwp"),new ReportHwpService().exportReport(report,false));try(var pdf=Loader.loadPDF(bytes)){var renderer=new org.apache.pdfbox.rendering.PDFRenderer(pdf);for(int page=0;page<pdf.getNumberOfPages();page++)javax.imageio.ImageIO.write(renderer.renderImageWithDPI(page,100),"PNG",dir.resolve("report-template-page-"+(page+1)+".png").toFile());}}
-        for(String text:List.of(pdfText,hwpText))assertThat(text).contains("AI 활용 학습 보고서","2026. 11. 04 14:55","72 / 100점","1. 종합 평가","2. 평가 기준별 루브릭","3. AI 활용 분석","4. 활동 및 경고 기록","5. 문항별 제출 답안","개발자 도구 열림","직접 작성","미분류","문항 1")
-            .doesNotContain("private-","COMPLETED","DIRECT","UNCLASSIFIED","KEYWORD_RULES_V1","REVIEW_REQUIRED","[미입력]","대화원문옵션표식","부록.","2026-11-04T");
+        for(String text:List.of(pdfText,hwpText))assertThat(text).contains("AI 활용 학습 보고서","2026. 11. 04 14:55","72 / 100점","1. 종합 평가","2. 평가 기준별 루브릭","3. AI 활용 분석","4. 활동 및 경고 기록","5. 문항별 제출 답안","개발자 도구 열림","직접 작성","미분류","문항 번호","문항 1","학생이 배식량을 선택하도록 제안합니다.")
+            .doesNotContain("제출 상태","제출완료","private-","COMPLETED","DIRECT","UNCLASSIFIED","KEYWORD_RULES_V1","REVIEW_REQUIRED","[미입력]","대화원문옵션표식","부록.","2026-11-04T");
+    }
+    @Test void longPdfAnswerContinuesWithTableHeaderOnNextPage() throws Exception {
+        var report=sample(false);
+        var answer=(com.fasterxml.jackson.databind.node.ObjectNode)report.content().submission().path("answers").get(0).path("answer");
+        answer.put("content","<p>첫 답안 문장</p>"+"<p>긴 한글 답안입니다.</p>".repeat(100)+"<p>마지막답안표식</p>");
+        try(var pdf=Loader.loadPDF(new ReportPdf().render(report,false))){
+            var stripper=new PDFTextStripper();
+            assertThat(stripper.getText(pdf)).contains("첫 답안 문장");
+            stripper.setStartPage(pdf.getNumberOfPages());
+            assertThat(stripper.getText(pdf)).contains("문항 번호","답안","마지막답안표식");
+        }
     }
     @Test void ungradedRemainsUngradedAndRawAppendixStartsOnNewPage() throws Exception {
         var report=sample(false);
@@ -59,6 +70,6 @@ class ReportFormatTest {
         assertThat(TextExtractor.extract(hwp,TextExtractMethod.InsertControlTextBetweenParagraphText)).contains("긴근거마지막표식","대화원문옵션표식");
         var section=hwp.getBodyText().getSectionList().get(0);int tables=0;
         for(int i=0;i<section.getParagraphCount();i++){var controls=section.getParagraph(i).getControlList();if(controls!=null)for(var control:controls)if(control instanceof kr.dogfoot.hwplib.object.bodytext.control.ControlTable table){tables++;assertThat(table.getTable().getProperty().getDivideAtPageBoundary()).isEqualTo(kr.dogfoot.hwplib.object.bodytext.control.table.DivideAtPageBoundary.Divide);}}
-        assertThat(tables).isEqualTo(6);
+        assertThat(tables).isEqualTo(7);
     }
 }

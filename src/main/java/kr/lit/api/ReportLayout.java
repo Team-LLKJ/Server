@@ -17,8 +17,11 @@ public class ReportLayout {
     public Document buildDocument(UsageReport report,boolean raw) {
         var c=report.content();var blocks=new ArrayList<Block>();var review=c.teacherReview();
         blocks.add(new Text(c.title(),"subtitle"));
-        blocks.add(new Table(List.of(List.of("학생",c.nickname(),"제출 상태",c.submittedAt()==null?"미제출":"제출완료"),
-                List.of("제출일",formatDate(c.submittedAt()),"평가 점수",c.grading()==null?scoreSummary(review):scoreSummary(c.grading()))),new int[]{7000,14260,7000,14260},false));
+        blocks.add(new Table(List.of(
+                List.of("학생",c.nickname()),
+                List.of("제출일",formatDate(c.submittedAt())),
+                List.of("평가 점수",c.grading()==null?scoreSummary(review):scoreSummary(c.grading()))),
+                new int[]{7000,35520},false));
         heading(blocks,"1. 종합 평가");
         int saves=0,warnings=0,completed=0,failed=0;
         for(var e:c.submission().path("learningEvents")){if("ANSWER_SAVED".equals(e.path("type").asText()))saves++;if(WorkModels.ClientEventType.warningNames().contains(e.path("type").asText()))warnings++;}
@@ -39,7 +42,7 @@ public class ReportLayout {
             String evidence=rating==null?"":Objects.toString(rating.evidence(),"");
             scores.add(List.of(ReportPdf.label(criterion),rating==null||rating.score()==null?"미채점":rating.score()+" / "+review.maxScore(),evidence));
         }
-        blocks.add(new Table(scores,new int[]{14520,8000,20000},true));
+        blocks.add(new Table(scores,new int[]{10000,6500,26020},true));
         if(c.grading()!=null&&ProcessGradingModels.RUBRIC_VERSION.equals(c.grading().rubricVersion()))appendProcessDetails(blocks,c.grading(),c.submission());
         heading(blocks,"3. AI 활용 분석");
         var usage=new ArrayList<List<String>>();
@@ -74,13 +77,15 @@ public class ReportLayout {
         if(activities.size()==1)activities.add(List.of("","","기록된 활동이 없습니다."));
         blocks.add(new Table(activities,new int[]{14520,6500,21500},true));
         heading(blocks,"5. 문항별 제출 답안");
+        var answers=new ArrayList<List<String>>();
+        answers.add(List.of("문항 번호","답안"));
         for(var a:c.submission().path("answers")) {
-            blocks.add(new Text("문항 "+a.path("question").path("position").asInt()+" · "+a.path("question").path("title").asText(),"question"));
-            String problem=ReportPdf.answerText(a.path("question").path("content").asText());
-            if(!problem.isBlank())text(blocks,"문제: "+problem);
-            String answer=ReportPdf.answerText(a.path("answer").path("content").asText());
-            text(blocks,"답안: "+(answer.isBlank()?"[미작성]":answer));
+            String questionNumber="문항 "+a.path("question").path("position").asInt();
+            String answer=ReportPdf.answerText(a.path("answer").path("content").asText()).strip();
+            answers.add(List.of(questionNumber,answer.isBlank()?"[미작성]":answer));
         }
+        if(answers.size()==1)answers.add(List.of("","제출 답안이 없습니다."));
+        blocks.add(new Table(answers,new int[]{6000,36520},true));
         if(raw) {
             blocks.add(new PageBreak());heading(blocks,"부록. AI 대화 기록");int index=0;
             for(var t:c.submission().path("conversations")) {
