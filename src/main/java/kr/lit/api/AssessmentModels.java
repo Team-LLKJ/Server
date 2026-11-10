@@ -50,12 +50,14 @@ public final class AssessmentModels {
      */
     public record Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
-                           boolean needsReview,SemanticVerdict semantic) {
+                           boolean needsReview,SemanticVerdict semantic,String teacherLabel) {
         public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
                         double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated){
-            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null);
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null,null);
         }
     }
+    /** 교사의 문장 판정 수정(3단계 보정 자료). AI 또는 DIRECT. */
+    public record SentenceLabelInput(@NotBlank @Pattern(regexp="AI|DIRECT") String label) {}
     /**
      * 2단계 LLM 판정 결과(문장 하나). geminiLevel·sonnetLevel은 0~3 단계(3: 거의 그대로 따라감, 2: 핵심 주장 같음,
      * 1: 일반적 내용·자기 경험 중심, 0: 다름), sonnetLevel은 Sonnet에 보내지 않았거나 실패하면 null입니다.

@@ -18,7 +18,7 @@ import static kr.lit.api.AssessmentModels.*;
 public class AssessmentAnalyzer {
     public static final String MODEL="LIT_RULE_BASED_EXPLAINED_V2_1";
     public static final String CONTRIBUTION_BASIS="TEXT_SIMILARITY_ESTIMATE_V2";
-    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP",REASON_SEMANTIC="SEMANTIC";
+    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP",REASON_SEMANTIC="SEMANTIC",REASON_TEACHER="TEACHER",LABEL_AI="AI",LABEL_DIRECT="DIRECT";
     public record DisclosureInput(String tools,String usedParts,String reason) {
         static final DisclosureInput EMPTY=new DisclosureInput("","","");
     }
@@ -102,7 +102,12 @@ public class AssessmentAnalyzer {
      * 판정은 입력으로만 받으므로 이 메서드는 계속 같은 입력에 같은 결과를 내는 순수 계산입니다.
      */
     public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now,SemanticInput semantic) {
+        return analyze(participantId,source,disclosure,now,semantic,Map.of());
+    }
+    /** teacherLabels: 교사가 고친 문장 판정(sentenceKey → AI|DIRECT). 알고리즘 판정보다 우선하며 비율에 바로 반영됩니다. */
+    public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now,SemanticInput semantic,Map<String,String> teacherLabels) {
         if(semantic==null) semantic=SemanticInput.DISABLED;
+        if(teacherLabels==null) teacherLabels=Map.of();
         if(disclosure==null) disclosure=DisclosureInput.EMPTY;
         WorkModels.AiPolicy policy;
         try { policy=WorkModels.AiPolicy.valueOf(source.path("aiPolicy").asText("DISABLED")); }
@@ -171,6 +176,13 @@ public class AssessmentAnalyzer {
                     var verdict=semantic.verdicts().get(sentenceKey(qid,sentence));
                     if(reason!=null) verdict=null;
                     if(verdict!=null&&verdict.ai()) { reason=REASON_SEMANTIC;conversation=verdict.conversationId(); }
+                    String teacherLabel=teacherLabels.get(sentenceKey(qid,sentence));
+                    boolean needsReview=verdict!=null&&verdict.needsReview();
+                    if(teacherLabel!=null) {
+                        needsReview=false;
+                        if(LABEL_DIRECT.equals(teacherLabel)) reason=null;
+                        else if(reason==null) { reason=REASON_TEACHER;if(conversation==null&&verdict!=null) conversation=verdict.conversationId(); }
+                    }
                     String src=reason==null?SOURCE_DIRECT:SOURCE_AI;
                     // 문장 사이 공백까지 포함해 답안 텍스트를 빈틈없이 덮는 구간(segments)으로 비중을 계산합니다.
                     int segStart=k==0?0:range.start(),segEnd=k+1<ranges.size()?ranges.get(k+1).start():text.length();
@@ -178,7 +190,7 @@ public class AssessmentAnalyzer {
                     double similarity=round(best,3);
                     sentences.add(new Sentence(paragraphId+"-s"+(k+1),qid,paragraphId,sentence,src,reason,longest,similarity,
                             reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true,
-                            verdict!=null&&verdict.needsReview(),verdict));
+                            needsReview,verdict,teacherLabel));
                     segments.add(new Segment(qid,offset+segStart,offset+segEnd,reason==null?"STUDENT":SOURCE_AI,similarity,similarity,true,version));
                     paragraphBest=Math.max(paragraphBest,best);
                     if(reason!=null) {
@@ -331,7 +343,7 @@ public class AssessmentAnalyzer {
     }
 
     public Map<String,Object> getDefinition(){return Map.ofEntries(Map.entry("model",MODEL),Map.entry("basis",CONTRIBUTION_BASIS),
-            Map.entry("sources",List.of(SOURCE_DIRECT,SOURCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC)),
+            Map.entry("sources",List.of(SOURCE_DIRECT,SOURCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC,REASON_TEACHER)),
             Map.entry("minSpanLength",config.getMinSpanLength()),Map.entry("aiReferencedThreshold",config.getAiReferencedThreshold()),
             Map.entry("excludedText","평가 안내 + 문항 제목·내용"),Map.entry("indexUnit","UTF16_END_EXCLUSIVE"),
             Map.entry("textNormalization","answerTexts.text (문단 사이 LF, HTML 제거·표 셀은 | 구분)"),Map.entry("usageMediumPercentage",20),

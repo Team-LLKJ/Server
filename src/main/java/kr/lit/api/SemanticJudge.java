@@ -42,6 +42,14 @@ public class SemanticJudge {
         this.config=config;this.client=client;this.db=db;this.json=json;
     }
     public boolean isActive(){return config.isActive();}
+    /** 교사 판정 수정 기록에 함께 저장할 2단계 설정(보정용). */
+    public Map<String,Object> describe() {
+        var out=new LinkedHashMap<String,Object>();
+        out.put("judgeActive",isActive());out.put("promptVersion",SemanticJudgeConfig.PROMPT_VERSION);
+        out.put("geminiModel",config.getGemini().getModel());out.put("anthropicModel",config.getAnthropic().getModel());
+        out.put("level1ReviewShare",config.getLevel1ReviewShare());out.put("maxCandidates",config.getMaxCandidates());out.put("minSentenceLength",config.getMinSentenceLength());
+        return out;
+    }
 
     // ---------- 후보 고르기 ----------
     public Plan plan(JsonNode source,Analysis stage1) {
