@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS sentence_labels (
  participant_id VARCHAR(36) NOT NULL REFERENCES participants(id),
  question_id VARCHAR(36) NOT NULL, sentence_id VARCHAR(60) NOT NULL, sentence_text CLOB NOT NULL,
  teacher_label VARCHAR(10) NOT NULL, algorithm_source VARCHAR(20) NOT NULL, algorithm_reason VARCHAR(20),
- longest_span INT NOT NULL, similarity DOUBLE PRECISION NOT NULL, gemini_level INT, sonnet_level INT, needs_review BOOLEAN NOT NULL,
+ longest_span INT NOT NULL, similarity DOUBLE PRECISION NOT NULL, haiku_level INT, gemini_level INT, needs_review BOOLEAN NOT NULL,
  config_json CLOB NOT NULL, teacher_id VARCHAR(36) NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sentence_labels_participant ON sentence_labels(participant_id,id);

@@ -4,15 +4,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 답안 출처 판정 2단계(LLM으로 바꿔 쓴 문장 판정) 설정. lit.grading.judge.*
- * 학생 대화용 lit.ai.*와 섞이지 않도록 따로 둡니다. enabled=false(기본)면 1단계 결과만 씁니다.
+ * 채점용 LLM 판정 설정. lit.grading.judge.*
+ * 학생 대화용 lit.ai.*와 섞이지 않도록 따로 둡니다. Claude Haiku가 먼저 모두 판정하고, 애매한 것만 Gemini가 다시 판정합니다.
+ * enabled=false(기본)이거나 Haiku(Anthropic) 키·모델이 없으면 꺼져 있고, 1단계·키워드 결과만 씁니다.
  */
 @Component
 @ConfigurationProperties(prefix="lit.grading.judge")
 @org.springframework.validation.annotation.Validated
 public class SemanticJudgeConfig {
     /** 프롬프트·판정 규칙 버전. 바뀌면 캐시 키가 달라져 다시 판정합니다. */
-    public static final String PROMPT_VERSION="SEMANTIC_JUDGE_LEVEL_V1";
+    public static final String PROMPT_VERSION="SEMANTIC_JUDGE_HAIKU_FIRST_V2";
 
     private boolean enabled=false;
     /** 정규화 후 이 글자 수 미만인 문장은 보내지 않습니다. */
@@ -21,13 +22,12 @@ public class SemanticJudgeConfig {
     /** 문장마다 보낼 해당 문항 AI 문장 후보 최대 수. 넘으면 2글자 조각 포함률 상위만 보냅니다. */
     @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(50)
     private int maxCandidates=8;
-    /** Gemini 단계 1 문장 중 가까운 AI 문장과의 유사도 상위 몇 %를 Sonnet에 보낼지. */
-    @jakarta.validation.constraints.DecimalMin("0.0") @jakarta.validation.constraints.DecimalMax("1.0")
-    private double level1ReviewShare=0.2;
     @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120)
     private int timeoutSeconds=60;
-    private final Provider gemini=new Provider();
+    /** 1차 판정: Claude Haiku (Anthropic Messages API). */
     private final Provider anthropic=new Provider();
+    /** 2차 판정: Gemini (애매한 것만). */
+    private final Provider gemini=new Provider();
 
     public static class Provider {
         private String apiKey="";
@@ -42,18 +42,16 @@ public class SemanticJudgeConfig {
         public boolean isConfigured(){return !apiKey.isBlank()&&!model.isBlank()&&!endpoint.isBlank();}
     }
 
-    /** Gemini 판정이 가능할 때만 2단계를 켭니다. Sonnet이 없으면 Gemini 단계 3 문장은 교사 확인으로만 남습니다. */
-    public boolean isActive(){return enabled&&gemini.isConfigured();}
+    /** Haiku 판정이 가능할 때만 켭니다. Gemini가 없으면 애매한 것은 교사 확인(needsReview)으로만 남습니다. */
+    public boolean isActive(){return enabled&&anthropic.isConfigured();}
     public boolean isEnabled(){return enabled;}
     public void setEnabled(boolean v){enabled=v;}
     public int getMinSentenceLength(){return minSentenceLength;}
     public void setMinSentenceLength(int v){minSentenceLength=v;}
     public int getMaxCandidates(){return maxCandidates;}
     public void setMaxCandidates(int v){maxCandidates=v;}
-    public double getLevel1ReviewShare(){return level1ReviewShare;}
-    public void setLevel1ReviewShare(double v){level1ReviewShare=v;}
     public int getTimeoutSeconds(){return timeoutSeconds;}
     public void setTimeoutSeconds(int v){timeoutSeconds=v;}
-    public Provider getGemini(){return gemini;}
     public Provider getAnthropic(){return anthropic;}
+    public Provider getGemini(){return gemini;}
 }

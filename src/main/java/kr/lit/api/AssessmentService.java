@@ -148,9 +148,9 @@ public class AssessmentService {
                 .orElseThrow(()->fail(HttpStatus.NOT_FOUND,"SENTENCE_NOT_FOUND","현재 제출본에서 해당 문장을 찾을 수 없습니다. 분석을 다시 조회해주세요."));
         var config=new LinkedHashMap<String,Object>(analyzer.getDefinition());config.putAll(judge.describe());config.put("semanticStatus",algorithm.semanticStatus());
         var semantic=sentence.semantic();
-        db.update("INSERT INTO sentence_labels(evaluation_id,participant_id,question_id,sentence_id,sentence_text,teacher_label,algorithm_source,algorithm_reason,longest_span,similarity,gemini_level,sonnet_level,needs_review,config_json,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.update("INSERT INTO sentence_labels(evaluation_id,participant_id,question_id,sentence_id,sentence_text,teacher_label,algorithm_source,algorithm_reason,longest_span,similarity,haiku_level,gemini_level,needs_review,config_json,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 id,pid,sentence.questionId(),sentence.id(),sentence.text(),input.label(),sentence.source(),sentence.reason(),sentence.longestSpan(),sentence.similarity(),
-                semantic==null?null:semantic.geminiLevel(),semantic==null?null:semantic.sonnetLevel(),sentence.needsReview(),encode(config),teacherId,now());
+                semantic==null?null:semantic.haikuLevel(),semantic==null?null:semantic.geminiLevel(),sentence.needsReview(),encode(config),teacherId,now());
         return analyzeAndStore(id,pid);
     }
     /** 답안 출처 판정 V2는 평가 안내 문구를 비교에서 빼므로, 제출 snapshot에 없으면 현재 평가 안내를 붙여 넘깁니다(저장하지 않음). */

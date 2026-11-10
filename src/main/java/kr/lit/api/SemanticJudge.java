@@ -13,19 +13,19 @@ import static kr.lit.api.AssessmentModels.*;
 import static kr.lit.api.SemanticJudgeClient.*;
 
 /**
- * 답안 출처 판정 2단계: 글자 비교로 DIRECT가 된 문장 중 바꿔 쓴 문장을 LLM으로 판정합니다(개선안 11월 10일 수정본).
+ * 답안 출처 판정 2단계: 글자 비교로 DIRECT가 된 문장 중 바꿔 쓴 문장을 LLM으로 판정합니다(Haiku 먼저 → 애매한 것만 Gemini).
  * <ol>
- *   <li>후보 고르기(plan): 1단계 DIRECT, 정규화 15자 이상, 학생이 AI에게 질문한 문항의 문장만. 후보는 해당 문항 AI 문장 전체(최대 8개).</li>
- *   <li>Gemini가 모든 후보 문장에 단계(0~3)와 closestCandidate를 매깁니다.</li>
- *   <li>Gemini 단계 3·2, 그리고 단계 1 중 가까운 AI 문장과 유사도 상위 20%만 Sonnet이 같은 프롬프트로 따로 판정합니다.</li>
- *   <li>두 모델이 모두 단계 3이고 같은 AI 문장을 골랐을 때만 AI(SEMANTIC). 한쪽만 3이면 needsReview.</li>
+ *   <li>후보 고르기(plan): 1단계 DIRECT, 정규화 15자 이상, 학생이 AI에게 질문한 문항의 문장만. 후보는 해당 문항 AI 문장(최대 8개).</li>
+ *   <li>제출 1건의 대상 문장을 묶어 Claude Haiku에 1번 호출합니다. 단계(0~3)와 closestCandidate를 받습니다.</li>
+ *   <li>Haiku가 단계 2를 준 문장만 묶어 Gemini에 1번 호출합니다(Haiku 결과는 알려 주지 않음). 애매함은 모델이 말하는 confidence가 아니라 단계 2로 고릅니다.</li>
+ *   <li>Haiku 3 → AI(SEMANTIC). Haiku 2 → Gemini 3이면 AI, 2면 직접+needsReview, 0~1이면 직접. Haiku 0~1 → 직접.</li>
  * </ol>
  * 판정은 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장) 해시로 저장해 같은 문장은 다시 호출하지 않습니다. 원문은 저장하지 않습니다.
  */
 @Component
 public class SemanticJudge {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(SemanticJudge.class);
-    public static final String GEMINI="GEMINI",ANTHROPIC="ANTHROPIC";
+    public static final String ANTHROPIC="ANTHROPIC",GEMINI="GEMINI";
     public static final String STATUS_DISABLED="DISABLED",STATUS_PENDING="PENDING",STATUS_DONE="DONE",STATUS_PARTIAL="PARTIAL",STATUS_UNAVAILABLE="UNAVAILABLE";
     private static final int BATCH_SIZE=50;
 
@@ -46,8 +46,8 @@ public class SemanticJudge {
     public Map<String,Object> describe() {
         var out=new LinkedHashMap<String,Object>();
         out.put("judgeActive",isActive());out.put("promptVersion",SemanticJudgeConfig.PROMPT_VERSION);
-        out.put("geminiModel",config.getGemini().getModel());out.put("anthropicModel",config.getAnthropic().getModel());
-        out.put("level1ReviewShare",config.getLevel1ReviewShare());out.put("maxCandidates",config.getMaxCandidates());out.put("minSentenceLength",config.getMinSentenceLength());
+        out.put("haikuModel",config.getAnthropic().getModel());out.put("geminiModel",config.getGemini().getModel());
+        out.put("maxCandidates",config.getMaxCandidates());out.put("minSentenceLength",config.getMinSentenceLength());
         return out;
     }
 
@@ -92,27 +92,27 @@ public class SemanticJudge {
     }
 
     // ---------- 호출(백그라운드 전용) ----------
-    /** 캐시에 없는 판정만 호출해 저장합니다. 실패한 단계(GEMINI/ANTHROPIC) 또는 null을 돌려줍니다. 화면 요청 경로에서는 부르지 않습니다. */
+    /** 캐시에 없는 판정만 호출해 저장합니다. 실패한 단계(ANTHROPIC/GEMINI) 또는 null을 돌려줍니다. 화면 요청 경로에서는 부르지 않습니다. */
     public String run(Plan plan) {
         if(!isActive()||plan.items().isEmpty()) return null;
-        var gemini=load(plan,GEMINI,client.geminiModel());
-        var missing=plan.items().stream().filter(p->!gemini.containsKey(p.key())).toList();
-        try { call(missing,GEMINI,client.geminiModel(),gemini); }
-        catch(JudgeFailure ex) { log.warn("Semantic judge Gemini call failed: {}",ex.code); return GEMINI; }
-        var targets=sonnetTargets(plan,gemini);
+        var haiku=load(plan,ANTHROPIC,client.anthropicModel());
+        var missing=plan.items().stream().filter(p->!haiku.containsKey(p.key())).toList();
+        try { call(missing,ANTHROPIC,client.anthropicModel(),haiku); }
+        catch(JudgeFailure ex) { log.warn("Semantic judge Haiku call failed: {}",ex.code); return ANTHROPIC; }
+        var targets=geminiTargets(plan,haiku);
         if(targets.isEmpty()) return null;
-        if(!client.anthropicConfigured()) return ANTHROPIC;
-        var sonnet=load(plan,ANTHROPIC,client.anthropicModel());
-        var missingSonnet=plan.items().stream().filter(p->targets.contains(p.key())&&!sonnet.containsKey(p.key())).toList();
-        try { call(missingSonnet,ANTHROPIC,client.anthropicModel(),sonnet); }
-        catch(JudgeFailure ex) { log.warn("Semantic judge Anthropic call failed: {}",ex.code); return ANTHROPIC; }
+        if(!client.geminiConfigured()) return GEMINI;
+        var gemini=load(plan,GEMINI,client.geminiModel());
+        var missingGemini=plan.items().stream().filter(p->targets.contains(p.key())&&!gemini.containsKey(p.key())).toList();
+        try { call(missingGemini,GEMINI,client.geminiModel(),gemini); }
+        catch(JudgeFailure ex) { log.warn("Semantic judge Gemini call failed: {}",ex.code); return GEMINI; }
         return null;
     }
     private void call(List<PlanItem> items,String provider,String model,Map<String,Judgment> into) {
         for(int from=0;from<items.size();from+=BATCH_SIZE) {
             var batch=items.subList(from,Math.min(items.size(),from+BATCH_SIZE));
             var request=batch.stream().map(PlanItem::item).toList();
-            var results=provider.equals(GEMINI)?client.judgeWithGemini(request):client.judgeWithAnthropic(request);
+            var results=provider.equals(ANTHROPIC)?client.judgeWithHaiku(request):client.judgeWithGemini(request);
             for(var p:batch) {
                 var j=results.get(p.item().id());
                 db.update("MERGE INTO semantic_judgments(cache_key,provider,model,prompt_version,judge_level,closest_candidate,created_at) KEY(cache_key) VALUES (?,?,?,?,?,?,?)",
@@ -127,55 +127,42 @@ public class SemanticJudge {
     public SemanticInput cached(Plan plan,String failure) {
         if(!isActive()) return SemanticInput.DISABLED;
         if(plan.items().isEmpty()) return new SemanticInput(STATUS_DONE,Map.of());
-        var gemini=load(plan,GEMINI,client.geminiModel());
-        if(gemini.size()<plan.items().size()) // Gemini가 실패하면 1단계 결과만 씁니다.
-            return new SemanticInput(GEMINI.equals(failure)?STATUS_UNAVAILABLE:STATUS_PENDING,Map.of());
-        var targets=sonnetTargets(plan,gemini);
-        var sonnet=targets.isEmpty()?Map.<String,Judgment>of():load(plan,ANTHROPIC,client.anthropicModel());
-        boolean sonnetMissing=targets.stream().anyMatch(k->!sonnet.containsKey(k));
-        boolean sonnetFailed=sonnetMissing&&(ANTHROPIC.equals(failure)||GEMINI.equals(failure));
-        if(sonnetMissing&&!sonnetFailed) return new SemanticInput(STATUS_PENDING,Map.of());
+        var haiku=load(plan,ANTHROPIC,client.anthropicModel());
+        if(haiku.size()<plan.items().size()) // Haiku가 실패하면 1단계 결과만 씁니다.
+            return new SemanticInput(ANTHROPIC.equals(failure)?STATUS_UNAVAILABLE:STATUS_PENDING,Map.of());
+        var targets=geminiTargets(plan,haiku);
+        var gemini=targets.isEmpty()?Map.<String,Judgment>of():load(plan,GEMINI,client.geminiModel());
+        boolean geminiMissing=targets.stream().anyMatch(k->!gemini.containsKey(k));
+        boolean geminiFailed=geminiMissing&&failure!=null;
+        if(geminiMissing&&!geminiFailed) return new SemanticInput(STATUS_PENDING,Map.of());
         var verdicts=new HashMap<String,SemanticVerdict>();
-        for(var p:plan.items()) {
-            var g=gemini.get(p.key());boolean sent=targets.contains(p.key());
-            verdicts.put(p.key(),decide(g,sent?sonnet.get(p.key()):null,sent,p.item().candidates()));
-        }
-        return new SemanticInput(sonnetFailed?STATUS_PARTIAL:STATUS_DONE,verdicts);
+        for(var p:plan.items())
+            verdicts.put(p.key(),decide(haiku.get(p.key()),gemini.get(p.key()),targets.contains(p.key()),p.item().candidates()));
+        return new SemanticInput(geminiFailed?STATUS_PARTIAL:STATUS_DONE,verdicts);
     }
 
     /**
-     * 개선안 표 그대로:
-     * G3→S3(같은 AI 문장)=AI, G3→S≤2 또는 Sonnet 실패=직접+확인, G2→S3=직접+확인, G2→S≤2=직접,
-     * G1(유사도 높음)→S3=직접+확인, 그 외=직접.
+     * 판정표: Haiku 3=AI. Haiku 2 → Gemini 3=AI, Gemini 2=직접+needsReview, Gemini 0~1=직접, Gemini 실패=직접+needsReview.
+     * Haiku 0~1=직접(Gemini에 보내지 않음).
      */
-    static SemanticVerdict decide(Judgment gemini,Judgment sonnet,boolean sent,List<Candidate> candidates) {
-        boolean ai=false,review=false;
-        if(gemini.level()==3) {
-            if(sent&&sonnet!=null&&sonnet.level()==3&&gemini.closestCandidate()!=null&&gemini.closestCandidate().equals(sonnet.closestCandidate())) ai=true;
-            else review=true;
-        } else if(sent&&sonnet!=null&&sonnet.level()==3) review=true;
-        var closest=candidates.stream().filter(c->c.id().equals(gemini.closestCandidate())).findFirst().orElse(null);
-        return new SemanticVerdict(gemini.level(),sent&&sonnet!=null?sonnet.level():null,closest==null?null:closest.id(),
+    static SemanticVerdict decide(Judgment haiku,Judgment gemini,boolean sent,List<Candidate> candidates) {
+        boolean ai=false,review=false;String closestId=haiku.closestCandidate();
+        if(haiku.level()==3) ai=true;
+        else if(haiku.level()==2&&sent) {
+            if(gemini==null) review=true;
+            else if(gemini.level()==3) { ai=true;if(gemini.closestCandidate()!=null) closestId=gemini.closestCandidate(); }
+            else if(gemini.level()==2) review=true;
+        }
+        String chosen=closestId;
+        var closest=candidates.stream().filter(c->c.id().equals(chosen)).findFirst().orElse(null);
+        return new SemanticVerdict(haiku.level(),sent&&gemini!=null?gemini.level():null,closest==null?null:closest.id(),
                 closest==null?null:closest.text(),closest==null?null:closest.conversationId(),ai,review);
     }
 
-    /** Sonnet에 보낼 문장: Gemini 단계 3·2, 단계 1 중 closestCandidate와 2글자 조각 유사도 상위 level1ReviewShare. */
-    Set<String> sonnetTargets(Plan plan,Map<String,Judgment> gemini) {
+    /** Gemini에 보낼 문장: Haiku가 단계 2를 준 문장만. */
+    static Set<String> geminiTargets(Plan plan,Map<String,Judgment> haiku) {
         var targets=new LinkedHashSet<String>();
-        record Scored(String key,double similarity) {}
-        var level1=new ArrayList<Scored>();
-        for(var p:plan.items()) {
-            var g=gemini.get(p.key());if(g==null) continue;
-            if(g.level()>=2) targets.add(p.key());
-            else if(g.level()==1) {
-                var closest=p.item().candidates().stream().filter(c->c.id().equals(g.closestCandidate())).findFirst().orElse(null);
-                double similarity=closest==null?0:SentenceSimilarity.bigramContainment(p.item().student(),closest.text(),p.excluded());
-                if(similarity>0) level1.add(new Scored(p.key(),similarity));
-            }
-        }
-        int count=(int)Math.ceil(level1.size()*config.getLevel1ReviewShare());
-        level1.sort(Comparator.comparingDouble(Scored::similarity).reversed().thenComparing(Scored::key));
-        for(int i=0;i<count&&i<level1.size();i++) targets.add(level1.get(i).key());
+        for(var p:plan.items()) { var h=haiku.get(p.key());if(h!=null&&h.level()==2) targets.add(p.key()); }
         return targets;
     }
 

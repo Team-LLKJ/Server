@@ -17,26 +17,32 @@ class SemanticJudgeTest {
     static final List<Candidate> CANDIDATES=List.of(new Candidate("c7-1",7,"청년층은 더 많은 취업 기회를 찾아 대도시로 이동합니다."),new Candidate("c7-2",7,"지방은 고령화가 빠릅니다."));
     static Judgment j(int level,String closest){return new Judgment(level,closest);}
 
-    @Test void bothModelsLevel3OnSameSentenceIsAi() {
-        var v=SemanticJudge.decide(j(3,"c7-1"),j(3,"c7-1"),true,CANDIDATES);
-        assertThat(v.ai()).isTrue();assertThat(v.needsReview()).isFalse();
+    @Test void haikuLevel3IsAiWithoutAskingGemini() {
+        var v=SemanticJudge.decide(j(3,"c7-1"),null,false,CANDIDATES);
+        assertThat(v.ai()).isTrue();assertThat(v.needsReview()).isFalse();assertThat(v.geminiLevel()).isNull();
         assertThat(v.conversationId()).isEqualTo(7L);assertThat(v.closestCandidateText()).startsWith("청년층은");
     }
-    @Test void disagreementsGoToTeacherReviewWithoutCountingAsAi() {
-        assertThat(SemanticJudge.decide(j(3,"c7-1"),j(3,"c7-2"),true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview()); // 다른 AI 문장
-        assertThat(SemanticJudge.decide(j(3,"c7-1"),j(2,"c7-1"),true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview());
-        assertThat(SemanticJudge.decide(j(3,"c7-1"),null,true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview());     // Sonnet 실패
-        assertThat(SemanticJudge.decide(j(2,"c7-1"),j(3,"c7-1"),true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview());
-        assertThat(SemanticJudge.decide(j(1,"c7-1"),j(3,"c7-1"),true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview()); // 단계 1 되살림
+    @Test void haikuLevel2FollowsGeminiTable() {
+        var ai=SemanticJudge.decide(j(2,"c7-1"),j(3,"c7-2"),true,CANDIDATES);
+        assertThat(ai).matches(v->v.ai()&&!v.needsReview()&&v.haikuLevel()==2&&v.geminiLevel()==3);
+        assertThat(ai.closestCandidateId()).isEqualTo("c7-2"); // AI로 판정한 Gemini의 근거 문장
+        assertThat(SemanticJudge.decide(j(2,"c7-1"),j(2,"c7-1"),true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview());
+        assertThat(SemanticJudge.decide(j(2,"c7-1"),j(1,"c7-1"),true,CANDIDATES)).matches(v->!v.ai()&&!v.needsReview());
+        assertThat(SemanticJudge.decide(j(2,"c7-1"),j(0,null),true,CANDIDATES)).matches(v->!v.ai()&&!v.needsReview());
+        assertThat(SemanticJudge.decide(j(2,"c7-1"),null,true,CANDIDATES)).matches(v->!v.ai()&&v.needsReview()); // Gemini 실패
     }
-    @Test void lowerLevelsStayDirect() {
-        assertThat(SemanticJudge.decide(j(2,"c7-1"),j(2,"c7-1"),true,CANDIDATES)).matches(v->!v.ai()&&!v.needsReview());
-        assertThat(SemanticJudge.decide(j(1,"c7-1"),null,false,CANDIDATES)).matches(v->!v.ai()&&!v.needsReview()&&v.sonnetLevel()==null);
+    @Test void haikuLevel0Or1StaysDirect() {
+        assertThat(SemanticJudge.decide(j(1,"c7-1"),null,false,CANDIDATES)).matches(v->!v.ai()&&!v.needsReview()&&v.geminiLevel()==null);
         assertThat(SemanticJudge.decide(j(0,null),null,false,CANDIDATES)).matches(v->!v.ai()&&!v.needsReview()&&v.conversationId()==null);
+    }
+    @Test void onlyHaikuLevel2GoesToGemini() {
+        var items=new java.util.ArrayList<SemanticJudge.PlanItem>();var haiku=new java.util.HashMap<String,Judgment>();
+        for(int level=0;level<=3;level++){String key="k"+level;items.add(new SemanticJudge.PlanItem(key,"q","",ITEMS.get(0)));haiku.put(key,j(level,"c7-1"));}
+        assertThat(SemanticJudge.geminiTargets(new SemanticJudge.Plan(items),haiku)).containsExactly("k2");
     }
 
     @Test void planSendsOnlyLongDirectSentencesFromQuestionsWithAiAndCapsCandidates() throws Exception {
-        var config=new SemanticJudgeConfig();config.setEnabled(true);config.getGemini().setApiKey("k");config.getGemini().setModel("m");config.getGemini().setEndpoint("http://x/{model}");
+        var config=new SemanticJudgeConfig();config.setEnabled(true);config.getAnthropic().setApiKey("k");config.getAnthropic().setModel("m");config.getAnthropic().setEndpoint("http://x/v1/messages");
         var judge=new SemanticJudge(config,null,null,json);
         var ai=new StringBuilder();for(int i=1;i<=10;i++) ai.append("AI 문장 ").append(i).append("번은 지방 인구와 일자리 문제를 다룹니다. ");
         String paraphrase="젊은 사람들은 일자리가 많은 큰 도시로 떠나는 경우가 많다.";
@@ -96,7 +102,7 @@ class SemanticJudgeTest {
     }
     @Test void anthropicUsesMessagesApiHeadersAndSamePrompt() throws Exception {
         var url=serve("{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\\"results\\\":[{\\\"id\\\":\\\"q1-p1-s1\\\",\\\"level\\\":2,\\\"closestCandidate\\\":\\\"c7-9\\\"}]}\\n```\"}]}");
-        var result=client(url).judgeWithAnthropic(ITEMS);
+        var result=client(url).judgeWithHaiku(ITEMS);
         assertThat(result.get("q1-p1-s1")).isEqualTo(new Judgment(2,null)); // 후보에 없는 id는 버립니다.
         assertThat(header.get()).isEqualTo("a-key");assertThat(version.get()).isEqualTo(ANTHROPIC_VERSION);
         assertThat(received.get().path("model").asText()).isEqualTo("claude-test");

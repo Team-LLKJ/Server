@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/** 2단계 판정: 제출 → 분석 중(PENDING) → 백그라운드 Gemini·Sonnet 판정 → SEMANTIC 반영, 실패 시 1단계 결과 유지. */
+/** 2단계 판정: 제출 → 분석 중(PENDING) → 백그라운드 Haiku(→ 단계 2만 Gemini) 판정 → SEMANTIC 반영, 실패 시 1단계 결과 유지. */
 @TestPropertySource(properties={"lit.grading.judge.enabled=true","lit.grading.judge.gemini.api-key=test","lit.grading.judge.gemini.model=gemini-test",
         "lit.grading.judge.anthropic.api-key=test","lit.grading.judge.anthropic.model=claude-test"})
 class SemanticJudgeApiTest extends AuthTestSupport {
@@ -27,7 +27,7 @@ class SemanticJudgeApiTest extends AuthTestSupport {
     record Fixture(String id,String pid) {}
 
     @BeforeEach void models() {
-        when(client.geminiModel()).thenReturn("gemini-test");when(client.anthropicModel()).thenReturn("claude-test");when(client.anthropicConfigured()).thenReturn(true);
+        when(client.geminiModel()).thenReturn("gemini-test");when(client.anthropicModel()).thenReturn("claude-test");when(client.geminiConfigured()).thenReturn(true);
     }
     Fixture submit(String answer) {
         as(teacher);var e=evaluations.create("출처 판정",60);
@@ -47,10 +47,8 @@ class SemanticJudgeApiTest extends AuthTestSupport {
     }
     AssessmentModels.Sentence sentence(AssessmentModels.Analysis a,String text){return a.sentences().stream().filter(s->s.text().equals(text)).findFirst().orElseThrow();}
 
-    @SuppressWarnings("unchecked")
-    @Test void paraphraseConfirmedByBothModelsCountsAsAi() {
-        when(client.judgeWithGemini(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?3:0));
-        when(client.judgeWithAnthropic(any())).thenAnswer(call->answer(call.getArgument(0),s->3));
+    @Test void haikuLevel3CountsAsAiWithoutGemini() {
+        when(client.judgeWithHaiku(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?3:0));
         var f=submit("");
         var before=assessment.analysis(f.id(),f.pid());
         assertThat(before.semanticStatus()).isEqualTo("PENDING");
@@ -62,41 +60,52 @@ class SemanticJudgeApiTest extends AuthTestSupport {
         assertThat(after.semanticStatus()).isEqualTo("DONE");
         var s=sentence(after,PARAPHRASE);
         assertThat(s.source()).isEqualTo("AI_REFERENCED");assertThat(s.reason()).isEqualTo("SEMANTIC");assertThat(s.needsReview()).isFalse();
-        assertThat(s.semantic().geminiLevel()).isEqualTo(3);assertThat(s.semantic().sonnetLevel()).isEqualTo(3);assertThat(s.conversationId()).isNotNull();
+        assertThat(s.semantic().haikuLevel()).isEqualTo(3);assertThat(s.semantic().geminiLevel()).isNull();assertThat(s.conversationId()).isNotNull();
         assertThat(sentence(after,OWN).source()).isEqualTo("DIRECT");
         assertThat(after.contribution().aiReferenced()).isPositive();assertThat(after.contribution().direct()+after.contribution().aiReferenced()).isEqualTo(100);
-        // Gemini는 두 문장 모두 한 번에, Sonnet은 의심 문장(단계 3)만 받습니다.
-        var geminiItems=org.mockito.ArgumentCaptor.forClass(List.class);verify(client,times(1)).judgeWithGemini(geminiItems.capture());
-        assertThat((List<Item>)geminiItems.getValue()).extracting(Item::student).containsExactlyInAnyOrder(PARAPHRASE,OWN);
-        var sonnetItems=org.mockito.ArgumentCaptor.forClass(List.class);verify(client,times(1)).judgeWithAnthropic(sonnetItems.capture());
-        assertThat((List<Item>)sonnetItems.getValue()).extracting(Item::student).containsExactly(PARAPHRASE);
+        // Haiku는 두 문장을 한 번에 받고, 단계 2가 없으므로 Gemini는 호출하지 않습니다.
+        @SuppressWarnings("unchecked") var haikuItems=(org.mockito.ArgumentCaptor<List<Item>>)(Object)org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(client,times(1)).judgeWithHaiku(haikuItems.capture());
+        assertThat(haikuItems.getValue()).extracting(Item::student).containsExactlyInAnyOrder(PARAPHRASE,OWN);
+        verify(client,never()).judgeWithGemini(any());
 
         // 다시 분석해도 저장된 판정을 쓰고 다시 호출하지 않습니다.
         assessment.run(f.id());db.update("UPDATE grading_analyses SET analysis_status='DONE',semantic_status='PENDING' WHERE participant_id=?",f.pid());
         job.process(f.id(),f.pid());
-        verify(client,times(1)).judgeWithGemini(any());verify(client,times(1)).judgeWithAnthropic(any());
+        verify(client,times(1)).judgeWithHaiku(any());
         assertThat(sentence(assessment.analysis(f.id(),f.pid()),PARAPHRASE).reason()).isEqualTo("SEMANTIC");
     }
-    @Test void modelsDisagreeingLeavesSentenceDirectForTeacherReview() {
-        when(client.judgeWithGemini(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?3:0));
-        when(client.judgeWithAnthropic(any())).thenAnswer(call->answer(call.getArgument(0),s->2));
+    @Test void haikuLevel2IsDecidedByGeminiOnlyForThoseSentences() {
+        when(client.judgeWithHaiku(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?2:0));
+        when(client.judgeWithGemini(any())).thenAnswer(call->answer(call.getArgument(0),s->3));
+        var f=submit("");job.process(f.id(),f.pid());
+        var a=assessment.analysis(f.id(),f.pid());
+        var s=sentence(a,PARAPHRASE);
+        assertThat(s.reason()).isEqualTo("SEMANTIC");assertThat(s.semantic().haikuLevel()).isEqualTo(2);assertThat(s.semantic().geminiLevel()).isEqualTo(3);
+        @SuppressWarnings("unchecked") var geminiItems=(org.mockito.ArgumentCaptor<List<Item>>)(Object)org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(client,times(1)).judgeWithGemini(geminiItems.capture());
+        assertThat(geminiItems.getValue()).extracting(Item::student).containsExactly(PARAPHRASE);
+    }
+    @Test void geminiLevel2LeavesSentenceDirectForTeacherReview() {
+        when(client.judgeWithHaiku(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?2:0));
+        when(client.judgeWithGemini(any())).thenAnswer(call->answer(call.getArgument(0),s->2));
         var f=submit("");job.process(f.id(),f.pid());
         var a=assessment.analysis(f.id(),f.pid());
         assertThat(a.semanticStatus()).isEqualTo("DONE");
-        var s=sentence(a,PARAPHRASE);
-        assertThat(s.source()).isEqualTo("DIRECT");assertThat(s.needsReview()).isTrue();assertThat(a.contribution().aiReferenced()).isZero();
+        assertThat(sentence(a,PARAPHRASE)).matches(s->s.source().equals("DIRECT")&&s.needsReview());
+        assertThat(a.contribution().aiReferenced()).isZero();
     }
-    @Test void geminiFailureKeepsStageOneResult() {
-        when(client.judgeWithGemini(any())).thenThrow(new JudgeFailure("JUDGE_GEMINI_TIMEOUT"));
+    @Test void haikuFailureKeepsStageOneResult() {
+        when(client.judgeWithHaiku(any())).thenThrow(new JudgeFailure("JUDGE_ANTHROPIC_TIMEOUT"));
         var f=submit("");job.process(f.id(),f.pid());
         var a=assessment.analysis(f.id(),f.pid());
         assertThat(a.semanticStatus()).isEqualTo("UNAVAILABLE");
         assertThat(a.sentences()).allMatch(s->s.reason()==null&&!s.needsReview());
-        verify(client,never()).judgeWithAnthropic(any());
+        verify(client,never()).judgeWithGemini(any());
     }
-    @Test void sonnetFailureMarksGeminiSuspicionsForReviewOnly() {
-        when(client.judgeWithGemini(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?3:0));
-        when(client.judgeWithAnthropic(any())).thenThrow(new JudgeFailure("JUDGE_ANTHROPIC_HTTP_529"));
+    @Test void geminiFailureMarksHaikuLevel2ForReviewOnly() {
+        when(client.judgeWithHaiku(any())).thenAnswer(call->answer(call.getArgument(0),s->s.equals(PARAPHRASE)?2:0));
+        when(client.judgeWithGemini(any())).thenThrow(new JudgeFailure("JUDGE_GEMINI_HTTP_503"));
         var f=submit("");job.process(f.id(),f.pid());
         var a=assessment.analysis(f.id(),f.pid());
         assertThat(a.semanticStatus()).isEqualTo("PARTIAL");

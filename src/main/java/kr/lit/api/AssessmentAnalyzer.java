@@ -379,8 +379,8 @@ public class AssessmentAnalyzer {
     }
     private static String semanticLimitation(String status) {
         return switch(status==null?"DISABLED":status) {
-            case "DONE" -> "바꿔 쓴 문장은 두 LLM(Gemini·Sonnet)이 모두 '거의 그대로 따라감'으로 판정한 경우만 AI로 셉니다(SEMANTIC). 의견이 갈린 문장은 needsReview로 교사 확인이 필요합니다.";
-            case "PARTIAL" -> "LLM 검증 일부가 실패해 의심 문장은 needsReview로만 표시하고 비율에는 넣지 않았습니다.";
+            case "DONE" -> "바꿔 쓴 문장은 Claude Haiku가 '거의 그대로 따라감'(단계 3)으로 판정했거나, Haiku 단계 2 문장을 Gemini가 단계 3으로 다시 판정한 경우만 AI로 셉니다(SEMANTIC). Gemini도 단계 2로 본 문장은 needsReview로 교사 확인이 필요합니다.";
+            case "PARTIAL" -> "Gemini 재판정이 실패해 Haiku 단계 2 문장은 needsReview로만 표시하고 비율에는 넣지 않았습니다.";
             case "PENDING" -> "바꿔 쓴 문장에 대한 LLM 판정이 진행 중입니다.";
             case "UNAVAILABLE" -> "LLM 판정을 사용할 수 없어 글자 비교 결과만 반영했습니다. 단어를 모두 바꿔 쓴 문장은 잡지 못합니다.";
             default -> "단어를 모두 바꿔 쓴 문장은 잡지 못합니다.";
