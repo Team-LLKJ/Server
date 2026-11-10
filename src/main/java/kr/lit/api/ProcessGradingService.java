@@ -55,7 +55,7 @@ public class ProcessGradingService {
         int revision=repository.getReview(jobId).map(Review::revision).orElse(0);
         if(request.expectedRevision()!=revision)throw fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_VERSION_CONFLICT","최신 교사 검토를 확인해주세요.");
         Result result;
-        try{result=engine.applyReview(repository.getInput(jobId),job.result(),request.overrides());}catch(IllegalArgumentException ex){throw fail(HttpStatus.BAD_REQUEST,"INVALID_PROCESS_REVIEW","문항·영역·수준·보정 사유를 확인해주세요.");}
+        try{result=engine.applyReview(repository.getInput(jobId),job.result(),request.overrides());}catch(IllegalArgumentException ex){throw fail(HttpStatus.BAD_REQUEST,"INVALID_PROCESS_REVIEW","문항·영역·보정 사유를 확인하고, 수준 또는 점수(0~영역 만점, 소수 둘째 자리까지) 중 하나만 입력해주세요.");}
         var review=new Review(revision+1,teacher,Instant.now(),request.overrides(),request.complianceDecision(),request.complianceReason(),result,false);
         repository.saveReview(jobId,review);return review;
     }

@@ -42,7 +42,8 @@ public class ProcessAnalysisService {
             var levels=cells.stream().map(Cell::level).distinct().toList();
             boolean notApplicable=!cells.isEmpty()&&cells.stream().allMatch(c->c.status().equals("NOT_APPLICABLE"));
             Integer level=complete&&levels.size()==1?levels.get(0):null;
-            String label=notApplicable?"평가 대상 아님":level==null?(complete?"문항별 단계 상이":"판단 보류"):labelLevel(level,job.rubricVersion());
+            boolean directScore=cells.stream().anyMatch(c->c.level()==null&&c.score()!=null&&c.status().equals("TEACHER_REVIEWED"));
+            String label=notApplicable?"평가 대상 아님":level==null?(complete?(directScore?"교사 점수 입력":"문항별 단계 상이"):"판단 보류"):labelLevel(level,job.rubricVersion());
             summaries.add(new CriterionSummary(criterion,criterion.displayName(),criterion.maxScore(),level,label,complete?score.setScale(2,RoundingMode.HALF_UP):null,notApplicable?"NOT_APPLICABLE":complete?"DONE":"HOLD",cells));
         }
         limits.addAll(result.limitations());

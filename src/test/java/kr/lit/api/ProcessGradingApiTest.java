@@ -127,4 +127,21 @@ class ProcessGradingApiTest extends AuthTestSupport {
         mvc.perform(request(get(path),teacher)).andExpect(jsonPath("studentContribution.level").value(5)).andExpect(jsonPath("total").value(81.25)).andExpect(jsonPath("confirmed").value(false));
         mvc.perform(request(get(path),newTeacher())).andExpect(status().isNotFound());
     }
+    @Test void teacherReplacesAiScoreWithDirectScoreAndConfirms() throws Exception {
+        var f=fixture(true,true);var job=latest(f);
+        when(ai.recommendLevels(any())).thenAnswer(call->validOutput(call.getArgument(0)));worker.processJob(job.id());
+        String review=root(f)+"/"+job.id()+"/review";
+        String analysis="/api/teacher/evaluations/"+f.id()+"/process-grading/participants/"+f.pid()+"/analysis";
+        var body=new java.util.HashMap<String,Object>(Map.of("expectedRevision",0,"complianceDecision","CONFIRMED_OK","complianceReason","확인",
+                "overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",21.5,"reason","학생 판단을 직접 확인"))));
+        mvc.perform(body(request(put(review),teacher),body)).andExpect(status().isOk())
+            .andExpect(jsonPath("overrides[0].score").value(21.5)).andExpect(jsonPath("overrides[0].level").isEmpty()).andExpect(jsonPath("result.total").value(77.75));
+        mvc.perform(request(get(analysis),teacher)).andExpect(jsonPath("studentContribution.score").value(21.5))
+            .andExpect(jsonPath("studentContribution.level").isEmpty()).andExpect(jsonPath("studentContribution.label").value("교사 점수 입력")).andExpect(jsonPath("total").value(77.75));
+        body.put("expectedRevision",1);body.put("overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",25.5,"reason","만점 초과")));
+        mvc.perform(body(request(put(review),teacher),body)).andExpect(status().isBadRequest());
+        body.put("overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",30,"reason","범위 밖")));
+        mvc.perform(body(request(put(review),teacher),body)).andExpect(status().isBadRequest());
+        mvc.perform(body(request(post(root(f)+"/"+job.id()+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isOk()).andExpect(jsonPath("confirmed").value(true)).andExpect(jsonPath("result.total").value(77.75));
+    }
 }
