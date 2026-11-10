@@ -57,11 +57,11 @@ public final class AssessmentModels {
         }
     }
     /**
-     * 2단계 LLM 판정 결과(문장 하나). geminiLevel·sonnetLevel은 0~3 단계(3: 거의 그대로 따라감, 2: 핵심 주장 같음,
-     * 1: 일반적 내용·자기 경험 중심, 0: 다름), sonnetLevel은 Sonnet에 보내지 않았거나 실패하면 null입니다.
-     * ai=true면 reason=SEMANTIC으로 AI 비중에 들어가고, needsReview=true면 비율에는 넣지 않고 교사 확인으로 둡니다.
+     * 2단계 LLM 판정 결과(문장 하나). haikuLevel·geminiLevel은 0~3 단계(3: 거의 그대로 따라감, 2: 핵심 주장 같음,
+     * 1: 일반적 내용·자기 경험 중심, 0: 다름). geminiLevel은 Haiku 단계 2라서 Gemini에 보낸 문장만 있고, 보내지 않았거나 실패하면 null입니다.
+     * ai=true면 reason=SEMANTIC으로 AI 비중에 들어가고, needsReview=true면 비율에서는 직접으로 계산하고 교사 확인으로 둡니다.
      */
-    public record SemanticVerdict(Integer geminiLevel,Integer sonnetLevel,String closestCandidateId,String closestCandidateText,
+    public record SemanticVerdict(Integer haikuLevel,Integer geminiLevel,String closestCandidateId,String closestCandidateText,
                                   Long conversationId,boolean ai,boolean needsReview) {}
     /** analyze()에 넘기는 저장된 2단계 판정. key는 AssessmentAnalyzer.sentenceKey(questionId,문장). */
     public record SemanticInput(String status,java.util.Map<String,SemanticVerdict> verdicts) {

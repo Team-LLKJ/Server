@@ -237,15 +237,16 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
   - 분류는 DIRECT / AI_REFERENCED 두 가지뿐입니다. `contribution.direct + aiReferenced = 100`, `aiUsed`는 호환용으로 항상 0입니다. 비중은 문장 글자 수(문장 사이 공백 포함)로 합산합니다.
   - 문단 `source`는 AI 문장이 하나라도 있으면 AI_REFERENCED입니다. 문장별 결과는 `sentences[]`(`questionId, paragraphId, text, source, reason, longestSpan, similarity, conversationId, start, end`)로 내려갑니다. `start/end`와 `contribution.segments`는 `answerTexts[].text` 기준 UTF-16 위치입니다.
   - 단어를 모두 바꿔 쓴 문장은 글자 비교로 잡지 못하며, 아래 2단계 LLM 판정이 켜져 있을 때만 잡습니다.
-- **답안 출처 판정 2단계 (LLM, 개선안 11월 10일 수정본)** — `lit.grading.judge.enabled=true`이고 Gemini 키·모델이 있을 때만 동작합니다. 꺼져 있으면 `semanticStatus: DISABLED`이고 1단계 결과만 씁니다.
-  1. 후보: 1단계 DIRECT, 정규화 15자 이상, 학생이 AI에게 질문한 문항의 문장만. 후보는 그 문항의 AI 답변 문장 전체(8개 초과 시 문항 문구를 뺀 2글자 조각 포함률 상위 8개).
-  2. Gemini가 제출 1건의 후보를 한 번에 판정합니다. 단계 0~3(3: 거의 그대로 따라감, 2: 핵심 주장 같음, 1: 일반 내용·자기 경험 중심, 0: 다름)과 `closestCandidate`를 항상 받습니다. temperature 0, JSON만.
-  3. Gemini 단계 3·2, 단계 1 중 `closestCandidate`와 2글자 조각 유사도 상위 20%(`level1-review-share`)만 Sonnet이 같은 프롬프트로 따로 판정합니다(Gemini 판정은 알려 주지 않음).
-  4. 두 모델이 모두 단계 3이고 같은 AI 문장을 골랐을 때만 AI(`reason: SEMANTIC`). 한쪽만 3이거나 Gemini 2·1을 Sonnet이 3으로 본 문장은 DIRECT + `needsReview: true`(비율 제외).
-  - 판정은 제출 후 백그라운드(`SemanticJudgeJob`)에서 돌고, 끝나기 전에는 `semanticStatus: PENDING`(1단계 결과 표시)입니다. 결과 상태: `DONE`, `PARTIAL`(Sonnet 실패·미설정 → Gemini 단계 3 문장은 needsReview만), `UNAVAILABLE`(Gemini 실패 → 1단계 결과만).
-  - 문장별 `sentences[].semantic`에 `geminiLevel, sonnetLevel, closestCandidateId, closestCandidateText, conversationId, ai, needsReview`가 내려갑니다.
+- **답안 출처 판정 2단계 (LLM, Haiku 먼저 → 애매한 것만 Gemini, 11월 10일 백엔드 전달본)** — `lit.grading.judge.enabled=true`이고 Claude Haiku(Anthropic) 키·모델이 있을 때만 동작합니다. 꺼져 있으면 `semanticStatus: DISABLED`이고 1단계 결과만 씁니다.
+  1. 후보: 1단계 DIRECT, 정규화 15자 이상, 학생이 AI에게 질문한 문항의 문장만. 후보는 그 문항의 AI 답변 문장(8개 초과 시 문항 문구를 뺀 2글자 조각 포함률 상위 8개).
+  2. 제출 1건의 대상 문장을 묶어 Claude Haiku에 1번 호출합니다. 단계 0~3(3: 거의 그대로 따라감, 2: 핵심 주장 같음, 1: 일반 내용·자기 경험 중심, 0: 다름)과 `closestCandidate`를 항상 받습니다. temperature 0, JSON만.
+  3. Haiku가 단계 2를 준 문장만 묶어 Gemini에 1번 호출합니다(Haiku 결과는 알려 주지 않음, 없으면 호출 안 함). 모델이 말하는 confidence는 쓰지 않습니다.
+  4. 판정표: Haiku 3 → AI(`reason: SEMANTIC`). Haiku 2 → Gemini 3이면 AI, Gemini 2면 DIRECT + `needsReview: true`, Gemini 0~1이면 DIRECT. Haiku 0~1 → DIRECT.
+  - 판정은 제출 후 백그라운드(`SemanticJudgeJob`)에서 돌고, 끝나기 전에는 `semanticStatus: PENDING`(1단계 결과 표시)입니다. 결과 상태: `DONE`, `PARTIAL`(Gemini 실패·미설정 → Haiku 단계 2 문장은 DIRECT + needsReview), `UNAVAILABLE`(Haiku 실패 → 1단계 결과만).
+  - needsReview 문장은 비율에서 직접으로 계산하고, 교사가 확정하면 그 값으로 바뀝니다.
+  - 문장별 `sentences[].semantic`에 `haikuLevel, geminiLevel, closestCandidateId, closestCandidateText, conversationId, ai, needsReview`가 내려갑니다.
   - 판정은 `semantic_judgments`에 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장)의 SHA-256 해시를 키로 단계·closestCandidate만 저장합니다. 같은 문장은 다시 호출하지 않으며, 원문은 저장하지 않습니다.
-  - 학생 답안 문장과 AI 답변 문장이 Gemini·Anthropic에 전송됩니다. 개인정보 처리 방침에 "채점 보조 목적의 전송" 추가 여부를 확인한 뒤 켜세요.
+  - 학생 답안 문장과 AI 답변 문장이 Anthropic·Gemini에 전송됩니다. 개인정보 처리 방침에 "채점 보조 목적의 전송" 추가 여부를 확인한 뒤 켜세요.
 - **허용 범위 검사**:
   - Level 1(DISABLED): AI 대화가 있으면 VIOLATION, 200자 이상 붙여넣기·AI 답변 복사 기록은 CHECK.
   - AI 답변 사용(AI_REFERENCED) 문장 비중이 단계별 상한을 넘으면 모든 단계에서 CHECK입니다. 유사도만으로 VIOLATION을 확정하지 않습니다. 금지 정책과 내부 AI 호출 기록의 직접 불일치만 별도 확인 대상으로 표시합니다.
@@ -261,10 +262,9 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 | ai-referenced-threshold | 0.4 | 문장 3-gram 포함률이 이 값 이상이면 AI |
 | min-span-length | 20 | 정규화 후 이 글자 수 이상 그대로 일치하면 AI |
 | judge.enabled | false | 2단계 LLM 판정 사용 (`LIT_GRADING_JUDGE_ENABLED`) |
-| judge.gemini.api-key / model | `GEMINI_API_KEY` / `GEMINI_MODEL` | `LIT_GRADING_JUDGE_GEMINI_*`로 따로 지정 가능 |
-| judge.anthropic.api-key / model | `ANTHROPIC_API_KEY` / claude-sonnet-5-5 | `LIT_GRADING_JUDGE_ANTHROPIC_*`. Messages API(`anthropic-version: 2023-06-01`) |
+| judge.anthropic.api-key / model | `ANTHROPIC_API_KEY` / claude-haiku-5-5 | 1차 판정(Claude Haiku). `LIT_GRADING_JUDGE_ANTHROPIC_*`. Messages API(`anthropic-version: 2023-06-01`) |
+| judge.gemini.api-key / model | `GEMINI_API_KEY` / `GEMINI_MODEL` | 2차 판정(애매한 것만). `LIT_GRADING_JUDGE_GEMINI_*`로 따로 지정 가능 |
 | judge.min-sentence-length / max-candidates | 15 / 8 | 보낼 문장 최소 길이, 문장당 후보 수 |
-| judge.level1-review-share | 0.2 | Gemini 단계 1 중 Sonnet에 보낼 유사도 상위 비율 |
 | judge.timeout-seconds | 60 | LLM 호출 제한 시간 |
 | drafting-penalty | 1.0 | ① 대리 작성 요청 감점 가중치 |
 | appropriate-types | CONCEPT_UNDERSTANDING,RESEARCH,IDEA_EXPLORATION | ① 적절한 유형 |
