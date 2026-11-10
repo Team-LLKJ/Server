@@ -92,4 +92,12 @@ class AuthApiTest extends AuthTestSupport {
             mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),teacher)).andExpect(status().isBadRequest());
         }
     }
+    @Test void signupAcceptsEightCharactersAndRejectsSevenWithoutConsumingVerification() throws Exception {
+        String suffix=unique(),token=createVerifiedEmail(suffix+"@example.test");
+        var input=new LinkedHashMap<>(signup(token,suffix));input.put("password","Abc123!");
+        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+        input.put("password","Abc123!x");
+        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input)).andExpect(status().isCreated());
+        mvc.perform(body(request(post("/api/auth/login"),null),new Login("t_"+suffix,"Abc123!x"))).andExpect(status().isOk());
+    }
 }

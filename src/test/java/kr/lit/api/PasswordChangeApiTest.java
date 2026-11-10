@@ -38,4 +38,9 @@ class PasswordChangeApiTest extends AuthTestSupport {
         assertThatThrownBy(()->auth.changePassword(principal,PASSWORD,"Changed-password-123")).isInstanceOf(IllegalStateException.class);
         assertThat(auth.login(new Login(teacher.user().username(),PASSWORD))).isNotNull();
     }
+    @Test void newPasswordAcceptsEightCharactersAndRejectsSeven() throws Exception {
+        mvc.perform(body(request(post("/api/users/me/password"),teacher),Map.of("currentPassword",PASSWORD,"newPassword","Abc123!"))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+        mvc.perform(body(request(post("/api/users/me/password"),teacher),Map.of("currentPassword",PASSWORD,"newPassword","Abc123!x"))).andExpect(status().isOk());
+        mvc.perform(body(request(post("/api/auth/login"),null),new Login(teacher.user().username(),"Abc123!x"))).andExpect(status().isOk());
+    }
 }

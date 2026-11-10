@@ -209,7 +209,7 @@ Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 
 학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
 
-비밀번호 찾기·재설정은 [AUTH-003 API 명세](docs/PASSWORD_RESET.md)를 참고하세요. 공개 `POST /api/auth/password-reset/request`로 가입 이메일에15분 유효 일회용 링크를 보내고 `/confirm`에 `{token,newPassword}`를 전송합니다. 성공 시 모든 기기의 로그인 세션을 해제합니다. `LIT_PASSWORD_RESET_URL`에 실제 HTTPS 프런트 재설정 페이지 설정이 필요합니다. 회원가입 인증메일은 SMTP 설정이 필요하며, 대표 색상 `#007BFF`의 HTML 본문과 일반 텍스트 대체 본문으로 발송합니다.
+비밀번호 찾기·재설정은 [AUTH-003 API 명세](docs/PASSWORD_RESET.md)를 참고하세요. 공개 `POST /api/auth/password-reset/request`로 가입 이메일에15분 유효 일회용 링크를 보내고 `/confirm`에 `{token,newPassword}`를 전송합니다. 새 비밀번호는 8~128자입니다. 성공 시 모든 기기의 로그인 세션을 해제합니다. `LIT_PASSWORD_RESET_URL`에 실제 HTTPS 프런트 재설정 페이지 설정이 필요합니다. 회원가입 인증메일은 SMTP 설정이 필요하며, 대표 색상 `#007BFF`의 HTML 본문과 일반 텍스트 대체 본문으로 발송합니다.
 
 
 ### 내가 만든 수행평가 조회
@@ -317,7 +317,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 [API 명세](docs/PASSWORD_CHANGE.md)
 
-`POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 기존 경로·응답은 유지합니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
+`POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 새 비밀번호는 8~128자입니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
 
 ## 닉네임 변경
 
