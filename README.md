@@ -386,3 +386,10 @@ AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOM
 평가 알고리즘 V3: 1~5단계·근거 기반 설명, 사전 제외/부분 배점, 편집 기록 기반 입력 경로와 질문당1 가중치 목적 분석을 제공합니다. 기존 분석·보고서 버전은 보존합니다. 기존 0~4단계 API와 혼용하지 마세요. [API 계약·연동 예시](docs/EVALUATION_ALGORITHM_V3.md).
 
 참여자 추방: `DELETE /api/teacher/evaluations/{id}/participants/{participantId}`는 기록을 보존하고 학생 접근·재접속을 차단합니다. 채점 답안의 minChars/maxChars 및 SSE participant-expelled도 제공합니다. [정확한 프런트 연동 계약](docs/FRONTEND_INTEGRATION_REFERENCE.md).
+
+## Swagger / OpenAPI
+
+로컬 서버 실행 후 [Swagger UI](http://localhost:5174/api/docs)에서 API 목록·요청 모델을 보고 실행할 수 있습니다. OpenAPI JSON은 `GET /api/openapi`, UI 설정은 `GET /api/openapi/swagger-config`입니다. 모두 `/api` 아래에 있어 프런트와 Nginx를 공유하는 환경에서도 기존 API 프록시로 전달됩니다.
+
+Authorize에서 `TeacherAccessToken`에는 로그인 응답의 `accessToken`만, `ParticipantToken`에는 PIN 참가 응답의 `participantToken`을 넣습니다. 교사 요청에는 Bearer, 학생 요청에는 X-Participant-Token이 붙으며 공개 가입·로그인·PIN 참여에는 인증을 요구하지 않습니다. 인증값은 브라우저 영구 저장을 끈 상태입니다. [상세 사용법](docs/SWAGGER.md)을 참고하세요. 운영 주소는 이 변경을 배포한 후 사용할 수 있습니다.
+
