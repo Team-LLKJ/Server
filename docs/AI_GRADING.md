@@ -248,6 +248,10 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
   - 문장별 `sentences[].semantic`에 `haikuLevel, geminiLevel, closestCandidateId, closestCandidateText, conversationId, ai, needsReview`가 내려갑니다.
   - 판정은 `semantic_judgments`에 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장)의 SHA-256 해시를 키로 단계·closestCandidate만 저장합니다. 같은 문장은 다시 호출하지 않으며, 원문은 저장하지 않습니다.
   - 학생 답안 문장과 AI 답변 문장이 Anthropic·Gemini에 전송됩니다. 개인정보 처리 방침에 "채점 보조 목적의 전송" 추가 여부를 확인한 뒤 켜세요.
+- **답안 출처 판정 3단계 (교사 문장 판정 수정)** — `PATCH /api/teacher/evaluations/{id}/participants/{participantId}/sentences/{sentenceId}`, 본문 `{"label":"AI"|"DIRECT"}`.
+  - `sentenceId`는 분석 응답 `sentences[].id`(예: `q1-p2-s1`)입니다. 현재 제출본에 없으면 404 `SENTENCE_NOT_FOUND`, 미제출이면 409 `SUBMISSION_REQUIRED`, label이 AI/DIRECT가 아니면 400.
+  - 교사 판정이 알고리즘보다 우선하고 그 학생 비율에 바로 반영된 분석(Analysis)을 돌려줍니다. 교사가 AI로 바꾼 문장은 `reason: TEACHER`, DIRECT로 바꾼 문장은 `reason: null`이며 `teacherLabel`이 붙고 `needsReview`는 false입니다. 같은 문장을 다시 고치면 마지막 판정을 씁니다.
+  - `sentence_labels`에 문장, 교사 판정, 그때의 알고리즘 판정·근거(source, reason, longestSpan, similarity, Haiku·Gemini 단계, needsReview), 설정·프롬프트 버전(config_json)을 이력으로 저장합니다. 수정 기록이 200문장 이상 쌓이면 기준값 보정에 씁니다.
 - **허용 범위 검사**:
   - Level 1(DISABLED): AI 대화가 있으면 VIOLATION, 200자 이상 붙여넣기·AI 답변 복사 기록은 CHECK.
   - AI 답변 사용(AI_REFERENCED) 문장 비중이 단계별 상한을 넘으면 모든 단계에서 CHECK입니다. 유사도만으로 VIOLATION을 확정하지 않습니다. 금지 정책과 내부 AI 호출 기록의 직접 불일치만 별도 확인 대상으로 표시합니다.

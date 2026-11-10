@@ -112,18 +112,46 @@ public class AssessmentService {
         return rows.isEmpty()?AssessmentAnalyzer.DisclosureInput.EMPTY:rows.get(0);
     }
     private Analysis compute(String id,String pid,JsonNode source) { return compute(id,pid,source,null); }
+    private Analysis compute(String id,String pid,JsonNode source,String semanticFailure) { return compute(id,pid,source,semanticFailure,true); }
+    /** 교사가 고친 문장 판정. 같은 문장을 여러 번 고치면 마지막 판정을 씁니다. */
+    private Map<String,String> teacherLabels(String pid) {
+        var labels=new HashMap<String,String>();
+        db.query("SELECT question_id,sentence_text,teacher_label FROM sentence_labels WHERE participant_id=? ORDER BY id",
+                r->{labels.put(AssessmentAnalyzer.sentenceKey(r.getString("question_id"),r.getString("sentence_text")),r.getString("teacher_label"));},pid);
+        return labels;
+    }
     /**
      * 1단계(글자 비교) 결과에 저장된 2단계(LLM) 판정을 얹어 계산합니다. LLM은 여기서 부르지 않습니다(캐시만 읽음).
      * semanticFailure: 백그라운드 판정에서 실패한 단계. 캐시에 없는 판정이 남으면 semanticStatus=PENDING입니다.
      */
-    private Analysis compute(String id,String pid,JsonNode source,String semanticFailure) {
+    private Analysis compute(String id,String pid,JsonNode source,String semanticFailure,boolean withTeacherLabels) {
         var saved=source.path("aiDisclosure");boolean automatic="SYSTEM_GENERATED".equals(saved.path("source").asText());
         if(automatic)saved=source.path("studentAiDisclosure");
         var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):automatic?AssessmentAnalyzer.DisclosureInput.EMPTY:disclosure(pid);
         var input=withEvaluationContent(id,source);var now=Instant.now();
         var stage1=analyzer.analyze(pid,input,disclosure,now);
-        if(!judge.isActive()) return stage1;
-        return analyzer.analyze(pid,input,disclosure,now,judge.cached(judge.plan(input,stage1),semanticFailure));
+        var labels=withTeacherLabels?teacherLabels(pid):Map.<String,String>of();
+        if(!judge.isActive()&&labels.isEmpty()) return stage1;
+        var semantic=judge.isActive()?judge.cached(judge.plan(input,stage1),semanticFailure):SemanticInput.DISABLED;
+        return analyzer.analyze(pid,input,disclosure,now,semantic,labels);
+    }
+    /**
+     * 3단계: 교사가 문장 판정을 고칩니다(AI|DIRECT). 문장·교사 판정과 함께 그때의 알고리즘 판정·근거 값(최장 일치, 3-gram,
+     * 두 모델 단계)·설정·프롬프트 버전을 저장하고, 그 학생 비율에 바로 반영한 분석을 돌려줍니다.
+     */
+    public Analysis labelSentence(String id,String pid,String sentenceId,SentenceLabelInput input) {
+        String teacherId=teacher(id);person(id,pid);requireSubmitted(pid);
+        if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty()) throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
+        var source=reportsWorkWithoutAuth(id,pid);
+        var algorithm=compute(id,pid,source,null,false);
+        var sentence=algorithm.sentences().stream().filter(s->s.id().equals(sentenceId)).findFirst()
+                .orElseThrow(()->fail(HttpStatus.NOT_FOUND,"SENTENCE_NOT_FOUND","현재 제출본에서 해당 문장을 찾을 수 없습니다. 분석을 다시 조회해주세요."));
+        var config=new LinkedHashMap<String,Object>(analyzer.getDefinition());config.putAll(judge.describe());config.put("semanticStatus",algorithm.semanticStatus());
+        var semantic=sentence.semantic();
+        db.update("INSERT INTO sentence_labels(evaluation_id,participant_id,question_id,sentence_id,sentence_text,teacher_label,algorithm_source,algorithm_reason,longest_span,similarity,haiku_level,gemini_level,needs_review,config_json,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                id,pid,sentence.questionId(),sentence.id(),sentence.text(),input.label(),sentence.source(),sentence.reason(),sentence.longestSpan(),sentence.similarity(),
+                semantic==null?null:semantic.haikuLevel(),semantic==null?null:semantic.geminiLevel(),sentence.needsReview(),encode(config),teacherId,now());
+        return analyzeAndStore(id,pid);
     }
     /** 답안 출처 판정 V2는 평가 안내 문구를 비교에서 빼므로, 제출 snapshot에 없으면 현재 평가 안내를 붙여 넘깁니다(저장하지 않음). */
     private JsonNode withEvaluationContent(String id,JsonNode source) {
