@@ -3861,10 +3861,10 @@
                 "answer"
               ]
             },
-            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존.",
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. PASTE 작업은 400 PASTE_NOT_ALLOWED. 입력 이력 생략 시 붙여넣기 판별 불가.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"직접 붙여\",\n  \"expectedVersion\": 0,\n  \"source\": \"DIRECT\",\n  \"aiRequestId\": null,\n  \"inputOperations\": [\n    {\n      \"type\": \"DIRECT\",\n      \"start\": 0,\n      \"end\": 0,\n      \"text\": \"직접 \",\n      \"conversationId\": null\n    },\n    {\n      \"type\": \"PASTE\",\n      \"start\": 3,\n      \"end\": 3,\n      \"text\": \"붙여\",\n      \"conversationId\": null\n    }\n  ]\n}",
+              "raw": "{\n  \"content\": \"직접 붙여\",\n  \"expectedVersion\": 0,\n  \"source\": \"DIRECT\",\n  \"aiRequestId\": null,\n  \"inputOperations\": [\n    {\n      \"type\": \"DIRECT\",\n      \"start\": 0,\n      \"end\": 0,\n      \"text\": \"직접 \",\n      \"conversationId\": null\n    },\n    {\n      \"type\": \"DIRECT\",\n      \"start\": 3,\n      \"end\": 3,\n      \"text\": \"붙여\",\n      \"conversationId\": null\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

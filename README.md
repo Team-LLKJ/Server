@@ -152,7 +152,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 
 ## 답안·AI·제출 정책
 
-- 답안 저장: `{"content":"답안","expectedVersion":0,"source":"DIRECT"}`.
+- 답안 저장: `{"content":"답안","expectedVersion":0,"source":"DIRECT"}`. `inputOperations`에 `PASTE`가 포함되면 400 `PASTE_NOT_ALLOWED`를 반환합니다. 입력 이력이 없는 요청의 붙여넣기 여부는 판별할 수 없습니다.
 - content 입력 최대 UTF-8 1MiB, 표 HTML·빈 답안 허용. 현재 버전이 일치해야 저장되며 성공 시 version +1.
 - source는 DIRECT / AI_REFERENCED / AI_USED. AI 참고·사용은 같은 참가자·문항의 완료된 aiRequestId 필요.
 - 문항 전환 전 저장 성공을 확인하세요. 프런트의 미저장 입력 보존·실패 표시는 별도 구현 항목입니다.
