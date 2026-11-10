@@ -4,38 +4,94 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** 목적 분류는 점수가 아니며 질문 하나의 총 가중치는 항상1입니다. */
+/**
+ * AI 사용 방법(질문 용도) 분석. 질문 하나에 주된 용도 하나만 매기고, 비율은 "질문 몇 개 중 몇 개"입니다. 점수가 아닙니다.
+ * 용도는 스냅샷 대화에 붙은 purposeClassification(교사 확정 > LLM: Haiku 3회 일치, 불일치는 Gemini 임시 용도)을 쓰고,
+ * 아직 분류 전이거나 실패한 질문은 키워드 규칙으로 대체해 method에 표시합니다. AssessmentAnalyzer.classify와 같은 결과를 씁니다.
+ */
 public class PurposeUsageAnalyzer {
-    public enum Purpose { IDEATION, CONCEPT, RESEARCH, STRUCTURING, GENERATION, CRITICAL_REVIEW, EXPRESSION, OTHER }
-    private static final Map<Purpose,Pattern> RULES=Map.of(
-        Purpose.IDEATION,Pattern.compile("아이디어|브레인|발상|idea"),Purpose.CONCEPT,Pattern.compile("개념|설명|이해|원리|정의|뜻|힌트"),
-        Purpose.RESEARCH,Pattern.compile("자료|출처|검색|조사|통계|논문"),Purpose.STRUCTURING,Pattern.compile("구조|개요|목차|구성|정리"),
-        Purpose.GENERATION,Pattern.compile("답안|대신|작성해|써\\s*줘|풀어|완성"),Purpose.CRITICAL_REVIEW,Pattern.compile("검토|확인|검증|오류|반론|타당|맞는|비교"),
-        Purpose.EXPRESSION,Pattern.compile("표현|문장|맞춤법|교정|다듬|고쳐|문체"));
-    public record Question(long conversationId,String questionId,String quote,List<Purpose> purposes,double weightPerPurpose) {}
-    public record Group(Purpose purpose,String name,double percentage,List<Question> representativeQuestions) {}
-    public record View(String method,String status,int questionCount,int missingRecords,List<Group> usage,List<Question> questions,List<String> limitations) {}
+    public enum Purpose {
+        UNDERSTAND("이해·조사"), PLAN("아이디어·구성"), REVIEW("비판적 검토"), EDIT("표현 수정"), DRAFT("답안 생성"), OTHER("기타"), UNDECIDED("판단 보류");
+        public final String label;
+        Purpose(String label){this.label=label;}
+        /** 비율(usage)에 들어가는 5개 항목. OTHER는 otherCount, UNDECIDED는 비율에서 뺍니다. */
+        public boolean counted(){return this!=OTHER&&this!=UNDECIDED;}
+        public static Optional<Purpose> parse(String value) {
+            try { return value==null||value.isBlank()?Optional.empty():Optional.of(valueOf(value.strip())); }
+            catch(IllegalArgumentException ex) { return Optional.empty(); }
+        }
+    }
+    public static final String METHOD_LLM="LLM_HAIKU_X3",METHOD_LLM_GEMINI="LLM_HAIKU_X3_GEMINI",METHOD_TEACHER="TEACHER",METHOD_KEYWORD="KEYWORD_FALLBACK";
+    /** 키워드 대체 규칙(우선순위 순서대로 첫 일치). LLM 분류가 없거나 실패한 질문에만 씁니다. */
+    private static final List<Map.Entry<Purpose,Pattern>> KEYWORDS=List.of(
+        Map.entry(Purpose.DRAFT,Pattern.compile("답안|정답|대신|작성해|써\\s*줘|써줘|풀어\\s*줘|완성해|만들어\\s*줘|이어\\s*(써|쓰)|덧붙|붙여\\s*줘|늘려\\s*줘|추가해\\s*줘")),
+        Map.entry(Purpose.EDIT,Pattern.compile("고쳐|맞춤법|교정|다듬|어색|문체|어조|바꿔\\s*줘|자연스럽게")),
+        Map.entry(Purpose.REVIEW,Pattern.compile("맞아|맞니|맞는지|맞나|검토|확인해|검증|오류|틀린|틀렸|출처|근거|사실인지|정확한지|반박|타당|진짜야|누가\\s*센")),
+        Map.entry(Purpose.PLAN,Pattern.compile("아이디어|브레인|발상|구조|개요|목차|구성|순서|방향|주제|서론|결론|어떻게\\s*쓸|뭘\\s*쓸|무엇을\\s*쓸")),
+        Map.entry(Purpose.UNDERSTAND,Pattern.compile("개념|설명|이해|원리|정의|뜻|의미|자료|조사|검색|통계|사례|예시|논문|알려|왜|무엇|뭐야|차이|효과|영향|힌트")));
+    static Purpose keyword(String text) {
+        String t=text==null?"":text.toLowerCase(Locale.ROOT);
+        for(var rule:KEYWORDS) if(rule.getValue().matcher(t).find()) return rule.getKey();
+        return Purpose.OTHER;
+    }
+
+    /**
+     * 질문별 결과. purpose는 최종 용도(교사 확정 > LLM 확정·임시 > 키워드), votes는 Haiku 3회 답, geminiPurpose는 불일치 때 Gemini 답.
+     * purposes·weightPerPurpose는 이전 응답과의 호환용(항상 [purpose], 1.0).
+     */
+    public record Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String geminiPurpose,
+                           boolean needsReview,String teacherPurpose,String method,List<Purpose> purposes,double weightPerPurpose) {}
+    public record Group(Purpose purpose,String name,double percentage,int count,List<Question> representativeQuestions) {}
+    /**
+     * usage: 5개 항목 비율(확정+임시 용도, OTHER·UNDECIDED 제외). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
+     * undecidedCount: Haiku 세 답이 모두 다르고 Gemini도 실패한 질문 수. pendingCount: 아직 LLM 분류 전이라 키워드로 대체한 질문 수.
+     */
+    public record View(String method,String status,int questionCount,int missingRecords,List<Group> usage,List<Question> questions,List<String> limitations,
+                       int reviewCount,int otherCount,int undecidedCount,int pendingCount) {}
+
     public View analyzeUsage(JsonNode snapshot){
-        var questions=new ArrayList<Question>();int missing=0;
-        if(!snapshot.path("conversations").isArray())return new View("KEYWORD_MULTI_LABEL_V3","RECORDS_UNAVAILABLE",0,0,List.of(),List.of(),List.of("대화 자료를 확보하지 못했습니다. 질문 기록 없음과 구분합니다."));
-        var seen=new HashSet<Long>();
+        if(!snapshot.path("conversations").isArray())return new View(METHOD_KEYWORD,"RECORDS_UNAVAILABLE",0,0,List.of(),List.of(),
+                List.of("대화 자료를 확보하지 못했습니다. 질문 기록 없음과 구분합니다."),0,0,0,0);
+        var questions=new ArrayList<Question>();int missing=0,pending=0;var seen=new HashSet<Long>();var methods=new LinkedHashSet<String>();
         for(var turn:snapshot.path("conversations")){
             String text=turn.path("questionText").asText("");long id=turn.path("id").asLong();
             if(text.isBlank()||id<=0||!seen.add(id)){missing++;continue;}
-            var purposes=new ArrayList<Purpose>();for(var purpose:Purpose.values())if(RULES.containsKey(purpose)&&RULES.get(purpose).matcher(text.toLowerCase(Locale.ROOT)).find())purposes.add(purpose);
-            if(purposes.isEmpty())purposes.add(Purpose.OTHER);
-            questions.add(new Question(id,turn.path("questionId").asText(),text,List.copyOf(purposes),1.0/purposes.size()));
+            var c=turn.path("purposeClassification");
+            var purpose=Purpose.parse(c.path("purpose").asText(null)).orElse(null);
+            String method;
+            if(purpose==null){purpose=keyword(text);method=METHOD_KEYWORD;if(c.path("status").asText("").equals("PENDING")||c.isMissingNode())pending++;}
+            else method=c.path("method").asText(METHOD_LLM);
+            var votes=new ArrayList<String>();for(var v:c.path("votes"))votes.add(v.asText());
+            String teacher=c.path("teacherPurpose").isTextual()?c.path("teacherPurpose").asText():null;
+            questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("geminiPurpose").isTextual()?c.path("geminiPurpose").asText():null,
+                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0));
+            methods.add(method);
             if(!"COMPLETED".equals(turn.path("state").asText()))missing++;
         }
-        var weights=new EnumMap<Purpose,Double>(Purpose.class);for(var q:questions)for(var p:q.purposes())weights.merge(p,q.weightPerPurpose(),Double::sum);
-        var active=Arrays.stream(Purpose.values()).filter(weights::containsKey).toList();var units=new EnumMap<Purpose,Integer>(Purpose.class);int assigned=0;
-        for(var p:active){int n=(int)Math.floor(weights.get(p)*1000/questions.size()+1e-9);units.put(p,n);assigned+=n;}
-        if(!questions.isEmpty()){
-            var order=new ArrayList<>(active);order.sort(Comparator.<Purpose>comparingDouble(p->-(weights.get(p)*1000/questions.size()-units.get(p))).thenComparingInt(Enum::ordinal));
-            for(int i=0;i<1000-assigned;i++)units.merge(order.get(i),1,Integer::sum);
-        }
-        var groups=active.stream().map(p->new Group(p,labelPurpose(p),units.get(p)/10.0,questions.stream().filter(q->q.purposes().contains(p)).limit(3).toList())).toList();
-        return new View("KEYWORD_MULTI_LABEL_V3",missing>0?"PARTIAL":questions.isEmpty()?"NO_RECORDS":"READY",questions.size(),missing,groups,List.copyOf(questions),List.of("질문 표현의 규칙 기반 분류이며 의미 판단의 정확성을 보장하지 않습니다.","한 질문의 목적별 가중치 합은1입니다. 비율을 높음·보통·낮음이나 점수로 바꾸지 않습니다."));
+        var counted=questions.stream().filter(q->q.purpose().counted()).toList();
+        var counts=new EnumMap<Purpose,Integer>(Purpose.class);for(var q:counted)counts.merge(q.purpose(),1,Integer::sum);
+        var tenths=percentTenths(counts,counted.size());
+        var groups=Arrays.stream(Purpose.values()).filter(counts::containsKey).map(p->new Group(p,p.label,tenths.get(p)/10.0,counts.get(p),
+                counted.stream().filter(q->q.purpose()==p).limit(3).toList())).toList();
+        int review=(int)questions.stream().filter(Question::needsReview).count();
+        int other=(int)questions.stream().filter(q->q.purpose()==Purpose.OTHER).count();
+        int undecided=(int)questions.stream().filter(q->q.purpose()==Purpose.UNDECIDED).count();
+        String method=methods.isEmpty()?METHOD_KEYWORD:methods.size()==1?methods.iterator().next():"MIXED";
+        var limitations=new ArrayList<String>();
+        limitations.add("질문 하나에 주된 용도 하나만 매긴 비율입니다(질문 몇 개 중 몇 개). 점수가 아닙니다.");
+        if(review>0)limitations.add("Haiku 세 번의 분류가 엇갈린 질문 "+review+"개는 임시 용도로 계산했으며 교사 확인이 필요합니다.");
+        if(undecided>0)limitations.add("용도를 정하지 못한 질문 "+undecided+"개는 비율에서 뺐습니다.");
+        if(methods.contains(METHOD_KEYWORD))limitations.add("LLM 분류 전이거나 실패한 질문은 키워드 규칙으로 대체했습니다(method=KEYWORD_FALLBACK).");
+        return new View(method,missing>0?"PARTIAL":questions.isEmpty()?"NO_RECORDS":"READY",questions.size(),missing,groups,List.copyOf(questions),
+                List.copyOf(limitations),review,other,undecided,pending);
     }
-    private String labelPurpose(Purpose p){return switch(p){case IDEATION->"아이디어 탐색";case CONCEPT->"개념 이해";case RESEARCH->"자료 조사";case STRUCTURING->"구조화";case GENERATION->"답안 생성";case CRITICAL_REVIEW->"비판적 검토";case EXPRESSION->"표현 수정";case OTHER->"기타";};}
+    /** 소수 첫째 자리 비율(1/10%) — 합이 정확히 100%가 되도록 최대 나머지 방식으로 배분합니다. */
+    private static Map<Purpose,Integer> percentTenths(Map<Purpose,Integer> counts,int total) {
+        var units=new EnumMap<Purpose,Integer>(Purpose.class);if(total==0)return units;int assigned=0;
+        for(var e:counts.entrySet()){int n=e.getValue()*1000/total;units.put(e.getKey(),n);assigned+=n;}
+        var order=new ArrayList<>(counts.keySet());
+        order.sort(Comparator.<Purpose>comparingInt(p->-(counts.get(p)*1000%total)).thenComparingInt(Enum::ordinal));
+        for(int i=0;i<1000-assigned;i++)units.merge(order.get(i%order.size()),1,Integer::sum);
+        return units;
+    }
 }

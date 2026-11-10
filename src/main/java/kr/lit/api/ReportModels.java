@@ -54,4 +54,6 @@ public final class ReportModels {
  }
  public record UsageReport(String id,int version,Instant createdAt,ReportContent content) {}
  public record ReportVersion(String id,int version,Instant createdAt) {}
+ /** 교사의 질문 용도 확정 요청. */
+ public record PurposeInput(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Pattern(regexp="UNDERSTAND|PLAN|REVIEW|EDIT|DRAFT|OTHER") String purpose) {}
 }

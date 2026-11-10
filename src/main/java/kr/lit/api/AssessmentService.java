@@ -28,9 +28,10 @@ public class AssessmentService {
     private final AssessmentAnalyzer analyzer;
     private final NotificationService notifications;
     private final SemanticJudge judge;
+    private final PurposeClassifier purposes;
 
-    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;
+    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;
     }
 
     // ===== 공통 =====
@@ -240,7 +241,17 @@ public class AssessmentService {
         // 제출된 참가자만 분석하므로 snapshot을 직접 읽습니다.
         var rows=db.queryForList("SELECT snapshot FROM submissions WHERE participant_id=? AND evaluation_id=?",String.class,pid,id);
         if(rows.isEmpty()) throw fail(HttpStatus.CONFLICT,"SUBMISSION_REQUIRED","제출 기록이 없습니다.");
-        try { return json.readTree(rows.get(0)); } catch(Exception e) { throw new IllegalStateException(e); }
+        try { return purposes.annotate(pid,json.readTree(rows.get(0))); } catch(Exception e) { throw new IllegalStateException(e); }
+    }
+    /** 질문 용도 분류가 바뀌면(LLM 저장·교사 확정) 이미 계산된 AI 활용 분석을 같은 분류로 다시 계산합니다. */
+    public void refreshAfterPurpose(String pid) {
+        var rows=db.queryForList("SELECT evaluation_id FROM grading_analyses WHERE participant_id=? AND analysis_status='DONE'",String.class,pid);
+        if(rows.isEmpty()||!submitted(pid)) return;
+        String id=rows.get(0);
+        if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty()) return;
+        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
+        db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=? WHERE participant_id=? AND analysis_status='DONE'",
+                encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
     }
 
     // ===== 점수 =====
@@ -420,7 +431,7 @@ public class AssessmentService {
         var out=new ArrayList<Conversation>();
         for(var t:source.path("conversations")) {
             String qid=t.path("questionId").asText();if(questionId!=null&&!questionId.equals(qid)) continue;
-            var type=AssessmentAnalyzer.classify(t.path("questionText").asText());
+            var type=AssessmentAnalyzer.classify(t);
             out.add(new Conversation(t.path("id").asLong(),t.path("requestId").asText(),qid,t.path("questionText").asText(),
                     t.path("answerText").isNull()?null:t.path("answerText").asText(null),t.path("state").asText(),t.path("errorCode").isNull()?null:t.path("errorCode").asText(null),
                     parse(t.path("createdAt")),parse(t.path("completedAt")),type,type.label()));

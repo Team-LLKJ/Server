@@ -11,10 +11,10 @@ public final class AssessmentModels {
 
     /** 각 평가 기준이 어떤 서버 지표로 AI 추천 점수를 받는지. MANUAL은 AI 추천 없이 교사만 채점합니다. */
     public enum Indicator { PURPOSE, SELF_DIRECTION, CRITICAL_REVIEW, CONTRIBUTION, TRANSPARENCY, MANUAL }
-    public enum QuestionType { CONCEPT_UNDERSTANDING, RESEARCH, IDEA_EXPLORATION, ANSWER_DRAFTING, VERIFICATION, OTHER;
+    public enum QuestionType { CONCEPT_UNDERSTANDING, RESEARCH, IDEA_EXPLORATION, ANSWER_DRAFTING, VERIFICATION, EDIT, OTHER;
         public String label() { return switch(this) {
             case CONCEPT_UNDERSTANDING -> "개념 이해"; case RESEARCH -> "자료 탐색"; case IDEA_EXPLORATION -> "아이디어 구체화";
-            case ANSWER_DRAFTING -> "답안 대리 작성 요청"; case VERIFICATION -> "검증 요청"; case OTHER -> "기타";
+            case ANSWER_DRAFTING -> "답안 대리 작성 요청"; case VERIFICATION -> "검증 요청"; case EDIT -> "표현 수정 요청"; case OTHER -> "기타";
         }; }
     }
     public enum ComplianceResult { OK, CHECK, VIOLATION }

@@ -171,7 +171,7 @@ public class EvaluationService {
  void deleteFromAssessment(String id){
   var e=read(id);
   if(e.state().equals("STARTED")&&e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.CONFLICT,"EVALUATION_IN_PROGRESS","진행 중인 평가는 종료한 뒤 삭제해주세요.");
-  for(String table:List.of("notifications","sentence_labels","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
+  for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
     "usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
    db.update("DELETE FROM "+table+" WHERE evaluation_id=?",id);
   db.update("DELETE FROM answers WHERE participant_id IN (SELECT id FROM participants WHERE evaluation_id=?)",id);

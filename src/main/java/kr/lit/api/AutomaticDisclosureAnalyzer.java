@@ -19,9 +19,9 @@ public class AutomaticDisclosureAnalyzer {
         for(var turn:source.path("conversations")){
             long cid=turn.path("id").asLong();if(cid<=0)throw new IllegalArgumentException("Missing conversation identifier");ids.add(cid);
             String qid=turn.path("questionId").asText();String prompt=turn.path("questionText").asText();
-            String purpose=switch(AssessmentAnalyzer.classify(prompt).name()){
+            String purpose=switch(AssessmentAnalyzer.classify(turn).name()){
                 case "CONCEPT_UNDERSTANDING"->"개념 확인";case "RESEARCH"->"자료 탐색";case "IDEA_EXPLORATION"->"아이디어 구체화";
-                case "ANSWER_DRAFTING"->"답안 작성 요청";case "VERIFICATION"->"검증 요청";default->"기타 요청";};
+                case "ANSWER_DRAFTING"->"답안 작성 요청";case "VERIFICATION"->"검증 요청";case "EDIT"->"표현 수정 요청";default->"기타 요청";};
             purposes.merge(purpose,1,Integer::sum);
             boolean usable="COMPLETED".equals(turn.path("state").asText())&&!turn.path("answerText").asText().isBlank();
             if(usable){completed++;tools.add("LIT 내장 AI ("+turn.path("provider").asText("미기록")+" / "+turn.path("model").asText("미기록")+")");}else failed++;
