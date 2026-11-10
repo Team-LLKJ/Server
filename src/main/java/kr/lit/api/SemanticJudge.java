@@ -27,6 +27,9 @@ public class SemanticJudge {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(SemanticJudge.class);
     public static final String ANTHROPIC="ANTHROPIC",GEMINI="GEMINI";
     public static final String STATUS_DISABLED="DISABLED",STATUS_PENDING="PENDING",STATUS_DONE="DONE",STATUS_PARTIAL="PARTIAL",STATUS_UNAVAILABLE="UNAVAILABLE";
+    /** 판정이 일부·전부 실패(PARTIAL/UNAVAILABLE)하면 1분 뒤 다시 시도합니다. 최대 시도 횟수(첫 시도 포함). */
+    public static final int MAX_ATTEMPTS=3;
+    public static final java.time.Duration RETRY_AFTER=java.time.Duration.ofMinutes(1);
     private static final int BATCH_SIZE=50;
 
     public record PlanItem(String key,String questionId,String excluded,Item item) {}

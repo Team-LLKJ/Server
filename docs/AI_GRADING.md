@@ -243,6 +243,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
   3. Haiku가 단계 2를 준 문장만 묶어 Gemini에 1번 호출합니다(Haiku 결과는 알려 주지 않음, 없으면 호출 안 함). 모델이 말하는 confidence는 쓰지 않습니다.
   4. 판정표: Haiku 3 → AI(`reason: SEMANTIC`). Haiku 2 → Gemini 3이면 AI, Gemini 2면 DIRECT + `needsReview: true`, Gemini 0~1이면 DIRECT. Haiku 0~1 → DIRECT.
   - 판정은 제출 후 백그라운드(`SemanticJudgeJob`)에서 돌고, 끝나기 전에는 `semanticStatus: PENDING`(1단계 결과 표시)입니다. 결과 상태: `DONE`, `PARTIAL`(Gemini 실패·미설정 → Haiku 단계 2 문장은 DIRECT + needsReview), `UNAVAILABLE`(Haiku 실패 → 1단계 결과만).
+  - `PARTIAL`·`UNAVAILABLE`은 LLM 일시 오류(503·시간 초과 등)일 수 있어 1분 뒤 자동으로 다시 판정합니다(첫 시도 포함 최대 3회, `grading_analyses.semantic_attempts`). 이미 받은 Haiku·Gemini 판정은 캐시를 쓰므로 실패한 호출만 다시 하고, 다시 판정하는 동안 화면은 직전 결과를 보여줍니다. 3회 모두 실패하면 그 상태로 남고 교사 확인 대상(needsReview)이 됩니다.
   - needsReview 문장은 비율에서 직접으로 계산하고, 교사가 확정하면 그 값으로 바뀝니다.
   - 문장별 `sentences[].semantic`에 `haikuLevel, geminiLevel, closestCandidateId, closestCandidateText, conversationId, ai, needsReview`가 내려갑니다.
   - 판정은 `semantic_judgments`에 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장)의 SHA-256 해시를 키로 단계·closestCandidate만 저장합니다. 같은 문장은 다시 호출하지 않으며, 원문은 저장하지 않습니다.

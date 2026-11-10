@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 답안 출처 판정 2단계를 제출 후 백그라운드에서 처리합니다(semantic_status=PENDING인 분석).
+ * LLM 오류로 PARTIAL/UNAVAILABLE이 되면 1분 뒤 최대 3회까지 다시 시도합니다(AssessmentService.requeueFailedSemantic).
  * LLM 호출은 DB 트랜잭션 밖에서 하고, 끝나면 저장된 판정으로 분석을 다시 계산합니다. 실패해도 채점 화면은 1단계 결과로 계속 보입니다.
  */
 @Component
@@ -21,6 +22,7 @@ public class SemanticJudgeJob {
     @Scheduled(fixedDelayString="${lit.grading.job-interval-ms:3000}",initialDelayString="${lit.grading.job-interval-ms:3000}")
     public void judgePending() {
         if(!judge.isActive()) return;
+        assessment.requeueFailedSemantic();
         var targets=db.query("SELECT evaluation_id,participant_id FROM grading_analyses WHERE analysis_status='DONE' AND semantic_status='PENDING' ORDER BY analyzed_at LIMIT 10",
                 (r,n)->new Target(r.getString("evaluation_id"),r.getString("participant_id")));
         for(var target:targets) process(target.evaluationId(),target.participantId());
