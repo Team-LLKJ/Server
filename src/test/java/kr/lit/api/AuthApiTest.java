@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class AuthApiTest extends AuthTestSupport {
-    Map<String,Object> signup(String token,String suffix) {return Map.of("username","t_"+suffix,"email",suffix+"@example.test","password",PASSWORD,"name","교사","emailVerificationToken",token);}
+    Map<String,Object> signup(String token,String suffix) {return Map.of("username","t_"+suffix,"email",suffix+"@example.test","password",PASSWORD,"name","교사","emailVerificationToken",token,"termsVersion","v1","termsAccepted",true,"privacyVersion","v1","privacyAccepted",true);}
     @Test void studentsNeedNoAccountsAndCannotCreateClasses() throws Exception {
         int usersBefore=db.queryForObject("SELECT COUNT(*) FROM app_users",Integer.class);
         mvc.perform(request(body(post("/api/auth/signup/student"),Map.of("role","TEACHER")),null)).andExpect(status().isGone()).andExpect(jsonPath("code").value("STUDENT_ACCOUNTS_DISABLED"));
@@ -76,7 +76,7 @@ class AuthApiTest extends AuthTestSupport {
     @Test void concurrentVerificationConsumptionAllowsOneSignup() throws Exception {
         String suffix=unique(),email=suffix+"@example.test",token=createVerifiedEmail(email);
         var gate=new CountDownLatch(1);var executor=Executors.newFixedThreadPool(2);
-        Callable<Boolean> register=()->{gate.await();try{auth.signupTeacher(new TeacherSignup("t_"+unique(),PASSWORD,email,"교사",token));return true;}catch(ApiError.Failure ex){return false;}};
+        Callable<Boolean> register=()->{gate.await();try{auth.signupTeacher(new TeacherSignup("t_"+unique(),PASSWORD,email,"교사",token,"v1",true,"v1",true));return true;}catch(ApiError.Failure ex){return false;}};
         try{var a=executor.submit(register);var b=executor.submit(register);gate.countDown();assertThat(List.of(a.get(),b.get())).containsExactlyInAnyOrder(true,false);}finally{executor.shutdownNow();}
     }
     @Test void failedLoginCounterTemporarilyLocksTeacherAccount() throws Exception {

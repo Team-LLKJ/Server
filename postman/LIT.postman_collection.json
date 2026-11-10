@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "LIT 전체 평가 API",
-    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 로그인·갱신 시 Access Token은 2시간 유효하며 Refresh Token 만료 시각(최초 로그인 기준 최대 14일)을 넘지 않습니다. 로그인 없이 이메일 링크로 비밀번호를 재설정합니다.",
+    "description": "교사만 가입·로그인하며 학생은 비회원 PIN·닉네임 참여. 학생 API는 X-Participant-Token, 교사 API는 Bearer Access Token 사용. 로그인·갱신 시 Access Token은 2시간 유효하며 Refresh Token 만료 시각(최초 로그인 기준 최대 14일)을 넘지 않습니다. 로그인 없이 이메일 링크로 비밀번호를 재설정합니다. 프런트 응답 계약: docs/FRONTEND_CONTRACT_COMPLETION.md. 새 정책 생략 시 HINT_ONLY. 대기실 state=READY/lobbyState=WAITING. 제출 후 leave해도 본인 리포트 열람 가능.\n보고서 로고·표 확장: PDF/HWP에 원본 LIT PNG 및 #007BFF 적용. 종합 평가·근거·활동·대화 부록은 표 형태. version/includeConversations 계약 유지. docs/REPORT_FORMAT.md 참고.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -260,9 +260,10 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/signup/teacher",
+            "description": "가입 비밀번호는 8~20자이며 공백만 입력할 수 없습니다. 길이 위반 시 400 INVALID_REQUEST를 반환합니다.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -287,9 +288,10 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/signup/teacher",
+            "description": "가입 비밀번호는 8~20자이며 공백만 입력할 수 없습니다. 길이 위반 시 400 INVALID_REQUEST를 반환합니다.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\"\n}",
+              "raw": "{\n  \"username\": \"{{teacherUsername}}\",\n  \"password\": \"{{password}}\",\n  \"email\": \"{{teacherEmail}}\",\n  \"name\": \"이용자\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"termsAccepted\": true,\n  \"privacyVersion\": \"{{privacyVersion}}\",\n  \"privacyAccepted\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1736,7 +1738,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/answers"
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/answers",
+            "description": " questions[].minChars/maxChars 추가. 제한 없으면null, 제출 후에는동결된제출문항기준."
           }
         },
         {
@@ -1858,7 +1861,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/answers"
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/answers",
+            "description": " questions[].minChars/maxChars 추가. 제한 없으면null, 제출 후에는동결된제출문항기준."
           }
         },
         {
@@ -2148,7 +2152,8 @@
                 "value": "{{participantToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure"
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure",
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {
@@ -2169,7 +2174,8 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tools\": \"LIT 내장 AI\",\n  \"usedParts\": \"문항 1 둘째 문단\",\n  \"reason\": \"개념만 확인하고 예시는 직접 찾았습니다.\"\n}"
-            }
+            },
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         }
       ]
@@ -2328,7 +2334,7 @@
             "url": "{{baseUrl}}/api/teacher/assessments",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
+              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\",\n    \"FULLSCREEN_LEAVE\",\n    \"DEVTOOLS\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2392,7 +2398,7 @@
             "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
+              "raw": "{\n  \"title\": \"공통 수행평가\",\n  \"guidelines\": \"<p><strong>근거</strong>를 제시하세요.</p>\",\n  \"aiPolicy\": \"HINT_ONLY\",\n  \"criteria\": [\n    \"근거의 적절성\",\n    \"표현의 명확성\"\n  ],\n  \"antiCheat\": [\n    \"TAB_LEAVE\",\n    \"PRINT_BLOCK\",\n    \"FULLSCREEN_LEAVE\",\n    \"DEVTOOLS\"\n  ],\n  \"questions\": [\n    {\n      \"position\": 1,\n      \"title\": \"문항1\",\n      \"content\": \"주장과 근거를 작성하세요.\",\n      \"minChars\": 20,\n      \"maxChars\": 2000\n    }\n  ],\n  \"durationMinutes\": 45\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2452,7 +2458,45 @@
           }
         },
         {
-          "name": "반 시작 및 PIN 발급",
+          "name": "대기실 열기 및 PIN 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/lobby",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresInMinutes\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "평가 시작하러 가기 버튼. WAITING 유지·PIN 발급. 응답 evaluationId로 참가자 목록을 조회하고 학생이 참가한 후 다음 실제 시작 요청을 호출합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const r=pm.response.json(); pm.collectionVariables.set('pin', r.pin); pm.collectionVariables.set('evaluationId', r.evaluationId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "대기실에서 실제 평가 시작",
           "request": {
             "method": "POST",
             "header": [
@@ -2474,7 +2518,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "대기실 열기 이후 호출. 기존 PIN 유지, STARTED 전환 및45분 타이머 시작. 학생 state 조회가 SOLVING으로 변경됩니다."
           },
           "event": [
             {
@@ -2552,6 +2597,43 @@
             ],
             "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
           }
+        },
+        {
+          "name": "반 시작 및 PIN 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/start",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresInMinutes\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const r=pm.response.json(); pm.collectionVariables.set('pin', r.pin); pm.collectionVariables.set('evaluationId', r.evaluationId); }"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -3156,7 +3238,7 @@
               "type": "noauth"
             },
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/report/hwp?version={{reportVersion}}&includeConversations=false",
-            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다."
+            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다. 보고서 서식: 중앙 제목·학생 정보 2열 표·영역별 점수 3열 표·번호가 있는 섹션·문항별 답안. 실제 HWP 표이며 미입력 점수는0점으로 바꾸지 않습니다."
           }
         },
         {
@@ -3173,7 +3255,7 @@
               "type": "noauth"
             },
             "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/report/hwp?version={{reportVersion}}&includeConversations=false",
-            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다."
+            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다. 보고서 서식: 중앙 제목·학생 정보 2열 표·영역별 점수 3열 표·번호가 있는 섹션·문항별 답안. 실제 HWP 표이며 미입력 점수는0점으로 바꾸지 않습니다."
           }
         }
       ]
@@ -3263,6 +3345,717 @@
               }
             },
             "description": "메일 링크의 #token= 값을 입력.15분·일회용.8~128자 새 비밀번호. 성공 후 새 비밀번호로 로그인."
+          }
+        }
+      ]
+    },
+    {
+      "name": "알림 삭제",
+      "description": "교사 Bearer 인증. 삭제한 알림은 목록·미읽음·읽음 처리에서 제외, 중복 방지 이력은 보존합니다.",
+      "item": [
+        {
+          "name": "본인 알림 하나 삭제",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/notifications/{{notificationId}}",
+            "description": "200 {deleted:1,unreadCount}. 없는·타인·삭제한·공유해제 알림은404 NOTIFICATION_NOT_FOUND."
+          }
+        },
+        {
+          "name": "본인 알림 전체 삭제",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{teacherAccessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/notifications",
+            "description": "200 {deleted,unreadCount}. 현재 접근 가능한 본인 알림만 삭제. 반복은deleted=0."
+          }
+        }
+      ]
+    },
+    {
+      "name": "전체화면·개발자 도구 경고 이벤트",
+      "description": "antiCheat 설정 FULLSCREEN_LEAVE / DEVTOOLS. 이벤트는 설정 코드와 다른 FULLSCREEN_EXIT / DEVTOOLS_OPEN. 신고는 부정행위 확정·자동 감점이 아닙니다. 기존 이벤트와 합산60건/분.",
+      "item": [
+        {
+          "name": "전체화면 이탈 기록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"FULLSCREEN_EXIT\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"questionId\": \"{{questionId}}\"\n}"
+            },
+            "description": "201 Event(details.warning=true). 평가 시작 후 제출 전만 가능. 첫 경고만 교사 알림, warningCount와activity.warnings에 포함. 61번째 요청429 EVENT_RATE_LIMITED."
+          }
+        },
+        {
+          "name": "개발자 도구 열림 기록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"DEVTOOLS_OPEN\",\n  \"occurredAt\": \"{{$isoTimestamp}}\",\n  \"questionId\": \"{{questionId}}\"\n}"
+            },
+            "description": "201 Event(details.warning=true). 평가 시작 후 제출 전만 가능. 첫 경고만 교사 알림, warningCount와activity.warnings에 포함. 61번째 요청429 EVENT_RATE_LIMITED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI 활용 분석 V2",
+      "item": [
+        {
+          "name": "통합 AI 사용·역량·학생 기여 분석",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
+            "description": "V2 행동 루브릭: 1~5단계, 15/25/20/25/15점. criteria·studentContribution은 근거 기반 평가, aiUsage·textSimilarity는 통계. 기존 V1 run 유지. docs/ANALYSIS_RUBRIC_V2.md 참고."
+          }
+        }
+      ]
+    },
+    {
+      "name": "공통 PDF·HWP 보고서 서식",
+      "item": [
+        {
+          "name": "교사 보고서 pdf (participants 별칭)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.pdf?version=1&includeConversations=false",
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
+          }
+        },
+        {
+          "name": "교사 보고서 hwp (participants 별칭)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.hwp?version=1&includeConversations=false",
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
+          }
+        }
+      ]
+    },
+    {
+      "name": "교사 채점 근거",
+      "item": [
+        {
+          "name": "단계·근거 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"level\": 3, \"feedback\": \"학생의 근거를 확인했습니다.\"}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "단계만 변경·근거 유지",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"level\": 4}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "근거 삭제",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"feedback\": \"\"}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "근거 포함 이력",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/rubric-scores/history",
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        },
+        {
+          "name": "AI 추천 채움·확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/grade/confirm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"acceptAiForMissing\": true}"
+            },
+            "description": "docs/GRADING_FEEDBACK.md 참고. level 0~4, feedback 최대2000자. 근거 변경도 이력에 기록."
+          }
+        }
+      ]
+    },
+    {
+      "name": "프런트 연동 보완",
+      "item": [
+        {
+          "name": "반 PDF ZIP",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/reports/archive?format=PDF",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "폴더 HWP ZIP",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/reports/archive?format=HWP",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "AI 사용 설명 교사 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/ai-disclosure",
+            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
+          }
+        },
+        {
+          "name": "참가 정보 me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/me",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포."
+          }
+        },
+        {
+          "name": "안내 동의",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/policy-acceptance",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyVersion\": \"{{policyVersion}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "전체화면 이벤트 별칭",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"FULLSCREEN\",\n  \"occurredAt\": \"2026-11-08T00:00:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "설정 포함 평가 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations",
+            "description": "docs/BACKEND_INTEGRATION_COMPLETION.md 참고. 신규 연동 API는 feature/backend-integration-completion 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"평가\",\n  \"expiresInMinutes\": 60,\n  \"criteria\": [\n    \"비판적 검토\"\n  ],\n  \"antiCheat\": [\n    \"FULLSCREEN\",\n    \"DEVTOOLS\"\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "가입 동의·구조화 분석·실시간·비동기 ZIP",
+      "item": [
+        {
+          "name": "공개 정책 버전",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/policies/current",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "분석 정의",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/analysis/definition",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "붙여넣기 구간 신고",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/events",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PASTE\",\n  \"occurredAt\": \"2026-11-08T08:00:00Z\",\n  \"questionId\": \"{{questionId}}\",\n  \"length\": 12,\n  \"start\": 0,\n  \"end\": 12,\n  \"answerVersion\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "실시간 이벤트 SSE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/live-events?afterId=0",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 작업 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/report-archive-jobs?format=HWP",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 상태",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/report-archive-jobs/{{archiveJobId}}",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        },
+        {
+          "name": "비동기 ZIP 다운로드",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/teacher/report-archive-jobs/{{archiveJobId}}/download",
+            "description": "docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md 참고. 신규 기능 구현·미배포."
+          }
+        }
+      ]
+    },
+    {
+      "name": "평가 알고리즘 V3 (로컬·미배포)",
+      "item": [
+        {
+          "name": "학생: 편집 이력 포함 답안 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/questions/{{questionId}}/answer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "student",
+                "evaluations",
+                "{{evaluationId}}",
+                "questions",
+                "{{questionId}}",
+                "answer"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"직접 붙여\",\n  \"expectedVersion\": 0,\n  \"source\": \"DIRECT\",\n  \"aiRequestId\": null,\n  \"inputOperations\": [\n    {\n      \"type\": \"DIRECT\",\n      \"start\": 0,\n      \"end\": 0,\n      \"text\": \"직접 \",\n      \"conversationId\": null\n    },\n    {\n      \"type\": \"PASTE\",\n      \"start\": 3,\n      \"end\": 3,\n      \"text\": \"붙여\",\n      \"conversationId\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "학생: 정규화 답안·입력 경로 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Participant-Token",
+                "value": "{{participantToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/student/evaluations/{{evaluationId}}/questions/{{questionId}}/input-paths",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "student",
+                "evaluations",
+                "{{evaluationId}}",
+                "questions",
+                "{{questionId}}",
+                "input-paths"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: 입력 경로 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/input-paths",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "students",
+                "{{participantId}}",
+                "input-paths"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: 목적별 가중치·대표 질문 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/usage-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "students",
+                "{{participantId}}",
+                "usage-analysis"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: V3 종합 분석",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "process-grading",
+                "participants",
+                "{{participantId}}",
+                "analysis"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존."
+          }
+        },
+        {
+          "name": "교사: V3 사전 정책·제외 항목 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "process-grading",
+                "policy"
+              ]
+            },
+            "description": "V3 로컬 구현·미배포. docs/EVALUATION_ALGORITHM_V3.md 참조. 기존 분석 이력 보존.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expectedVersion\": 0,\n  \"taskGoal\": \"학교 조건에 맞는 해결책\",\n  \"allowedRules\": \"AI 생성 후 학생 검토 허용\",\n  \"noAiPolicy\": \"HOLD\",\n  \"questionWeights\": [\n    {\n      \"questionId\": \"{{questionId}}\",\n      \"weight\": 100\n    }\n  ],\n  \"excludedCriteria\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "참여자 추방 (로컬·미배포)",
+      "item": [
+        {
+          "name": "교사: 참여자 추방 (기록 보존)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "teacher",
+                "evaluations",
+                "{{evaluationId}}",
+                "participants",
+                "{{participantId}}"
+              ]
+            },
+            "description": "성공204·반복204. 답안/제출 이력보존, 토큰접근·재접속403 PARTICIPANT_EXPELLED. 대기/진행중만 새추방. docs/FRONTEND_INTEGRATION_REFERENCE.md 참조."
           }
         }
       ]

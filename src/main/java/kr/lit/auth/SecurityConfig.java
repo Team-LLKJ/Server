@@ -31,7 +31,7 @@ public class SecurityConfig {
         if(!allowed.isEmpty()) {
             var config=new org.springframework.web.cors.CorsConfiguration();
             config.setAllowedOrigins(allowed);config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-            config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Participant-Token"));
+            config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Participant-Token","Last-Event-ID"));
             config.setExposedHeaders(List.of("Content-Disposition"));config.setAllowCredentials(false);config.setMaxAge(3600L);
             source.registerCorsConfiguration("/api/**",config);
         }
@@ -48,6 +48,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/policies/current").permitAll()
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join","/api/participation/reconnect").permitAll()
                 .requestMatchers("/api/auth/teacher-invitations","/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/evaluations/**","/api/student/evaluations/**").hasRole("PARTICIPANT")
@@ -71,6 +72,7 @@ public class SecurityConfig {
             if(prior!=null&&prior.count()>=max)return false;
             attempts.put(key,new Window(prior==null?now+60000:prior.expires(),prior==null?1:prior.count()+1));return true;
         }
+        @Override protected boolean shouldNotFilterAsyncDispatch(){return false;}
         protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain) throws ServletException,IOException {
             res.setHeader("Cache-Control","no-store");String path=req.getRequestURI().substring(req.getContextPath().length());
             int max=(path.equals("/api/users/me/password")||path.startsWith("/api/users/me/email/")||(path.equals("/api/users/me")&&req.getMethod().equals("DELETE")))?10:path.contains("signup")?20:30;
@@ -84,7 +86,8 @@ public class SecurityConfig {
                     String[] segments=path.split("/");
                     int idIndex=studentPath?4:3;
                     if(segments.length<=idIndex) {error(res,json,404,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");return;}
-                    var guest=participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
+                    boolean reportPath=(req.getMethod().equals("GET")||req.getMethod().equals("POST"))&&path.matches("/api/evaluations/[^/]+/(?:reports|report(?:\\.(?:pdf|hwp)|/(?:pdf|hwp))?)");
+                    var guest=reportPath?participants.authenticateReport(segments[idIndex],req.getHeader("X-Participant-Token")):participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
                     SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(guest,null,List.of(new SimpleGrantedAuthority("ROLE_PARTICIPANT"))));
                 } catch(ApiError.Failure failure) {error(res,json,failure.status.value(),failure.code,failure.getMessage());return;}
                 chain.doFilter(req,res);return;

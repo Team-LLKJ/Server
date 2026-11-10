@@ -19,16 +19,18 @@ class ReportController {
  Detail detail(@PathVariable String id,@PathVariable String participantId){return reports.detail(id,participantId);}
  @PutMapping("/teacher/evaluations/{id}/students/{participantId}/review")
  TeacherReview review(@PathVariable String id,@PathVariable String participantId,@Valid @RequestBody ReviewInput input){return reports.saveReview(id,participantId,input);}
+ @GetMapping({"/teacher/evaluations/{id}/students/{participantId}/ai-disclosure","/teacher/evaluations/{id}/participants/{participantId}/ai-disclosure"})
+ Object disclosure(@PathVariable String id,@PathVariable String participantId){return reports.teacherDisclosure(id,participantId);}
  @PostMapping("/teacher/evaluations/{id}/students/{participantId}/reports")
  UsageReport generate(@PathVariable String id,@PathVariable String participantId){return reports.teacherGenerate(id,participantId);}
  @GetMapping("/teacher/evaluations/{id}/students/{participantId}/reports")
  Object versions(@PathVariable String id,@PathVariable String participantId){return reports.versions(id,participantId);}
  @GetMapping("/teacher/evaluations/{id}/students/{participantId}/report")
  UsageReport report(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version){return reports.teacherReport(id,participantId,version);}
- @GetMapping(value="/teacher/evaluations/{id}/students/{participantId}/report/pdf",produces=MediaType.APPLICATION_PDF_VALUE)
+ @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report/pdf","/teacher/evaluations/{id}/participants/{participantId}/report/pdf"},produces=MediaType.APPLICATION_PDF_VALUE)
  ResponseEntity<byte[]> pdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
                            @RequestParam(defaultValue="false") boolean includeConversations){return download(reports.teacherReport(id,participantId,version),includeConversations);}
- @GetMapping(value="/teacher/evaluations/{id}/students/{participantId}/report.pdf",produces=MediaType.APPLICATION_PDF_VALUE)
+ @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report.pdf","/teacher/evaluations/{id}/participants/{participantId}/report.pdf"},produces=MediaType.APPLICATION_PDF_VALUE)
  ResponseEntity<byte[]> gradingPdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
                            @RequestParam(defaultValue="false") boolean includeConversations){return download(version==null?reports.teacherGenerate(id,participantId):reports.teacherReport(id,participantId,version),includeConversations);}
  @PostMapping("/evaluations/{id}/reports")

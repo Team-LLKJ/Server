@@ -15,6 +15,10 @@ class GradingController {
     @GetMapping("/conversations")
     Object conversations(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) String questionId,
                          @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="200") int size){return grading.conversations(id,participantId,questionId,page,size);}
+    @GetMapping("/input-paths")
+    InputPathAnalyzer.View getInputPaths(@PathVariable String id,@PathVariable String participantId){return grading.getInputPaths(id,participantId);}
+    @GetMapping("/usage-analysis")
+    PurposeUsageAnalyzer.View getUsageAnalysis(@PathVariable String id,@PathVariable String participantId){return grading.getUsageAnalysis(id,participantId);}
     @GetMapping("/activity")
     Activity activity(@PathVariable String id,@PathVariable String participantId){return grading.activity(id,participantId);}
     @GetMapping("/review")

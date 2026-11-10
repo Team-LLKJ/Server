@@ -148,7 +148,15 @@ CREATE TABLE IF NOT EXISTS grading_score_changes (
  criterion_id INT NOT NULL, previous_level INT, score_level INT, ai_level INT,
  teacher_id VARCHAR(36) NOT NULL REFERENCES app_users(id), changed_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
+ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS previous_feedback VARCHAR(2000);
+ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS feedback VARCHAR(2000);
 CREATE INDEX IF NOT EXISTS idx_grading_changes_participant ON grading_score_changes(participant_id,id);
+CREATE TABLE IF NOT EXISTS participant_policy_acceptances (
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ policy_version VARCHAR(64) NOT NULL, accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ PRIMARY KEY(participant_id,policy_version)
+);
 CREATE TABLE IF NOT EXISTS ai_disclosures (
  participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id),
  evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
@@ -162,6 +170,7 @@ CREATE TABLE IF NOT EXISTS notifications (
  evaluation_id VARCHAR(36), participant_id VARCHAR(36), dedupe_key VARCHAR(200),
  created_at TIMESTAMP WITH TIME ZONE NOT NULL, read_at TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_dedupe ON notifications(user_id,dedupe_key);
 CREATE TABLE IF NOT EXISTS user_settings (
@@ -264,3 +273,19 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
  invalidated_at TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id,created_at);
+
+CREATE TABLE IF NOT EXISTS report_archive_jobs (
+ id VARCHAR(36) PRIMARY KEY,user_id VARCHAR(36) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+ scope_id VARCHAR(36) NOT NULL,assessment BOOLEAN NOT NULL,class_id VARCHAR(36),format VARCHAR(3) NOT NULL,
+ include_conversations BOOLEAN NOT NULL,status VARCHAR(20) NOT NULL,file_path VARCHAR(2000),error_code VARCHAR(80),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,started_at TIMESTAMP WITH TIME ZONE,completed_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_archive_jobs_pending ON report_archive_jobs(status,created_at);
+
+CREATE TABLE IF NOT EXISTS system_ai_disclosures (
+ participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ disclosure_json CLOB NOT NULL
+);
+
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS expelled_at TIMESTAMP WITH TIME ZONE;

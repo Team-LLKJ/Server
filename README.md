@@ -63,7 +63,7 @@ Access Token은 2시간, Refresh Token은 최초 로그인 기준 최대 14일�
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
-| POST | `/api/auth/signup/teacher` | 이메일 인증 완료 후 가입 |
+| POST | `/api/auth/signup/teacher` | 이메일 인증 완료 후 가입, 비밀번호 8~20자 |
 | POST | `/api/auth/login` | 공통 로그인 |
 | POST | `/api/auth/refresh` | 토큰 교체 |
 | GET | `/api/auth/me` | 본인 계정 |
@@ -209,7 +209,7 @@ Auth 개발·테스트는 외부 AI 호출 없이 stub을 사용합니다.
 
 학생 회원가입은 비활성화되어 `/api/auth/signup/student` 호출 시 410 STUDENT_ACCOUNTS_DISABLED를 반환합니다. 기존 STUDENT 계정도 로그인·갱신을 허용하지 않습니다.
 
-비밀번호 찾기·재설정은 [AUTH-003 API 명세](docs/PASSWORD_RESET.md)를 참고하세요. 공개 `POST /api/auth/password-reset/request`로 가입 이메일에15분 유효 일회용 링크를 보내고 `/confirm`에 `{token,newPassword}`를 전송합니다. 성공 시 모든 기기의 로그인 세션을 해제합니다. `LIT_PASSWORD_RESET_URL`에 실제 HTTPS 프런트 재설정 페이지 설정이 필요합니다. 회원가입 인증메일은 SMTP 설정이 필요하며, 대표 색상 `#007BFF`의 HTML 본문과 일반 텍스트 대체 본문으로 발송합니다.
+비밀번호 찾기·재설정은 [AUTH-003 API 명세](docs/PASSWORD_RESET.md)를 참고하세요. 공개 `POST /api/auth/password-reset/request`로 가입 이메일에15분 유효 일회용 링크를 보내고 `/confirm`에 `{token,newPassword}`를 전송합니다. 새 비밀번호는 8~128자입니다. 성공 시 모든 기기의 로그인 세션을 해제합니다. `LIT_PASSWORD_RESET_URL`에 실제 HTTPS 프런트 재설정 페이지 설정이 필요합니다. 회원가입 인증메일은 SMTP 설정이 필요하며, 대표 색상 `#007BFF`의 HTML 본문과 일반 텍스트 대체 본문으로 발송합니다.
 
 
 ### 내가 만든 수행평가 조회
@@ -317,7 +317,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 [API 명세](docs/PASSWORD_CHANGE.md)
 
-`POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 기존 경로·응답은 유지합니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
+`POST /api/users/me/password`로 현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다. 새 비밀번호는 8~128자입니다. 비밀번호 해시 갱신과 다른 기기의 Access/Refresh 세션 폐기를 한 트랜잭션으로 처리합니다.
 
 ## 닉네임 변경
 
@@ -333,4 +333,56 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 `POST /api/participation/reconnect`에 `{evaluationId,participantToken}`을 보내 기존 참가자 상태·저장 답안/버전·서버 종료 시각을 복구합니다. 나간 참가자도 같은 토큰으로 재활성화되며 마감·제출 후에는 읽기 전용입니다. 브라우저 초안 보관·자동 재시도·이어쓰기 UI는 별도 Web 연동이 필요합니다. [재접속 API와 프런트 연결 계약](docs/STUDENT_RECONNECT.md)을 참고하세요.
 
-비밀번호는 회원가입·변경·재설정 모두 **8~128자**이며 공백만 입력할 수 없습니다. 로그인은 기존 비밀번호 검증을 유지합니다.
+
+### 알림 삭제
+
+`DELETE /api/notifications/{id}`로 본인 알림 하나를, `DELETE /api/notifications`로 현재 조회 가능한 본인 알림 전체를 삭제합니다. 두 API 모두 `{deleted,unreadCount}`를 반환합니다. 삭제한 알림은 목록·읽지 않은 개수·읽음 처리에서 제외하며 같은 이벤트의 재전송으로 되살아나지 않습니다. 상세는 [알림 삭제 명세](docs/NOTIFICATION_DELETION.md)를 참고하세요.
+
+### 반별 대기실과 실제 시작
+
+‘평가 시작하러 가기’는 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`(`{ "expiresInMinutes":60 }`)를 호출해 PIN·QR을 표시합니다. 학생 참가 중에는 WAITING을 유지하고, 대기실의 ‘평가 시작하기’에서 기존 `/start`(`{ "expiresInMinutes":45 }`)를 호출해야 풀이와 타이머가 시작됩니다. 학생은 기존 state 조회로 STARTED 전환을 확인합니다. 대기실 없이 start는409이며 프런트 두 버튼의 호출 분리가 필요합니다. [상세 흐름](docs/ASSESSMENT_CLASSES.md)을 참고하세요.
+
+### HWP 보고서 서식
+
+HWP 다운로드는 제목·학생 정보 표·영역별 점수표·섹션/문항 제목·검토 근거를 구분하는 보고서 서식을 제공합니다. 실제 HWP 표와 문단/글자 스타일을 사용하며 긴 답안은 일반 문단으로 보존합니다. API 경로·인증·저장 버전·원문 포함 옵션은 유지합니다. [HWP 내보내기](docs/HWP_EXPORT.md)를 참고하세요.
+
+### 전체화면 이탈·개발자 도구 신고
+
+`antiCheat`에 `FULLSCREEN_LEAVE`, `DEVTOOLS`를 추가로 허용합니다. 학생 이벤트 `FULLSCREEN_EXIT`, `DEVTOOLS_OPEN`은 기존 이벤트와 합산해 분당60건 제한을 적용하며 경고 개수·교사 활동 조회·첫 경고 알림에 포함합니다. 신고 자체로 점수를 변경하지 않습니다. 서버는 설정과 기록 API를 제공하며 브라우저 감지 기능은 포함하지 않습니다. [설정·이벤트 명세](docs/ANTI_CHEAT_EVENTS.md)를 참고하세요.
+
+
+### 프런트 연동 계약 통합
+
+알림 삭제·비밀번호 재설정·반 대기실·HWP 서식·경고 이벤트를 통합합니다. 대기실 `state=READY` 호환을 유지하면서 `lobbyState=WAITING`을 추가합니다. 제출 후 이탈한 학생도 본인 리포트에만 접근할 수 있으며, 새 평가/틀의 생략 정책은 HINT_ONLY입니다. 과정 평가의 표시 이름·배점 및 전체 상태값·근거 예시는 [프런트 연동 계약](docs/FRONTEND_CONTRACT_COMPLETION.md)을 참고하세요. 기존 데이터와 명시한 AI 정책은 소급 변경하지 않습니다.
+
+### AI 활용 분석·학생 기여도 V2
+
+첨부 행동 기준에 따른 1~5단계·15/25/20/25/15점 과정 평가와 통합 분석 조회를 제공합니다. 문장 유사도 비중과 학생 기여 점수를 구분하고 기존 V1 기록을 보존합니다. [계약·호환·예시](docs/ANALYSIS_RUBRIC_V2.md).
+
+### PDF·HWP 보고서 서식 통일
+
+저장된 보고서를 공통 템플릿으로 출력합니다. 파란 헤더·정보/루브릭/분석 표·활동·문항별 답안·선택 대화 부록을 포함하며 기술 식별자를 숨기고 KST 시각을 표시합니다. [서식·경로·이벤트 확인 사항](docs/REPORT_FORMAT.md).
+
+### 교사 채점 근거·이력·보고서
+
+단계만 수정할 때 근거를 유지하고, 근거 변경 이력과 확정 실패의 missingCriteria를 제공합니다. 새 보고서에는 교사 근거 우선·AI 사유 대체 규칙을 적용합니다. [저장/삭제/길이/확정/보고서 계약](docs/GRADING_FEEDBACK.md).
+
+### 보고서 로고·브랜드 색상·분석 표
+
+PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합 평가·상세 채점 근거·활동 기록·선택 AI 대화 부록을 표로 정리하며 긴 내용도 보존합니다. [서식 정책](docs/REPORT_FORMAT.md).
+
+### 프런트 연동 보완
+
+반·수행평가 폴더 보고서 ZIP, 최초 HWP 생성, 생성 시 criteria/antiCheat, 대화 연결 ID, AI 사용 설명 동결·교사 조회·보고서, 참가 정보 me와 안내 동의 API를 제공합니다. [경로·요청·오류·기존 기능 대조](docs/BACKEND_INTEGRATION_COMPLETION.md).
+
+### 가입 동의와 구조화 분석·실시간 연동
+
+가입 시 약관/개인정보 버전·동의를 필수 저장하고 공개 정책 버전을 제공합니다. 분석 reasons/evidence.quote·유사도 구간·버전별 PASTE 관측, 종합 평가, 학생 상태/lastWarningAt, SSE 및 비동기 ZIP 작업을 지원합니다. .mjs MIME 보정은 서버 배포 단계에 포함합니다. [요청·오류·프런트 연결 계약](docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md).
+
+AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOMATIC_AI_DISCLOSURE.md).
+
+운영 도메인 연결: `scripts/configure-domain-https.py`는 승인된 `llkj.itslit.r-e.kr`을 기존 IP 인증서에 추가하고 Nginx·참가/비밀번호 재설정 URL을 설정합니다. 기존 Certbot 갱신 타이머를 재사용하며, 설정을 `/opt/lit/backups/domain-https-*`에 백업하고 적용 검증 실패 시 되돌립니다. 앱 이미지는 기존 배포본을 사용합니다.
+
+평가 알고리즘 V3: 1~5단계·근거 기반 설명, 사전 제외/부분 배점, 편집 기록 기반 입력 경로와 질문당1 가중치 목적 분석을 제공합니다. 기존 분석·보고서 버전은 보존합니다. 기존 0~4단계 API와 혼용하지 마세요. [API 계약·연동 예시](docs/EVALUATION_ALGORITHM_V3.md).
+
+참여자 추방: `DELETE /api/teacher/evaluations/{id}/participants/{participantId}`는 기록을 보존하고 학생 접근·재접속을 차단합니다. 채점 답안의 minChars/maxChars 및 SSE participant-expelled도 제공합니다. [정확한 프런트 연동 계약](docs/FRONTEND_INTEGRATION_REFERENCE.md).

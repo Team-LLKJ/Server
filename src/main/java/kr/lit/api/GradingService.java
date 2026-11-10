@@ -19,7 +19,7 @@ public class GradingService {
     public GradingAnswers answers(String id,String pid) {
         var detail=reports.detail(id,pid);var questions=new ArrayList<GradingQuestion>();
         for(var entry:detail.work().path("answers")) {
-            var q=entry.path("question");questions.add(new GradingQuestion(q.path("id").asText(),q.path("position").asInt(),q.path("title").asText(),q.path("content").asText(),entry.path("answer")));
+            var q=entry.path("question");questions.add(new GradingQuestion(q.path("id").asText(),q.path("position").asInt(),q.path("title").asText(),q.path("content").asText(),entry.path("answer"),q.path("minChars").asInt()>0?q.path("minChars").asInt():null,q.path("maxChars").asInt()>0?q.path("maxChars").asInt():null));
         }
         return new GradingAnswers(pid,detail.student().nickname(),detail.student().submittedAt(),detail.student().submissionStatus().equals("SUBMITTED")?"SUBMITTED":"WRITING",questions);
     }
@@ -39,8 +39,8 @@ public class GradingService {
             String qid=turn.path("questionId").asText();if(questionId!=null&&!questionId.equals(qid))continue;
             String key=turn.path("id").asText(turn.path("requestId").asText());
             var created=time(turn.path("createdAt"));var completed=time(turn.path("completedAt"));
-            messages.add(new Message(key+"-USER","USER",turn.path("questionText").asText(),qid,created,"COMPLETED",null));
-            messages.add(new Message(key+"-AI","AI",turn.path("answerText").isNull()?null:turn.path("answerText").asText(),qid,completed==null?created:completed,turn.path("state").asText(),turn.path("errorCode").isNull()?null:turn.path("errorCode").asText()));
+            messages.add(new Message(key+"-USER","USER",turn.path("questionText").asText(),qid,created,"COMPLETED",null,turn.has("id")?turn.path("id").asLong():null));
+            messages.add(new Message(key+"-AI","AI",turn.path("answerText").isNull()?null:turn.path("answerText").asText(),qid,completed==null?created:completed,turn.path("state").asText(),turn.path("errorCode").isNull()?null:turn.path("errorCode").asText(),turn.has("id")?turn.path("id").asLong():null));
         }
         messages.sort(Comparator.comparing(Message::createdAt,Comparator.nullsFirst(Comparator.naturalOrder())).thenComparing(m->m.role().equals("USER")?0:1).thenComparing(Message::id));
         return messages.stream().skip((long)page*size).limit(size).toList();
@@ -55,18 +55,15 @@ public class GradingService {
                 warnings.add(new ActivityWarning(event.path("id").asLong(),type,event.path("questionId").isNull()?null:event.path("questionId").asText(),occurred==null?received:occurred,received,event.path("details").path("clientReported").asBoolean(false)));
             }
         }
-        var purposes=new TreeMap<String,Integer>();int total=0;
-        for(var classification:detail.analysis().classifications())for(String purpose:classification.purposes()){purposes.merge(purpose,1,Integer::sum);total++;}
-        var usage=new ArrayList<Usage>();
-        for(var entry:purposes.entrySet()) {
-            double percentage=Math.round(entry.getValue()*1000.0/total)/10.0;
-            usage.add(new Usage(purposeLabel(entry.getKey()),percentage,percentage>=50?"높음":percentage>=20?"보통":"낮음",entry.getKey().equals("UNCLASSIFIED")?"neutral":"blue"));
-        }
+        var purposeAnalysis=new PurposeUsageAnalyzer().analyzeUsage(detail.work());
+        var usage=purposeAnalysis.usage().stream().map(group->new Usage(group.name(),group.percentage(),null,"blue")).toList();
         long warningCount=warnings.size();
         var recent=warnings.stream().skip(Math.max(0,warnings.size()-200)).toList();
-        String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·캡처·복사 시도 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";
-        return new Activity(null,usage,recent,warningCount,warningCount>200,summary,detail.analysis().method());
+        String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·캡처·복사 시도·전체화면 이탈·개발자 도구 열림 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";
+        return new Activity(null,usage,recent,warningCount,warningCount>200,summary,detail.analysis().method(),AssessmentTrace.getPasteEvents(detail.work()),0,purposeAnalysis,new InputPathAnalyzer().analyzePaths(detail.work()));
     }
+    public InputPathAnalyzer.View getInputPaths(String id,String pid){return new InputPathAnalyzer().analyzePaths(reports.detail(id,pid).work());}
+    public PurposeUsageAnalyzer.View getUsageAnalysis(String id,String pid){return new PurposeUsageAnalyzer().analyzeUsage(reports.detail(id,pid).work());}
     private String purposeLabel(String purpose) {return switch(purpose) {
         case "IDEATION"->"아이디어 탐색";case "RESEARCH"->"자료 조사";case "STRUCTURING"->"구조화";
         case "VERIFICATION"->"검증";case "REVISION"->"답안 수정";case "ANSWER_DRAFTING"->"답안 생성 요청";

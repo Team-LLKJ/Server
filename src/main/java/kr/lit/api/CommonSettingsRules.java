@@ -34,13 +34,19 @@ final class CommonSettingsRules {
     static JsonNode antiCheat(ObjectMapper json,JsonNode value) {
         if(value==null)return json.createArrayNode();
         boolean valid=value.isObject()||value.isArray();
+        JsonNode result=value;
         if(value.isArray()) {
-            var codes=new HashSet<String>();
-            for(var item:value)if(!item.isTextual()||!Set.of("TAB_LEAVE","PRINT_BLOCK").contains(item.asText())||!codes.add(item.asText()))valid=false;
+            var codes=new HashSet<String>();var normalized=json.createArrayNode();
+            for(var item:value) {
+                String code=item.asText().equals("FULLSCREEN")?"FULLSCREEN_LEAVE":item.asText();
+                if(!item.isTextual()||!Set.of("TAB_LEAVE","PRINT_BLOCK","FULLSCREEN_LEAVE","DEVTOOLS").contains(code)||!codes.add(code))valid=false;
+                normalized.add(code);
+            }
+            result=normalized;
         }
         if(!valid||value.toString().getBytes(StandardCharsets.UTF_8).length>16384)
-            throw new ApiError.Failure(HttpStatus.BAD_REQUEST,"INVALID_ANTI_CHEAT","antiCheat는 TAB_LEAVE·PRINT_BLOCK 코드 배열 또는16KiB 이하 JSON 객체여야 합니다.");
-        return value;
+            throw new ApiError.Failure(HttpStatus.BAD_REQUEST,"INVALID_ANTI_CHEAT","antiCheat는 TAB_LEAVE·PRINT_BLOCK·FULLSCREEN_LEAVE·DEVTOOLS 코드 배열 또는16KiB 이하 JSON 객체여야 합니다.");
+        return result;
     }
     static String kind(List<?> criteria) {return criteria.isEmpty()||criteria.get(0) instanceof String?"TITLES":"RUBRIC";}
     static void saveRubric(org.springframework.jdbc.core.JdbcTemplate db,ObjectMapper json,String id,List<?> criteria) {

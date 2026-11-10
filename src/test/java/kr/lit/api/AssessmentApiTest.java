@@ -14,6 +14,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** 채점 화면 신규 API(2·7장), 평가 수정·삭제(3장), 경고 이벤트(5장), 종료 유예 저장. */
 class AssessmentApiTest extends AuthTestSupport {
     @Autowired AssessmentAnalyzer analyzer;
+    @Autowired AssessmentService grading;
+    @Autowired ReportService reports;
+    @Autowired ReportPdf pdf;
+    @Autowired ReportHwpService hwp;
 
     record Fixture(String id,String q1,String q2,String pid,String token,String otherPid,String otherToken) {}
     Fixture fixture(AiPolicy policy) {
@@ -58,13 +62,13 @@ class AssessmentApiTest extends AuthTestSupport {
         JsonNode subs=ok(request(get(root(f)+"/submissions"),teacher));
         JsonNode mine=null,other=null;
         for(var row:subs.path("items")) { if(row.path("participantId").asText().equals(f.pid())) mine=row; else other=row; }
-        assertThat(mine.path("status").asText()).isEqualTo("WARNING");assertThat(mine.path("warningCount").asInt()).isEqualTo(1);
+        assertThat(mine.path("status").asText()).isEqualTo("SUBMITTED");assertThat(mine.path("warningCount").asInt()).isEqualTo(1);
         assertThat(mine.path("totalAi").isNumber()).isTrue();assertThat(mine.path("gradingStatus").asText()).isEqualTo("NOT_STARTED");
         assertThat(other.path("status").asText()).isEqualTo("WRITING");assertThat(other.path("totalScore").isNull()).isTrue();
 
         JsonNode answers=ok(request(get(root(f)+"/participants/"+f.pid()+"/answers"),teacher));
         JsonNode q2=answers.path("questions").get(1);
-        assertThat(q2.path("paragraphs").get(0).path("source").asText()).isEqualTo("AI_USED");
+        assertThat(q2.path("paragraphs").get(0).path("source").asText()).isEqualTo("AI_REFERENCED");
         assertThat(q2.path("paragraphs").get(1).path("source").asText()).isEqualTo("DIRECT");
 
         JsonNode conv=ok(request(get(root(f)+"/participants/"+f.pid()+"/conversations"),teacher));
@@ -74,7 +78,9 @@ class AssessmentApiTest extends AuthTestSupport {
         assertThat(analysis.path("status").asText()).isEqualTo("DONE");
         assertThat(analysis.at("/compliance/result").asText()).isEqualTo("CHECK");
         var c=analysis.path("contribution");
-        assertThat(c.path("direct").asInt()+c.path("aiReferenced").asInt()+c.path("aiUsed").asInt()).isEqualTo(100);
+        assertThat(c.path("direct").asInt()+c.path("aiReferenced").asInt()).isEqualTo(100);assertThat(c.path("aiUsed").asInt()).isZero();
+        assertThat(c.path("basis").asText()).isEqualTo("TEXT_SIMILARITY_ESTIMATE_V2");
+        assertThat(texts(analysis.path("sentences"),"source")).containsOnly("DIRECT","AI_REFERENCED").contains("AI_REFERENCED");
         mvc.perform(request(get(root(f)+"/participants/"+f.otherPid()+"/analysis"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("status").value("NOT_SUBMITTED"));
 
         String score=root(f)+"/participants/"+f.pid()+"/rubric-scores";
@@ -147,4 +153,50 @@ class AssessmentApiTest extends AuthTestSupport {
         mvc.perform(body(request(post("/api/users/me/password"),mine),Map.of("currentPassword","wrong-password","newPassword","New-password-456"))).andExpect(status().isBadRequest());
         mvc.perform(body(request(post("/api/users/me/password"),mine),Map.of("currentPassword",PASSWORD,"newPassword","New-password-456"))).andExpect(status().isOk());
         mvc.perform(request(get("/api/notifications"),null)).andExpect(status().isUnauthorized());
-    }}
+    }    @Test void feedbackIsPreservedClearedValidatedAndAuditedEvenWithoutLevelChange() throws Exception {
+        var f=fixture(AiPolicy.HINT_ONLY);submit(f.id(),f.token());String path=root(f)+"/participants/"+f.pid()+"/rubric-scores";
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("level",3,"feedback","  교사 근거  "))).andExpect(jsonPath("criteria[0].teacher.feedback").value("  교사 근거  "));
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("level",4))).andExpect(jsonPath("criteria[0].teacher.feedback").value("  교사 근거  "));
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("feedback","후속 근거"))).andExpect(jsonPath("criteria[0].teacher.level").value(4));
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("feedback",""))).andExpect(jsonPath("criteria[0].teacher.feedback").value(""));
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("feedback",""))).andExpect(status().isOk());
+        mvc.perform(request(get(path+"/history"),teacher)).andExpect(jsonPath("length()").value(4))
+            .andExpect(jsonPath("[2].previousFeedback").value("  교사 근거  ")).andExpect(jsonPath("[2].feedback").value("후속 근거"))
+            .andExpect(jsonPath("[3].feedback").value(""));
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("level",4,"feedback","가".repeat(2000)))).andExpect(status().isOk());
+        mvc.perform(body(request(put(path+"/1"),teacher),Map.of("level",4,"feedback","가".repeat(2001)))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+        var stranger=newTeacher();mvc.perform(request(get(path+"/history"),stranger)).andExpect(status().isNotFound());
+    }
+    @Test void confirmationReportsMissingCriteriaRollsBackAndAutoAcceptedAiHasNoAdjustment() throws Exception {
+        var f=fixture(AiPolicy.HINT_ONLY);ask(f,f.q1(),"feedback-ai","광합성의 개념을 설명해줘");submit(f.id(),f.token());as(teacher);
+        grading.saveRubric(f.id(),new AssessmentModels.RubricInput(List.of(
+            new AssessmentModels.CriterionInput("AI 기준",50,"",null,AssessmentModels.Indicator.PURPOSE),
+            new AssessmentModels.CriterionInput("교사 전용 기준",50,"",null,AssessmentModels.Indicator.MANUAL))));
+        String path=root(f)+"/participants/"+f.pid();
+        mvc.perform(body(request(post(path+"/grade/confirm"),teacher),Map.of("acceptAiForMissing",true))).andExpect(status().isConflict())
+            .andExpect(jsonPath("code").value("GRADING_INCOMPLETE")).andExpect(jsonPath("missingCriteria[0].criterionId").value(2)).andExpect(jsonPath("missingCriteria[0].name").value("교사 전용 기준"));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM grading_scores WHERE participant_id=?",Integer.class,f.pid())).isZero();
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM grading_score_changes WHERE participant_id=?",Integer.class,f.pid())).isZero();
+        mvc.perform(body(request(put(path+"/rubric-scores/2"),teacher),Map.of("level",3,"feedback","수동 근거"))).andExpect(status().isOk());
+        mvc.perform(body(request(post(path+"/grade/confirm"),teacher),Map.of("acceptAiForMissing",true))).andExpect(status().isOk())
+            .andExpect(jsonPath("status").value("CONFIRMED")).andExpect(jsonPath("criteria[0].teacher.feedback").value(""))
+            .andExpect(jsonPath("criteria[0].adjusted").value(false));
+        mvc.perform(body(request(put(path+"/rubric-scores/2"),teacher),Map.of("feedback","변경된 수동 근거"))).andExpect(jsonPath("status").value("DRAFT"));
+    }
+    @Test void reportsFreezeActualRubricFeedbackAndFallBackToAiReasonInBothFormats() throws Exception {
+        var f=fixture(AiPolicy.HINT_ONLY);ask(f,f.q1(),"report-feedback-ai","광합성의 개념을 설명해줘");submit(f.id(),f.token());as(teacher);
+        grading.saveScore(f.id(),f.pid(),1,new AssessmentModels.ScoreInput(3,"교사근거우선표식"));
+        var scores=grading.scores(f.id(),f.pid());String aiReason=scores.criteria().get(1).ai().reason();
+        var first=reports.teacherGenerate(f.id(),f.pid());assertThat(first.content().grading().criteria().get(0).feedback()).isEqualTo("교사근거우선표식");
+        String pdfText;try(var doc=org.apache.pdfbox.Loader.loadPDF(pdf.render(first,false))){pdfText=new org.apache.pdfbox.text.PDFTextStripper().getText(doc);}
+        var document=kr.dogfoot.hwplib.reader.HWPReader.fromInputStream(new java.io.ByteArrayInputStream(hwp.exportReport(first,false)));
+        String hwpText=kr.dogfoot.hwplib.tool.textextractor.TextExtractor.extract(document,kr.dogfoot.hwplib.tool.textextractor.TextExtractMethod.InsertControlTextBetweenParagraphText);
+        for(String text:List.of(pdfText,hwpText)){assertThat(text).contains("교사근거우선표식","AI 활용 목적의 적절성","11.25 / 15");assertThat(text.replaceAll("\\s+","")).contains(aiReason.replaceAll("\\s+",""));}
+        grading.saveScore(f.id(),f.pid(),1,new AssessmentModels.ScoreInput(3,"후속근거표식"));
+        var next=reports.teacherGenerate(f.id(),f.pid());assertThat(next.version()).isEqualTo(first.version()+1);
+        assertThat(reports.teacherReport(f.id(),f.pid(),first.version()).content().grading().criteria().get(0).feedback()).isEqualTo("교사근거우선표식");
+        grading.saveScore(f.id(),f.pid(),1,new AssessmentModels.ScoreInput(3,""));
+        var fallback=reports.teacherGenerate(f.id(),f.pid());
+        assertThat(new ReportLayout().buildDocument(fallback,false).blocks().toString()).contains(scores.criteria().get(0).ai().reason()).doesNotContain("교사근거우선표식","후속근거표식");
+    }
+}

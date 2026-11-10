@@ -10,7 +10,9 @@ import static kr.lit.api.ProcessGradingModels.*;
 @RequestMapping("/api/teacher/evaluations/{id}/process-grading")
 class ProcessGradingController {
     private final ProcessGradingService service;
-    ProcessGradingController(ProcessGradingService service){this.service=service;}
+    private final ProcessAnalysisService analysis;
+    ProcessGradingController(ProcessGradingService service,ProcessAnalysisService analysis){this.service=service;this.analysis=analysis;}
+    @GetMapping("/participants/{pid}/analysis") ProcessAnalysisService.AnalysisView getAnalysis(@PathVariable String id,@PathVariable String pid){return analysis.getAnalysis(id,pid);}
     @GetMapping("/rubric") Map<String,Object> getRubric(@PathVariable String id){return service.getRubric(id);}
     @GetMapping("/policy") Policy getPolicy(@PathVariable String id){return service.getPolicy(id);}
     @PutMapping("/policy") Policy savePolicy(@PathVariable String id,@Valid @RequestBody PolicyRequest input){return service.savePolicy(id,input);}

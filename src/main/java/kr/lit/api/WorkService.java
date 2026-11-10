@@ -16,15 +16,18 @@ import static kr.lit.api.WorkModels.*;
 @Service
 @Transactional
 public class WorkService {
+    private final AutomaticDisclosureService automaticDisclosure;
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final NotificationService notifications;
     private final int endGraceSeconds;
     private final jakarta.validation.Validator validator;
     private final ProcessGradingRepository processGrading;
+    private final ParticipantSessionService sessions;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading) {
-        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions,AutomaticDisclosureService automaticDisclosure) {
+        this.automaticDisclosure=automaticDisclosure;
+        this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;this.sessions=sessions;
     }
 
     private ApiError.Failure failure(HttpStatus status, String code, String message) {
@@ -101,13 +104,13 @@ public class WorkService {
         var e=evaluation(id);
         ClassSnapshots.requireStandalone(db,id);
         AiPolicy resolved=config.resolvedPolicy();
-        if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy 또는 aiLevel(1~5)이 필요하며 둘 다 보내면 같은 단계여야 합니다.");
+        if(resolved==null) throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_POLICY","aiPolicy와 aiLevel을 함께 보내면 같은 단계여야 합니다.");
         if(!e.state().equals("WAITING")) throw failure(HttpStatus.CONFLICT,"CONFIGURATION_LOCKED","시작 후에는 문항과 AI 정책을 변경할 수 없습니다.");
         if((config.guidelines()!=null||config.durationMinutes()!=null)&&!e.expiresAt().isAfter(Instant.now()))
             throw failure(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
         QuestionLimits.validate(config.questions());
         var criteria=CommonSettingsRules.criteria(json,validator,config.criteria());
-        if(config.antiCheat()!=null)CommonSettingsRules.antiCheat(json,config.antiCheat());
+        var antiCheat=config.antiCheat()==null?null:CommonSettingsRules.antiCheat(json,config.antiCheat());
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());
         db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
@@ -119,8 +122,15 @@ public class WorkService {
             db.update("UPDATE evaluations SET criteria_json=?,criteria_kind=? WHERE id=?",encode(criteria),CommonSettingsRules.kind(criteria),id);
             CommonSettingsRules.saveRubric(db,json,id,criteria);
         }
-        if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(config.antiCheat()),id);
+        if(config.antiCheat()!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(antiCheat),id);
         return configuration(id);
+    }
+    public void saveCreationSettings(String id,List<?> inputCriteria,JsonNode inputAntiCheat) {
+        evaluation(id);
+        var criteria=CommonSettingsRules.criteria(json,validator,inputCriteria);
+        var antiCheat=CommonSettingsRules.antiCheat(json,inputAntiCheat);
+        if(inputCriteria!=null){db.update("UPDATE evaluations SET criteria_json=?,criteria_kind=? WHERE id=?",encode(criteria),CommonSettingsRules.kind(criteria),id);CommonSettingsRules.saveRubric(db,json,id,criteria);}
+        if(inputAntiCheat!=null)db.update("UPDATE evaluations SET anti_cheat_json=? WHERE id=?",encode(antiCheat),id);
     }
     public Configuration configuration(String id) {
         evaluation(id);var p=policy(id);var shared=shared(id);
@@ -153,11 +163,17 @@ public class WorkService {
         String status=submitted(c)?"SUBMITTED":c.state().equals("ENDED")?"ENDED":!c.expiresAt().isAfter(Instant.now())?"EXPIRED":"IN_PROGRESS";
         var p=policy(id);
         var shared=shared(id);
-        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className());
+        var accepted=sessions.getPolicyStatus(id,token);
+        return new Workspace(id,c.participantId(),status,!status.equals("IN_PROGRESS"),p,answers(c),guidelines(id),guidelines(id),p.level(),levelDescription(p),shared.criteria(),shared.antiCheat(),shared.assessmentId(),shared.className(),accepted.policyAccepted(),accepted.policyAcceptedAt(),accepted.policyVersion());
     }
     public QuestionAnswer select(String id,String token,String questionId) {
         var c=authenticate(id,token);started(c);
         return new QuestionAnswer(question(id,questionId),answer(c.participantId(),questionId));
+    }
+    public InputPathAnalyzer.QuestionPath getInputPath(String id,String token,String questionId){
+        var context=authenticate(id,token);started(context);question(id,questionId);
+        var snapshot=json.valueToTree(Map.of("answers",answers(context),"learningEvents",events(context)));
+        return new InputPathAnalyzer().analyzePaths(snapshot).questions().stream().filter(q->q.questionId().equals(questionId)).findFirst().orElseThrow();
     }
     public Answer getAnswer(String id,String token,String questionId) {
         return select(id,token,questionId).answer();
@@ -181,12 +197,25 @@ public class WorkService {
         } else if(input.aiRequestId()!=null) {
             throw failure(HttpStatus.BAD_REQUEST,"INVALID_AI_REFERENCE","직접 작성에는 AI 대화 ID를 지정하지 않습니다.");
         }
+        if(input.inputOperations()!=null){
+            try{
+                if(!InputPathAnalyzer.normalizeText(safeContent).equals(InputPathAnalyzer.replayText(InputPathAnalyzer.normalizeText(old.content()),input.inputOperations())))
+                    throw new IllegalArgumentException("INPUT_TRACE_MISMATCH");
+                for(var operation:input.inputOperations()){
+                    if(operation.type()==InputOperationType.AI_INSERT){
+                        var responses=db.queryForList("SELECT answer_text FROM ai_turns WHERE id=? AND participant_id=? AND question_id=? AND state='COMPLETED'",String.class,operation.conversationId(),c.participantId(),questionId);
+                        if(operation.conversationId()==null||operation.text().isBlank()||responses.isEmpty()||!InputPathAnalyzer.normalizeText(responses.get(0)).contains(operation.text()))throw new IllegalArgumentException("INVALID_AI_INSERT_REFERENCE");
+                    }else if(operation.conversationId()!=null)throw new IllegalArgumentException("INVALID_AI_INSERT_REFERENCE");
+                }
+            }catch(IllegalArgumentException invalid){throw failure(HttpStatus.BAD_REQUEST,invalid.getMessage(),"편집 이력의 구간·버전·결과 텍스트·AI 인용을 확인해주세요.");}
+        }
         var timestamp=OffsetDateTime.now(ZoneOffset.UTC);
         db.update("MERGE INTO answers(participant_id,question_id,content,version,updated_at) KEY(participant_id,question_id) VALUES (?,?,?,?,?)",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
         var change=new LinkedHashMap<String,Object>();
         change.put("previousContent",old.content());change.put("content",safeContent);
         change.put("previousVersion",old.version());change.put("version",old.version()+1);
         change.put("source",input.source());change.put("aiRequestId",input.aiRequestId());
+        if(input.inputOperations()!=null)change.put("inputOperations",input.inputOperations());
         if(late) change.put("lateSave",true);
         event(c,questionId,"ANSWER_SAVED",change);
         if(late) refreshAutoSubmission(c);
@@ -208,7 +237,7 @@ public class WorkService {
         return mode!=null&&mode.startsWith("AUTO_")&&cutoff!=null&&Instant.now().isBefore(cutoff.plusSeconds(endGraceSeconds));
     }
     private void refreshAutoSubmission(Context c) {
-        var snapshot=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c));
+        var snapshot=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c),snapshotDisclosure(c));
         String content=encode(snapshot);
         db.update("UPDATE submissions SET snapshot=?,review_token=? WHERE participant_id=?",content,sha(content),c.participantId());
         requestAnalysis(c.evaluationId(),c.participantId());
@@ -227,6 +256,7 @@ public class WorkService {
     private String nickname(String participantId) {
         return db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,participantId);
     }
+    private boolean splitsSurrogate(String text,int at){return at>0&&at<text.length()&&Character.isHighSurrogate(text.charAt(at-1))&&Character.isLowSurrogate(text.charAt(at));}
     public Event recordClientEvent(String id,String token,ClientEvent input) {
         var c=authenticate(id,token);editable(c);
         if(input.questionId()!=null) question(id,input.questionId());
@@ -237,31 +267,39 @@ public class WorkService {
         if(count>=60) throw failure(HttpStatus.TOO_MANY_REQUESTS,"EVENT_RATE_LIMITED","이벤트 요청이 많습니다. 잠시 후 다시 시도해주세요.");
         if(input.conversationId()!=null&&db.queryForObject("SELECT COUNT(*) FROM ai_turns WHERE id=? AND participant_id=?",Integer.class,input.conversationId(),c.participantId())==0)
             throw failure(HttpStatus.NOT_FOUND,"CONVERSATION_NOT_FOUND","본인의 AI 대화가 아닙니다.");
+        boolean range=input.start()!=null||input.end()!=null||input.answerVersion()!=null;
+        if(range){
+            if(input.type()!=ClientEventType.PASTE||input.questionId()==null||input.start()==null||input.end()==null||input.answerVersion()==null||input.start()>input.end())throw failure(HttpStatus.BAD_REQUEST,"INVALID_PASTE_RANGE","붙여넣기 구간·문항·답안 버전을 확인해주세요.");
+            var saved=answer(c.participantId(),input.questionId());
+            if(saved.version()!=input.answerVersion())throw failure(HttpStatus.CONFLICT,"PASTE_VERSION_CONFLICT","최신 저장 답안 버전으로 전송해주세요.");
+            String text=String.join("\n",AssessmentAnalyzer.paragraphs(saved.content()));
+            if(input.end()>text.length()||splitsSurrogate(text,input.start())||splitsSurrogate(text,input.end()))throw failure(HttpStatus.BAD_REQUEST,"INVALID_PASTE_RANGE","정규화 답안 텍스트의 UTF-16 구간을 확인해주세요.");
+        }
         var details=new LinkedHashMap<String,Object>();
+        if(range){details.put("start",input.start());details.put("end",input.end());details.put("answerVersion",input.answerVersion());}
         details.put("occurredAt",input.occurredAt().toString());details.put("clientReported",true);
         details.put("warning",input.type().warning());
         if(input.length()!=null) details.put("length",input.length());
         if(input.conversationId()!=null) details.put("conversationId",input.conversationId());
         long eventId=event(c,input.questionId(),input.type().name(),details);
         if(input.type().warning()) notifications.notifyOwner(id,NotificationService.Type.WARNING,"경고 이벤트 기록",
-                nickname(c.participantId())+" 학생에게 창 이탈·캡처·복사 시도 등 경고 이벤트가 기록되었습니다. 신고 기록만으로 부정행위를 판단하지 않습니다.",
+                nickname(c.participantId())+" 학생에게 창 이탈·캡처·복사 시도·전체화면 이탈·개발자 도구 열림 등 경고 이벤트가 기록되었습니다. 신고 기록만으로 부정행위를 판단하지 않습니다.",
                 c.participantId(),"warning:"+c.participantId());
         return db.queryForObject("SELECT * FROM learning_events WHERE id=?",(r,n)->new Event(r.getLong("id"),r.getString("question_id"),r.getString("event_type"),decode(r.getString("details")),instant(r,"created_at")),eventId);
     }
-    /** 투명성 영역 근거: 학생이 직접 적는 사용 AI 도구·활용 부분·선택 이유. 제출 전까지만 수정할 수 있습니다. */
-    public DisclosureView disclosure(String id,String token) {
-        var c=authenticate(id,token);started(c);
-        boolean editable=!submitted(c)&&c.state().equals("STARTED")&&c.expiresAt().isAfter(Instant.now());
-        var rows=db.query("SELECT * FROM ai_disclosures WHERE participant_id=?",(r,n)->new DisclosureView(id,c.participantId(),r.getString("tools"),
-                r.getString("used_parts"),r.getString("reason"),instant(r,"updated_at"),editable),c.participantId());
-        return rows.isEmpty()?new DisclosureView(id,c.participantId(),"","","",null,editable):rows.get(0);
+    private DisclosureView snapshotDisclosure(Context c) {
+        return automaticDisclosure.getDisclosure(c.evaluationId(),c.participantId());
     }
+    public DisclosureView disclosure(String id,String token) {
+        var c=authenticate(id,token);return snapshotDisclosure(c);
+    }
+    /** Compatibility endpoint: client input is deliberately ignored. */
     public DisclosureView saveDisclosure(String id,String token,Disclosure input) {
-        var c=authenticate(id,token);editable(c);
-        db.update("MERGE INTO ai_disclosures(participant_id,evaluation_id,tools,used_parts,reason,updated_at) KEY(participant_id) VALUES (?,?,?,?,?,?)",
-                c.participantId(),id,input.tools().strip(),input.usedParts().strip(),input.reason().strip(),OffsetDateTime.now(ZoneOffset.UTC));
-        event(c,null,"AI_DISCLOSURE_SAVED",Map.of("toolsLength",input.tools().strip().length(),"usedPartsLength",input.usedParts().strip().length(),"reasonLength",input.reason().strip().length()));
         return disclosure(id,token);
+    }
+    private ReviewContent finalizeDisclosure(Context c,ReviewContent content){
+        var disclosure=automaticDisclosure.generateDisclosure(c.evaluationId(),c.participantId(),json.valueToTree(content));
+        return new ReviewContent(content.evaluationId(),content.participantId(),content.aiPolicy(),content.answers(),content.conversations(),content.learningEvents(),disclosure);
     }
     private Turn turn(ResultSet r,int n) throws SQLException {
         return new Turn(r.getLong("id"),r.getString("request_id"),r.getString("question_id"),r.getString("question_text"),
@@ -291,7 +329,7 @@ public class WorkService {
         return events(new Context(id,participantId,e.state(),e.expiresAt())).stream().filter(v->v.id()>afterId).limit(limit).toList();
     }
     private Review review(Context c) {
-        var content=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c));
+        var content=new ReviewContent(c.evaluationId(),c.participantId(),policy(c.evaluationId()),answers(c),turns(c),events(c),snapshotDisclosure(c));
         if(content.answers().isEmpty()) throw failure(HttpStatus.CONFLICT,"NO_QUESTIONS","문항이 등록되지 않았습니다.");
         String digest;
         try { digest=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(encode(content).getBytes(StandardCharsets.UTF_8))); }
@@ -315,7 +353,7 @@ public class WorkService {
         if(!review.canConfirm()) throw failure(HttpStatus.CONFLICT,"AI_IN_PROGRESS","AI 응답 완료 후 제출해주세요.");
         if(!review.reviewToken().equals(reviewToken)) throw failure(HttpStatus.CONFLICT,"REVIEW_CHANGED","답안 또는 대화가 변경되었습니다. 제출 내용을 다시 확인해주세요.");
         var now=OffsetDateTime.now(ZoneOffset.UTC);
-        db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(review.content()),now);
+        db.update("INSERT INTO submissions(participant_id,evaluation_id,review_token,snapshot,submitted_at) VALUES (?,?,?,?,?)",c.participantId(),id,reviewToken,encode(finalizeDisclosure(c,review.content())),now);
         event(c,null,"SUBMITTED",Map.of("reviewToken",reviewToken));
         requestAnalysis(id,c.participantId());
         notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",
@@ -347,13 +385,20 @@ public class WorkService {
             event(new Context(id,pid,"ENDED",e.expiresAt()),turn.questionId(),"AI_FAILED",Map.of("requestId",turn.requestId(),"errorCode","EVALUATION_CLOSED"));
         }
         db.update("UPDATE ai_turns SET state='FAILED',error_code='EVALUATION_CLOSED',completed_at=CURRENT_TIMESTAMP WHERE evaluation_id=? AND state='PENDING'",id);
-        if(!wasStarted)return;
+        if(!wasStarted){
+            for(String pid:db.queryForList("SELECT id FROM participants WHERE evaluation_id=?",String.class,id)){
+                var context=new Context(id,pid,"ENDED",e.expiresAt());
+                automaticDisclosure.generateDisclosure(id,pid,json.valueToTree(new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context))));
+            }
+            return;
+        }
         var participants=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? ORDER BY id",String.class,id);
         int autoSubmitted=0;
         for(String pid:participants) {
             var context=new Context(id,pid,"ENDED",e.expiresAt());
             if(submitted(context))continue;
-            var snapshot=new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context));
+            var snapshot=new ReviewContent(id,pid,policy(id),answers(context),turns(context),events(context),snapshotDisclosure(context));
+            snapshot=finalizeDisclosure(context,snapshot);
             String content=encode(snapshot),hash;
             try {hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8)));}
             catch(NoSuchAlgorithmException ex){throw new IllegalStateException(ex);}
