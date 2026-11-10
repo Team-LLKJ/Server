@@ -114,7 +114,14 @@ public class AssessmentService {
         var saved=source.path("aiDisclosure");boolean automatic="SYSTEM_GENERATED".equals(saved.path("source").asText());
         if(automatic)saved=source.path("studentAiDisclosure");
         var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):automatic?AssessmentAnalyzer.DisclosureInput.EMPTY:disclosure(pid);
-        return analyzer.analyze(pid,source,disclosure,Instant.now());
+        return analyzer.analyze(pid,withEvaluationContent(id,source),disclosure,Instant.now());
+    }
+    /** 답안 출처 판정 V2는 평가 안내 문구를 비교에서 빼므로, 제출 snapshot에 없으면 현재 평가 안내를 붙여 넘깁니다(저장하지 않음). */
+    private JsonNode withEvaluationContent(String id,JsonNode source) {
+        if(source.hasNonNull("evaluationContent")||!(source instanceof com.fasterxml.jackson.databind.node.ObjectNode object)) return source;
+        var content=db.queryForList("SELECT evaluation_content FROM evaluations WHERE id=?",String.class,id);
+        var copy=object.deepCopy();copy.put("evaluationContent",content.isEmpty()||content.get(0)==null?"":content.get(0));
+        return copy;
     }
     /** 저장된 분석을 읽고, 없거나 PENDING/FAILED면 즉시 계산해 저장합니다. 미제출이면 null. */
     private Analysis stored(String id,String pid,boolean computeIfMissing) {

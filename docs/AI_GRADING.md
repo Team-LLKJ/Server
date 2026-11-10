@@ -230,10 +230,16 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 
 - 구체적인 추가 질문: 같은 문항의 두 번째 이후 질문 중 20자 이상이거나 "방금, 위에서, 그 부분" 등 앞 응답을 가리키는 질문(답안 대리 작성 요청 제외). 추가 질문이 없으면 전체 질문에 같은 기준을 적용합니다.
 - 해당 AI 질문·완료 응답 등 근거가 없으면 관련 지표의 value/level과 추천 점수는 null입니다. 기록이 없다는 이유로 만점 또는0점을 주지 않습니다. ④는 항상 교사 확인이 필요합니다.
-- **문단 출처 판정**: 문단과 각 AI 응답을 공백·문장부호를 뺀 3글자 단위로 나눠, 문단 조각 중 AI 응답에도 있는 비율(포함률)을 계산합니다. 같은 문항에 `AI_ANSWER_COPY` 기록이 있으면 +0.15. 0.8 이상 AI_USED, 0.4 이상 AI_REFERENCED, 미만 DIRECT. `changedRatio = 1 − 포함률`.
+- **답안 출처 판정 V2** (`basis: TEXT_SIMILARITY_ESTIMATE_V2`, 모델 `LIT_RULE_BASED_EXPLAINED_V2_1`): 문단을 마침표·물음표·느낌표 기준 문장으로 나눠 문장마다 판정합니다. 평가 안내와 해당 문항 제목·내용에도 있는 표현은 비교에서 뺍니다.
+  1. 정규화(소문자, 공백·문장부호 제거) 후 `min-span-length`(20)글자 이상 AI 답변과 그대로 이어지면 AI (`reason: SPAN_MATCH`)
+  2. 3-gram 포함률이 `ai-referenced-threshold`(0.4) 이상이면 AI (`reason: GRAM_OVERLAP`)
+  3. 그 외 DIRECT. AI 답변 복사 기록 가산점은 없습니다.
+  - 분류는 DIRECT / AI_REFERENCED 두 가지뿐입니다. `contribution.direct + aiReferenced = 100`, `aiUsed`는 호환용으로 항상 0입니다. 비중은 문장 글자 수(문장 사이 공백 포함)로 합산합니다.
+  - 문단 `source`는 AI 문장이 하나라도 있으면 AI_REFERENCED입니다. 문장별 결과는 `sentences[]`(`questionId, paragraphId, text, source, reason, longestSpan, similarity, conversationId, start, end`)로 내려갑니다. `start/end`와 `contribution.segments`는 `answerTexts[].text` 기준 UTF-16 위치입니다.
+  - 단어를 모두 바꿔 쓴 문장은 글자 비교로 잡지 못합니다(개선안 2단계 LLM 판정 대상).
 - **허용 범위 검사**:
   - Level 1(DISABLED): AI 대화가 있으면 VIOLATION, 200자 이상 붙여넣기·AI 답변 복사 기록은 CHECK.
-  - 높은 유사도 비중이 단계별 상한을 넘으면 모든 단계에서 CHECK입니다. 유사도만으로 VIOLATION을 확정하지 않습니다. 금지 정책과 내부 AI 호출 기록의 직접 불일치만 별도 확인 대상으로 표시합니다.
+  - AI 답변 사용(AI_REFERENCED) 문장 비중이 단계별 상한을 넘으면 모든 단계에서 CHECK입니다. 유사도만으로 VIOLATION을 확정하지 않습니다. 금지 정책과 내부 AI 호출 기록의 직접 불일치만 별도 확인 대상으로 표시합니다.
   - Level 1~3에서 답안 대리 작성 요청이 있으면 CHECK.
 - 질문 분류는 **키워드 규칙**입니다. 규칙에 걸리지 않으면 OTHER(method `RULE_UNMATCHED`)로 두고, LLM 분류는 쓰지 않습니다. 비용·응답 지연·결과 재현성 때문에 교사 채점 데이터가 쌓인 뒤 도입 여부를 정하는 것을 권합니다.
 
@@ -243,15 +249,14 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 
 | 키 | 기본 | 의미 |
 |---|---|---|
-| ai-used-threshold | 0.8 | AI_USED 경계 |
-| ai-referenced-threshold | 0.4 | AI_REFERENCED 경계 |
-| copy-event-bonus | 0.15 | AI 답변 복사 기록 가산 |
+| ai-referenced-threshold | 0.4 | 문장 3-gram 포함률이 이 값 이상이면 AI |
+| min-span-length | 20 | 정규화 후 이 글자 수 이상 그대로 일치하면 AI |
 | drafting-penalty | 1.0 | ① 대리 작성 요청 감점 가중치 |
 | appropriate-types | CONCEPT_UNDERSTANDING,RESEARCH,IDEA_EXPLORATION | ① 적절한 유형 |
 | specific-question-min-length | 20 | ② 구체적 질문 최소 글자 수 |
 | usage-high-share / usage-medium-share | 0.5 / 0.2 | 사용 방법별 정도 경계 |
 | long-paste-length | 200 | Level 1 붙여넣기 확인 기준 |
-| max-ai-used-share.{1..5} | 0, 0, 0.3, 0.7, 1.0 | 단계별 AI_USED 상한 |
+| max-ai-used-share.{1..5} | 0, 0, 0.3, 0.7, 1.0 | 단계별 AI 답변 사용 비중 상한(V2부터 AI 비중 전체에 적용, 재보정 필요) |
 | job-interval-ms | 3000 | 분석 작업 간격 |
 
 ## 9. 학생 화면이 남겨야 하는 데이터 (7-6)
