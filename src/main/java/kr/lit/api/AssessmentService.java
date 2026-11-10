@@ -27,9 +27,10 @@ public class AssessmentService {
     private final ReportService reports;
     private final AssessmentAnalyzer analyzer;
     private final NotificationService notifications;
+    private final SemanticJudge judge;
 
-    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;
+    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;
     }
 
     // ===== 공통 =====
@@ -110,11 +111,19 @@ public class AssessmentService {
                 (r,n)->new AssessmentAnalyzer.DisclosureInput(r.getString("tools"),r.getString("used_parts"),r.getString("reason")),pid);
         return rows.isEmpty()?AssessmentAnalyzer.DisclosureInput.EMPTY:rows.get(0);
     }
-    private Analysis compute(String id,String pid,JsonNode source) {
+    private Analysis compute(String id,String pid,JsonNode source) { return compute(id,pid,source,null); }
+    /**
+     * 1단계(글자 비교) 결과에 저장된 2단계(LLM) 판정을 얹어 계산합니다. LLM은 여기서 부르지 않습니다(캐시만 읽음).
+     * semanticFailure: 백그라운드 판정에서 실패한 단계. 캐시에 없는 판정이 남으면 semanticStatus=PENDING입니다.
+     */
+    private Analysis compute(String id,String pid,JsonNode source,String semanticFailure) {
         var saved=source.path("aiDisclosure");boolean automatic="SYSTEM_GENERATED".equals(saved.path("source").asText());
         if(automatic)saved=source.path("studentAiDisclosure");
         var disclosure=saved.isObject()?new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(),saved.path("usedParts").asText(),saved.path("reason").asText()):automatic?AssessmentAnalyzer.DisclosureInput.EMPTY:disclosure(pid);
-        return analyzer.analyze(pid,withEvaluationContent(id,source),disclosure,Instant.now());
+        var input=withEvaluationContent(id,source);var now=Instant.now();
+        var stage1=analyzer.analyze(pid,input,disclosure,now);
+        if(!judge.isActive()) return stage1;
+        return analyzer.analyze(pid,input,disclosure,now,judge.cached(judge.plan(input,stage1),semanticFailure));
     }
     /** 답안 출처 판정 V2는 평가 안내 문구를 비교에서 빼므로, 제출 snapshot에 없으면 현재 평가 안내를 붙여 넘깁니다(저장하지 않음). */
     private JsonNode withEvaluationContent(String id,JsonNode source) {
@@ -127,16 +136,16 @@ public class AssessmentService {
     private Analysis stored(String id,String pid,boolean computeIfMissing) {
         if(!submitted(pid)) return null;
         var rows=db.query("SELECT analysis_status,result_json FROM grading_analyses WHERE participant_id=?",(r,n)->new String[]{r.getString("analysis_status"),r.getString("result_json")},pid);
-        if(!rows.isEmpty()&&"DONE".equals(rows.get(0)[0])&&rows.get(0)[1]!=null) {var saved=decode(rows.get(0)[1],new TypeReference<Analysis>(){});if(AssessmentAnalyzer.MODEL.equals(saved.model()))return saved;}
+        if(!rows.isEmpty()&&"DONE".equals(rows.get(0)[0])&&rows.get(0)[1]!=null) {var saved=decode(rows.get(0)[1],new TypeReference<Analysis>(){});if(AssessmentAnalyzer.MODEL.equals(saved.model())&&saved.semanticStatus()!=null&&judge.isActive()!=SemanticJudge.STATUS_DISABLED.equals(saved.semanticStatus()))return saved;}
         if(!computeIfMissing) return null;
         return analyzeAndStore(id,pid);
     }
     private Analysis analyzeAndStore(String id,String pid) {
         var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
         var analyzedAt=OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC);
-        int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=? WHERE participant_id=?",encode(result),analyzedAt,pid);
-        if(updated==0) db.update("INSERT INTO grading_analyses(participant_id,evaluation_id,analysis_status,result_json,requested_at,analyzed_at) VALUES (?,?,'DONE',?,?,?)",
-                pid,id,encode(result),analyzedAt,analyzedAt);
+        int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",encode(result),analyzedAt,result.semanticStatus(),pid);
+        if(updated==0) db.update("INSERT INTO grading_analyses(participant_id,evaluation_id,analysis_status,result_json,requested_at,analyzed_at,semantic_status) VALUES (?,?,'DONE',?,?,?,?)",
+                pid,id,encode(result),analyzedAt,analyzedAt,result.semanticStatus());
         return result;
     }
     public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
@@ -162,8 +171,39 @@ public class AssessmentService {
         if(pending.isEmpty()||!pending.get(0)[0].equals("PENDING")||!((OffsetDateTime)pending.get(0)[1]).isEqual(requestVersion))return;
         var src=reportsWorkWithoutAuth(id,pid);
         var result=compute(id,pid,src);
-        db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=? WHERE participant_id=?",
-                encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),pid);
+        db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",
+                encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
+    }
+    /** 스케줄러 전용: 2단계 판정이 필요한(semantic_status=PENDING) 분석의 LLM 후보를 만듭니다. 대상이 아니면 null. */
+    public SemanticJudge.Plan prepareSemantic(String id,String pid) {
+        var rows=db.queryForList("SELECT participant_id FROM grading_analyses WHERE participant_id=? AND evaluation_id=? AND analysis_status='DONE' AND semantic_status='PENDING'",String.class,pid,id);
+        if(rows.isEmpty()||!judge.isActive()) return null;
+        var input=withEvaluationContent(id,reportsWorkWithoutAuth(id,pid));
+        var saved=input.path("aiDisclosure");
+        var disclosure=new AssessmentAnalyzer.DisclosureInput(saved.path("tools").asText(""),saved.path("usedParts").asText(""),saved.path("reason").asText(""));
+        return judge.plan(input,analyzer.analyze(pid,input,disclosure,Instant.now()));
+    }
+    /** 스케줄러 전용: LLM 호출이 끝난 뒤(트랜잭션 밖) 저장된 판정으로 다시 계산해 저장합니다. 그사이 제출본이 바뀌어도 최신 제출본으로 계산합니다. */
+    public void storeSemantic(String id,String pid,String failure) {
+        if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty())return;
+        var rows=db.queryForList("SELECT participant_id FROM grading_analyses WHERE participant_id=? AND evaluation_id=? AND analysis_status='DONE' AND semantic_status='PENDING'",String.class,pid,id);
+        if(rows.isEmpty()) return;
+        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid),failure);
+        // 실패 없이도 캐시가 채워지지 않았다면(예: 그사이 제출본 변경) PENDING으로 남아 다음 주기에 다시 판정합니다.
+        boolean failed=SemanticJudge.STATUS_PARTIAL.equals(result.semanticStatus())||SemanticJudge.STATUS_UNAVAILABLE.equals(result.semanticStatus());
+        db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=?,semantic_attempts=semantic_attempts+?,semantic_failed_at=? WHERE participant_id=?",
+                encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),failed?1:0,failed?now():null,pid);
+    }
+    public void markSemanticUnavailable(String pid) {
+        db.update("UPDATE grading_analyses SET semantic_status='UNAVAILABLE',semantic_attempts=semantic_attempts+1,semantic_failed_at=? WHERE participant_id=? AND semantic_status='PENDING'",now(),pid);
+    }
+    /**
+     * 스케줄러 전용: LLM 오류로 PARTIAL/UNAVAILABLE이 된 판정을 RETRY_AFTER 뒤 다시 PENDING으로 돌립니다(최대 MAX_ATTEMPTS회).
+     * 이미 저장된 Haiku·Gemini 판정은 캐시를 쓰므로 실패했던 호출만 다시 합니다. 그동안 화면은 직전 결과를 그대로 보여줍니다.
+     */
+    public int requeueFailedSemantic() {
+        return db.update("UPDATE grading_analyses SET semantic_status='PENDING' WHERE analysis_status='DONE' AND semantic_status IN ('PARTIAL','UNAVAILABLE') "+
+                "AND semantic_attempts<? AND semantic_failed_at<?",SemanticJudge.MAX_ATTEMPTS,now().minus(SemanticJudge.RETRY_AFTER));
     }
     public void markFailed(String pid,OffsetDateTime requestVersion,String code) {
         db.update("UPDATE grading_analyses SET analysis_status='FAILED',error_code=? WHERE participant_id=? AND analysis_status='PENDING' AND requested_at=?",code,pid,requestVersion);

@@ -50,6 +50,20 @@ lit:
     # 답안 출처 판정 V2: 문장 3-gram 포함률 기준, 정규화 후 그대로 이어지는 최소 일치 글자 수
     ai-referenced-threshold: ${LIT_GRADING_AI_REFERENCED_THRESHOLD:0.4}
     min-span-length: ${LIT_GRADING_MIN_SPAN_LENGTH:20}
+    # 채점용 LLM 판정(답안 출처 2단계·질문 용도 분류). Claude Haiku 먼저, 애매한 것만 Gemini. 학생 대화용 lit.ai.*와 별도이며 기본은 꺼짐.
+    judge:
+      enabled: ${LIT_GRADING_JUDGE_ENABLED:false}
+      timeout-seconds: ${LIT_GRADING_JUDGE_TIMEOUT_SECONDS:60}
+      min-sentence-length: 15
+      max-candidates: 8
+      anthropic:
+        api-key: ${LIT_GRADING_JUDGE_ANTHROPIC_API_KEY:${ANTHROPIC_API_KEY:}}
+        model: ${LIT_GRADING_JUDGE_ANTHROPIC_MODEL:claude-haiku-5-5}
+        endpoint: ${LIT_GRADING_JUDGE_ANTHROPIC_ENDPOINT:https://api.anthropic.com/v1/messages}
+      gemini:
+        api-key: ${LIT_GRADING_JUDGE_GEMINI_API_KEY:${GEMINI_API_KEY:}}
+        model: ${LIT_GRADING_JUDGE_GEMINI_MODEL:${GEMINI_MODEL:}}
+        endpoint: ${LIT_GRADING_JUDGE_GEMINI_ENDPOINT:https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent}
     drafting-penalty: ${LIT_GRADING_DRAFTING_PENALTY:1.0}
     specific-question-min-length: ${LIT_GRADING_SPECIFIC_QUESTION_MIN_LENGTH:20}
     usage-high-share: 0.5

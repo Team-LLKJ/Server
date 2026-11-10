@@ -18,7 +18,7 @@ import static kr.lit.api.AssessmentModels.*;
 public class AssessmentAnalyzer {
     public static final String MODEL="LIT_RULE_BASED_EXPLAINED_V2_1";
     public static final String CONTRIBUTION_BASIS="TEXT_SIMILARITY_ESTIMATE_V2";
-    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP";
+    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP",REASON_SEMANTIC="SEMANTIC";
     public record DisclosureInput(String tools,String usedParts,String reason) {
         static final DisclosureInput EMPTY=new DisclosureInput("","","");
     }
@@ -89,6 +89,20 @@ public class AssessmentAnalyzer {
 
     // ---------- 분석 ----------
     public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now) {
+        return analyze(participantId,source,disclosure,now,SemanticInput.DISABLED);
+    }
+    /** 문장 판정 키. 2단계 LLM 판정 캐시·입력에서 같은 문장을 찾을 때 씁니다. */
+    static String sentenceKey(String questionId,String sentence) { return questionId+"\u0001"+sentence; }
+    /** 비교에서 뺄 문구: 평가 안내 + 문항 제목 + 문항 내용. */
+    static String excludedText(JsonNode source,JsonNode question) {
+        return plainText(source.path("evaluationContent").asText(""))+"\n"+question.path("title").asText("")+"\n"+plainText(question.path("content").asText(""));
+    }
+    /**
+     * semantic: 백그라운드에서 저장해 둔 2단계 LLM 판정. 1단계에서 DIRECT로 남은 문장에만 적용합니다.
+     * 판정은 입력으로만 받으므로 이 메서드는 계속 같은 입력에 같은 결과를 내는 순수 계산입니다.
+     */
+    public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now,SemanticInput semantic) {
+        if(semantic==null) semantic=SemanticInput.DISABLED;
         if(disclosure==null) disclosure=DisclosureInput.EMPTY;
         WorkModels.AiPolicy policy;
         try { policy=WorkModels.AiPolicy.valueOf(source.path("aiPolicy").asText("DISABLED")); }
@@ -128,12 +142,11 @@ public class AssessmentAnalyzer {
         int minSpan=config.getMinSpanLength();double gramThreshold=config.getAiReferencedThreshold();
         var references=new ArrayList<Map.Entry<JsonNode,SentenceSimilarity.Reference>>();
         for(var t:completed) references.add(Map.entry(t,new SentenceSimilarity.Reference(t.path("answerText").asText(""),minSpan)));
-        String guidance=plainText(source.path("evaluationContent").asText(""));
         var paragraphs=new ArrayList<Paragraph>();var sentences=new ArrayList<Sentence>();var segments=new ArrayList<Segment>();
         long totalChars=0,aiChars=0;
         for(var entry:source.path("answers")) {
             var q=entry.path("question");String qid=q.path("id").asText();int pos=q.path("position").asInt();int version=entry.path("answer").path("version").asInt();
-            var exclusion=new SentenceSimilarity.Exclusion(guidance+"\n"+q.path("title").asText("")+"\n"+plainText(q.path("content").asText("")));
+            var exclusion=new SentenceSimilarity.Exclusion(excludedText(source,q));
             var texts=paragraphs(entry.path("answer").path("content").asText(""));
             int offset=0;
             for(int i=0;i<texts.size();i++) {
@@ -154,17 +167,22 @@ public class AssessmentAnalyzer {
                         }
                     }
                     String reason=longest>=minSpan?REASON_SPAN:best>=gramThreshold?REASON_GRAM:null;
+                    // 2단계: 글자 비교로 DIRECT가 된 문장만 저장된 LLM 판정을 적용합니다.
+                    var verdict=semantic.verdicts().get(sentenceKey(qid,sentence));
+                    if(reason!=null) verdict=null;
+                    if(verdict!=null&&verdict.ai()) { reason=REASON_SEMANTIC;conversation=verdict.conversationId(); }
                     String src=reason==null?SOURCE_DIRECT:SOURCE_AI;
                     // 문장 사이 공백까지 포함해 답안 텍스트를 빈틈없이 덮는 구간(segments)으로 비중을 계산합니다.
                     int segStart=k==0?0:range.start(),segEnd=k+1<ranges.size()?ranges.get(k+1).start():text.length();
                     int length=segEnd-segStart;totalChars+=length;if(reason!=null) aiChars+=length;
                     double similarity=round(best,3);
                     sentences.add(new Sentence(paragraphId+"-s"+(k+1),qid,paragraphId,sentence,src,reason,longest,similarity,
-                            reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true));
+                            reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true,
+                            verdict!=null&&verdict.needsReview(),verdict));
                     segments.add(new Segment(qid,offset+segStart,offset+segEnd,reason==null?"STUDENT":SOURCE_AI,similarity,similarity,true,version));
                     paragraphBest=Math.max(paragraphBest,best);
                     if(reason!=null) {
-                        paragraphAi=true;int rank=reason.equals(REASON_SPAN)?2:1;
+                        paragraphAi=true;int rank=reason.equals(REASON_SPAN)?3:reason.equals(REASON_GRAM)?2:1;
                         if(rank>paragraphRank) { paragraphRank=rank;paragraphConversation=conversation; }
                     }
                 }
@@ -308,12 +326,12 @@ public class AssessmentAnalyzer {
                         "규칙 기반 추천 점수이며 근거가 없으면 null입니다. 최종 점수는 교사가 확정합니다.",
                         "텍스트 유사도 비율은 실제 학생 기여도가 아니며 이 영역의 추천 점수는 제공하지 않습니다.",
                         "질문 분류는 키워드 규칙 기반이며 LLM 분류는 사용하지 않습니다. 기타(RULE_UNMATCHED)는 교사 확인이 필요합니다.",
-                        "답안 출처는 문장마다 내장 AI 응답과의 긴 일치 구간·3-gram 포함률(문항·안내 문구 제외)로 추정한 값입니다(estimated=true). 단어를 모두 바꿔 쓴 문장은 잡지 못하며, 외부 AI·저장되지 않은 입력은 관측할 수 없습니다.",
-                        "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다.","구조화 사유는 기존 규칙 산식의 관측 요인이며 개별 점수 증감량을 분리할 수 없어 scoreDelta를 생략합니다."),trace.texts(),AssessmentTrace.getPasteEvents(source),getDefinition(),List.copyOf(sentences));
+                        "답안 출처는 문장마다 내장 AI 응답과의 긴 일치 구간·3-gram 포함률(문항·안내 문구 제외)로 추정한 값입니다(estimated=true). "+semanticLimitation(semantic.status())+" 외부 AI·저장되지 않은 입력은 관측할 수 없습니다.",
+                        "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다.","구조화 사유는 기존 규칙 산식의 관측 요인이며 개별 점수 증감량을 분리할 수 없어 scoreDelta를 생략합니다."),trace.texts(),AssessmentTrace.getPasteEvents(source),getDefinition(),List.copyOf(sentences),semantic.status());
     }
 
     public Map<String,Object> getDefinition(){return Map.ofEntries(Map.entry("model",MODEL),Map.entry("basis",CONTRIBUTION_BASIS),
-            Map.entry("sources",List.of(SOURCE_DIRECT,SOURCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM)),
+            Map.entry("sources",List.of(SOURCE_DIRECT,SOURCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC)),
             Map.entry("minSpanLength",config.getMinSpanLength()),Map.entry("aiReferencedThreshold",config.getAiReferencedThreshold()),
             Map.entry("excludedText","평가 안내 + 문항 제목·내용"),Map.entry("indexUnit","UTF16_END_EXCLUSIVE"),
             Map.entry("textNormalization","answerTexts.text (문단 사이 LF, HTML 제거·표 셀은 | 구분)"),Map.entry("usageMediumPercentage",20),
@@ -346,6 +364,15 @@ public class AssessmentAnalyzer {
         if(ai==0&&aiShare>0) ai=1; // AI 문장이 있으면 0%로 숨기지 않습니다.
         if(ai==100&&aiShare<1) ai=99;
         return new Contribution(100-ai,ai,0,CONTRIBUTION_BASIS);
+    }
+    private static String semanticLimitation(String status) {
+        return switch(status==null?"DISABLED":status) {
+            case "DONE" -> "바꿔 쓴 문장은 Claude Haiku가 '거의 그대로 따라감'(단계 3)으로 판정했거나, Haiku 단계 2 문장을 Gemini가 단계 3으로 다시 판정한 경우만 AI로 셉니다(SEMANTIC). Gemini도 단계 2로 본 문장은 needsReview로 교사 확인이 필요합니다.";
+            case "PARTIAL" -> "Gemini 재판정이 실패해 Haiku 단계 2 문장은 needsReview로만 표시하고 비율에는 넣지 않았습니다.";
+            case "PENDING" -> "바꿔 쓴 문장에 대한 LLM 판정이 진행 중입니다.";
+            case "UNAVAILABLE" -> "LLM 판정을 사용할 수 없어 글자 비교 결과만 반영했습니다. 단어를 모두 바꿔 쓴 문장은 잡지 못합니다.";
+            default -> "단어를 모두 바꿔 쓴 문장은 잡지 못합니다.";
+        };
     }
     static String plainText(String html) {
         if(html==null||html.isBlank()) return "";

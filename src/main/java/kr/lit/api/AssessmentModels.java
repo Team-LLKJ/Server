@@ -49,7 +49,25 @@ public final class AssessmentModels {
      * start/end는 answerTexts[].text 기준 UTF-16 위치(end 미포함)입니다.
      */
     public record Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
-                           double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated) {}
+                           double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
+                           boolean needsReview,SemanticVerdict semantic) {
+        public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
+                        double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated){
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null);
+        }
+    }
+    /**
+     * 2단계 LLM 판정 결과(문장 하나). haikuLevel·geminiLevel은 0~3 단계(3: 거의 그대로 따라감, 2: 핵심 주장 같음,
+     * 1: 일반적 내용·자기 경험 중심, 0: 다름). geminiLevel은 Haiku 단계 2라서 Gemini에 보낸 문장만 있고, 보내지 않았거나 실패하면 null입니다.
+     * ai=true면 reason=SEMANTIC으로 AI 비중에 들어가고, needsReview=true면 비율에서는 직접으로 계산하고 교사 확인으로 둡니다.
+     */
+    public record SemanticVerdict(Integer haikuLevel,Integer geminiLevel,String closestCandidateId,String closestCandidateText,
+                                  Long conversationId,boolean ai,boolean needsReview) {}
+    /** analyze()에 넘기는 저장된 2단계 판정. key는 AssessmentAnalyzer.sentenceKey(questionId,문장). */
+    public record SemanticInput(String status,java.util.Map<String,SemanticVerdict> verdicts) {
+        public static final SemanticInput DISABLED=new SemanticInput("DISABLED",java.util.Map.of());
+        public SemanticInput {verdicts=verdicts==null?java.util.Map.of():java.util.Map.copyOf(verdicts);}
+    }
     public record Evidence(Long conversationId,String paragraphId,Long eventId,String note,String type,String messageRole,String quote,String reason) {
         public Evidence(Long conversationId,String paragraphId,Long eventId,String note){this(conversationId,paragraphId,eventId,note,null,null,null,null);}
     }
@@ -60,8 +78,8 @@ public final class AssessmentModels {
                           boolean disclosedTools,boolean disclosedUsedParts,boolean disclosedReason,boolean aiUsed) {}
     public record Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,
                            Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,
-                           List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition,List<Sentence> sentences) {
-        public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of(),List.of());}
+                           List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition,List<Sentence> sentences,String semanticStatus) {
+        public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of(),List.of(),null);}
     }
     public record AnalysisRun(String evaluationId,int queued,String status) {}
 
