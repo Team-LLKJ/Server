@@ -82,10 +82,11 @@ class ReportApiTest extends AuthTestSupport {
   var f=fixture(true);reports.saveReview(f.id(),f.pid(),review(0));var report=reports.teacherGenerate(f.id(),f.pid());
   byte[] bytes=mvc.perform(request(get(root(f)+"/report/pdf?version=1"),teacher)).andExpect(status().isOk())
    .andExpect(content().contentType("application/pdf")).andReturn().getResponse().getContentAsByteArray();
+  mvc.perform(request(get(root(f).replace("/students/","/participants/")+"/report.pdf?version=1"),teacher)).andExpect(status().isOk());
   try(var doc=Loader.loadPDF(bytes)){
    String qa=System.getProperty("lit.pdf.qa-dir");
    if(qa!=null){var dir=Path.of(qa);Files.createDirectories(dir);Files.write(dir.resolve("lit-report-sample.pdf"),bytes);var renderer=new PDFRenderer(doc);for(int i=0;i<doc.getNumberOfPages();i++)ImageIO.write(renderer.renderImageWithDPI(i,100),"PNG",dir.resolve("lit-report-page-"+(i+1)+".png").toFile());}
-   String text=new PDFTextStripper().getText(doc);assertThat(text).contains("한글 수행평가","분모를 같게","교사가 확인한","임시 기준").doesNotContain("원문전용키워드");
+   String text=new PDFTextStripper().getText(doc);assertThat(text).contains("한글 수행평가","분모를 같게","교사가 확인한","AI 활용 학습 보고서").doesNotContain("원문전용키워드");
   }
   try(var doc=Loader.loadPDF(pdf.render(report,true))){assertThat(new PDFTextStripper().getText(doc)).contains("원문전용키워드");}
  }

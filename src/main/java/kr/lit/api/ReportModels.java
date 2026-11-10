@@ -21,7 +21,7 @@ public final class ReportModels {
   public TeacherReview(int version,Compliance compliance,List<Rating> ratings,String comment,String teacherId,Instant reviewedAt){this(version,compliance,ratings,comment,teacherId,reviewedAt,4);}
  }
  public record Student(String participantId,String nickname,String presence,String submissionStatus,
-                       String workStatus,boolean warning,Instant submittedAt,Integer reportVersion,String reviewStatus,String status,boolean activityWarning,int warningCount,Instant lastEventAt) {}
+                       String workStatus,boolean warning,Instant submittedAt,Integer reportVersion,String reviewStatus,String status,boolean activityWarning,int warningCount,Instant lastEventAt,Instant lastWarningAt,boolean expelled,Instant expelledAt) {}
  public record Counts(long submitted,long warning,long writing) {}
  public record Students(List<Student> items,int page,int size,long totalElements,long totalPages,Counts counts,List<Student> students) {}
  public record ScoreInput(@com.fasterxml.jackson.annotation.JsonProperty(required=true) @Min(0) @Max(20) Integer score,
@@ -29,20 +29,31 @@ public final class ReportModels {
  public record ReviewChange(long id,String criterionId,Integer previousScore,Integer score,String teacherId,Instant changedAt,int reviewVersion,int previousMaxScore,int maxScore) {}
  public record CriterionView(String id,String criterion,Integer score,int maxScore,String feedback,List<String> evidence,boolean adjusted) {}
  public record Rubric(int version,String analysisStatus,String analysisMethod,String rubricStatus,List<CriterionView> criteria,List<CriterionView> analysis,List<ReviewChange> adjustments) {}
- public record GradingQuestion(String questionId,int position,String title,String content,com.fasterxml.jackson.databind.JsonNode answer) {}
+ public record GradingQuestion(String questionId,int position,String title,String content,com.fasterxml.jackson.databind.JsonNode answer,Integer minChars,Integer maxChars) {
+  public GradingQuestion(String questionId,int position,String title,String content,com.fasterxml.jackson.databind.JsonNode answer){this(questionId,position,title,content,answer,null,null);}
+ }
  public record GradingAnswers(String participantId,String nickname,Instant submittedAt,String status,List<GradingQuestion> questions) {}
- public record Message(String id,String role,String content,String questionId,Instant createdAt,String status,String errorCode) {}
+ public record Message(String id,String role,String content,String questionId,Instant createdAt,String status,String errorCode,Long conversationId) {}
  public record Usage(String name,double percentage,String level,String colorKey) {}
  public record ActivityWarning(long eventId,String type,String questionId,Instant occurredAt,Instant receivedAt,boolean clientReported) {}
- public record Activity(Double studentContribution,List<Usage> usage,List<ActivityWarning> warnings,long warningsTotal,boolean hasMoreWarnings,String summary,String analysisMethod) {}
+ public record Activity(Double studentContribution,List<Usage> usage,List<ActivityWarning> warnings,long warningsTotal,boolean hasMoreWarnings,String summary,String analysisMethod,List<AssessmentModels.PasteObservation> pasteEvents,int unclassifiedCount,PurposeUsageAnalyzer.View usageAnalysis,InputPathAnalyzer.View inputPaths) {}
  public record Classification(String requestId,String questionId,List<String> purposes,List<String> stages,
                               String evidence,String confidence) {}
  public record Analysis(String method,String status,List<Classification> classifications,List<String> missingData,
                         List<String> limitations) {}
  public record Detail(Student student,JsonNode work,Analysis analysis,TeacherReview teacherReview) {}
+ public record GradingCriterion(int criterionId,String name,int maxScore,Double score,boolean teacherScored,String feedback,String aiReason) {}
+ public record GradingSnapshot(String status,List<GradingCriterion> criteria,String rubricVersion,String summary,
+     ProcessGradingModels.Result aiRecommendation,ProcessGradingModels.Review teacherReview,InputPathAnalyzer.View inputPaths,PurposeUsageAnalyzer.View purposeUsage,ProcessGradingModels.AnalysisScope analysisScope) {
+     public GradingSnapshot(String status,List<GradingCriterion> criteria){this(status,criteria,null,null,null,null,null,null,null);}
+ }
  public record ReportContent(String evaluationId,String title,String participantId,String nickname,Instant submittedAt,
                              String submissionHash,JsonNode submission,Analysis analysis,TeacherReview teacherReview,
-                             String rubricStatus,List<String> limitations) {}
+                             String rubricStatus,List<String> limitations,GradingSnapshot grading) {
+  public ReportContent(String evaluationId,String title,String participantId,String nickname,Instant submittedAt,String submissionHash,JsonNode submission,Analysis analysis,TeacherReview teacherReview,String rubricStatus,List<String> limitations){this(evaluationId,title,participantId,nickname,submittedAt,submissionHash,submission,analysis,teacherReview,rubricStatus,limitations,null);}
+ }
  public record UsageReport(String id,int version,Instant createdAt,ReportContent content) {}
  public record ReportVersion(String id,int version,Instant createdAt) {}
+ /** 교사의 질문 용도 확정 요청. */
+ public record PurposeInput(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Pattern(regexp="UNDERSTAND|PLAN|REVIEW|EDIT|DRAFT|OTHER") String purpose) {}
 }

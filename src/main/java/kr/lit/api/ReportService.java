@@ -14,10 +14,12 @@ import static kr.lit.api.ReportModels.*;
 @Service
 @Transactional
 public class ReportService {
+ private final AutomaticDisclosureService automaticDisclosure;
  private final JdbcTemplate db; private final ObjectMapper json; private final EvaluationService evaluations;
- private final ParticipantAccess participants; private final WorkService work;
- public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work) {
-  this.db=db;this.json=json;this.evaluations=evaluations;this.participants=participants;this.work=work;
+ private final ParticipantAccess participants; private final WorkService work; private final ReportGradingService grading; private final PurposeClassifier purposes;
+ public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work,ReportGradingService grading,AutomaticDisclosureService automaticDisclosure,PurposeClassifier purposes) {
+  this.automaticDisclosure=automaticDisclosure;this.purposes=purposes;
+  this.db=db;this.json=json;this.evaluations=evaluations;this.participants=participants;this.work=work;this.grading=grading;
  }
  private ApiError.Failure fail(HttpStatus status,String code,String message){return new ApiError.Failure(status,code,message);}
  private String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception e){throw new IllegalStateException(e);}}
@@ -38,7 +40,7 @@ public class ReportService {
    String status=submitted!=null?"SUBMITTED":closed?"CLOSED_UNSUBMITTED":"NOT_SUBMITTED";
    return new Student(pid,r.getString("nickname"),!active?"LEFT":connected?"CONNECTED":"DISCONNECTED",status,
      submitted!=null?"SUBMITTED":e.state().equals("ENDED")?"ENDED":closed?"EXPIRED":e.state().equals("STARTED")?"IN_PROGRESS":"WAITING",
-     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),warningCount>0?"WARNING":submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt);
+     submitted==null&&(!connected||closed),submitted,(Integer)r.getObject("report_version"),review(pid)==null?"NOT_REVIEWED":review(pid).compliance().name(),submitted!=null?"SUBMITTED":"WRITING",warningCount>0,warningCount,lastEventAt,db.queryForObject("SELECT MAX(created_at) last_warning_at FROM learning_events WHERE participant_id=? AND event_type IN ("+WorkModels.ClientEventType.warningSql()+")",(w,index)->instant(w,"last_warning_at"),pid),r.getObject("expelled_at")!=null,instant(r,"expelled_at"));
   },pid,id).get(0);
  }
  public Students students(String id,int page,int size){return students(id,page,size,"");}
@@ -54,10 +56,16 @@ public class ReportService {
   var items=ids.stream().map(p->student(id,p)).toList();
   return new Students(items,page,size,count,(count+size-1)/size,new Counts(submitted,warnings,count-warnings-submitted),items);
  }
- private JsonNode source(String id,String pid){
+ private JsonNode source(String id,String pid){return purposes.annotate(pid,rawSource(id,pid));}
+ private JsonNode rawSource(String id,String pid){
   person(id,pid);
   var stored=db.queryForList("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,pid);
-  if(!stored.isEmpty())return decode(stored.get(0));
+  if(!stored.isEmpty()) {
+   var snapshot=(com.fasterxml.jackson.databind.node.ObjectNode)decode(stored.get(0));boolean frozen=snapshot.hasNonNull("aiDisclosure");
+   if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));
+   if(!"SYSTEM_GENERATED".equals(snapshot.path("aiDisclosure").path("source").asText()))snapshot.set("studentAiDisclosure",snapshot.path("aiDisclosure"));
+   snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.generateDisclosure(id,pid,snapshot)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
+  }
   var root=json.createObjectNode();root.put("evaluationId",id);root.put("participantId",pid);
   var policy=db.queryForList("SELECT ai_policy FROM evaluation_settings WHERE evaluation_id=?",String.class,id);
   root.put("aiPolicy",policy.isEmpty()?"DISABLED":policy.get(0));
@@ -77,7 +85,23 @@ public class ReportService {
    var completed=instant(r,"completed_at");t.put("completedAt",completed==null?null:completed.toString());
   },pid);
   root.set("learningEvents",json.valueToTree(work.teacherEvents(id,pid,0,Integer.MAX_VALUE)));
+  boolean closed="ENDED".equals(db.queryForObject("SELECT state FROM evaluations WHERE id=?",String.class,id));
+  root.set("aiDisclosure",json.valueToTree(closed?automaticDisclosure.generateDisclosure(id,pid,root):automaticDisclosure.getDisclosure(id,pid)));root.put("aiDisclosureFrozen",closed);
   return root;
+ }
+ private JsonNode readDisclosure(String pid){
+  var rows=db.queryForList("SELECT tools,used_parts,reason,updated_at FROM ai_disclosures WHERE participant_id=?",pid);
+  var result=json.createObjectNode();for(String field:List.of("tools","used_parts","reason"))result.put(field.equals("used_parts")?"usedParts":field,rows.isEmpty()?"":Objects.toString(rows.get(0).get(field.toUpperCase(java.util.Locale.ROOT)),""));
+  result.set("updatedAt",rows.isEmpty()?json.nullNode():json.valueToTree(rows.get(0).get("UPDATED_AT")));return result;
+ }
+ public JsonNode teacherDisclosure(String id,String pid){teacher(id);person(id,pid);var source=source(id,pid);var result=((com.fasterxml.jackson.databind.node.ObjectNode)source.path("aiDisclosure")).deepCopy();result.put("frozen",source.path("aiDisclosureFrozen").asBoolean());return result;}
+ public UsageReport teacherHwpReport(String id,String pid,Integer version){
+  if(version!=null)return teacherReport(id,pid,version);
+  try{return teacherReport(id,pid,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND")||db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,pid)==0)throw failure;return teacherGenerate(id,pid);}
+ }
+ public UsageReport studentHwpReport(String id,String token,Integer version){
+  if(version!=null)return studentReport(id,token,version);
+  try{return studentReport(id,token,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND"))throw failure;var guest=participants.authenticateReport(id,token);if(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,guest.participantId())==0)throw failure;return studentGenerate(id,token);}
  }
  private TeacherReview review(String pid){var values=db.queryForList("SELECT review_json FROM teacher_reviews WHERE participant_id=?",String.class,pid);return values.isEmpty()?null:parse(values.get(0),TeacherReview.class);}
  private Analysis classify(JsonNode source){
@@ -142,8 +166,10 @@ public class ReportService {
  private UsageReport generate(String id,String pid){
   person(id,pid);requireSubmitted(pid);var e=evaluations.details(id);var src=source(id,pid);
   String snapshotHash=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,pid);
-  var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),review(pid)!=null&&review(pid).maxScore()==20?"PROVISIONAL_FIVE_CRITERIA_0_TO_20":"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
-    List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."));
+  var gradingSnapshot=grading.getSnapshot(id,pid);
+  boolean processV3=gradingSnapshot!=null&&ProcessGradingModels.RUBRIC_VERSION.equals(gradingSnapshot.rubricVersion());
+  var content=new ReportContent(id,e.title(),pid,student(id,pid).nickname(),student(id,pid).submittedAt(),snapshotHash,src,classify(src),review(pid),processV3?ProcessGradingModels.RUBRIC_VERSION:review(pid)!=null&&review(pid).maxScore()==20?"PROVISIONAL_FIVE_CRITERIA_0_TO_20":"PROVISIONAL_FIVE_CRITERIA_0_TO_4",
+    processV3?List.of("AI 추천과 교사 확정은 별도로 보존합니다.","입력 경로·문장 유사도는 학생의 사고 기여 점수와 구분합니다.","부족한 자료는 판단 보류하며 확인된 배점을100점으로 환산하지 않습니다."):List.of("5개 영역과 배점은 임시 기준입니다. 최종 평가 기준은 별도 확정이 필요합니다.","점수·허용 규칙 준수 여부는 교사 검토 결과이며 자동 채점이 아닙니다.","기록 부족은 0점이 아닙니다. 검토 전 점수는 null입니다.","AI 탐지율과 정답 여부·부정행위 판정을 제공하지 않습니다."),gradingSnapshot);
   String hash=AuthService.hash(encode(content));
   var existing=db.queryForList("SELECT id FROM usage_reports WHERE participant_id=? AND source_hash=?",String.class,pid,hash);
   if(!existing.isEmpty())return getReport(id,pid,null,existing.get(0));
@@ -162,8 +188,8 @@ public class ReportService {
  public UsageReport teacherGenerate(String id,String pid){teacher(id);return generate(id,pid);}
  public UsageReport teacherReport(String id,String pid,Integer version){teacher(id);return getReport(id,pid,version,null);}
  public List<ReportVersion> versions(String id,String pid){teacher(id);person(id,pid);return db.query("SELECT id,version,created_at FROM usage_reports WHERE participant_id=? ORDER BY version DESC",(r,n)->new ReportVersion(r.getString("id"),r.getInt("version"),instant(r,"created_at")),pid);}
- public UsageReport studentGenerate(String id,String token){String pid=participants.authenticate(id,token).participantId();evaluations.details(id);return generate(id,pid);}
- public UsageReport studentReport(String id,String token,Integer version){String pid=participants.authenticate(id,token).participantId();evaluations.details(id);return getReport(id,pid,version,null);}
+ public UsageReport studentGenerate(String id,String token){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return generate(id,pid);}
+ public UsageReport studentReport(String id,String token,Integer version){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return getReport(id,pid,version,null);}
  // Called by the scheduled job through the Spring proxy, one transaction per participant.
  public void generateForJob(String id,String pid){generate(id,pid);}
 }

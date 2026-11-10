@@ -37,10 +37,18 @@ public class ConsentService {
     }
     public ConsentResponse acceptConsents(ConsentRequest request) {
         String userId=AccountAccess.require(Role.TEACHER).userId();
+        return recordSignupConsents(userId,request);
+    }
+    public void validateConsent(ConsentRequest request) {
         if(!Boolean.TRUE.equals(request.termsAccepted())||!Boolean.TRUE.equals(request.privacyAccepted()))
             throw new ApiError.Failure(HttpStatus.BAD_REQUEST,"CONSENT_REQUIRED","이용약관과 개인정보 처리방침을 각각 확인하고 동의해주세요.");
         if(!termsVersion.equals(request.termsVersion())||!privacyVersion.equals(request.privacyVersion()))
             throw new ApiError.Failure(HttpStatus.CONFLICT,"POLICY_VERSION_MISMATCH","약관 버전이 변경되었습니다. 최신 내용을 확인하고 다시 동의해주세요.");
+    }
+    public record CurrentPolicies(String termsVersion,String privacyVersion) {}
+    public CurrentPolicies getCurrentPolicies(){return new CurrentPolicies(termsVersion,privacyVersion);}
+    public ConsentResponse recordSignupConsents(String userId,ConsentRequest request) {
+        validateConsent(request);
         // 두 문서의 저장과 중복 요청을 같은 계정 잠금 안에서 직렬화합니다.
         repository.lockUser(userId);
         var history=repository.findConsentHistory(userId);var now=Instant.now();

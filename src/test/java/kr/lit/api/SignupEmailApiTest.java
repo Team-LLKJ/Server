@@ -20,12 +20,19 @@ class SignupEmailApiTest extends AuthTestSupport {
         var confirmed=ok(body(request(post("/api/auth/email-verifications/confirm"),null),Map.of("email",email.toUpperCase(Locale.ROOT),"code",code)));
         String token=confirmed.path("emailVerificationToken").asText();assertThat(token).hasSize(43);
         assertThat(db.queryForObject("SELECT token_hash FROM signup_email_verifications WHERE email=?",String.class,email)).isEqualTo(AuthService.hash(token));
-        var user=ok(body(request(post("/api/auth/signup/teacher"),null),Map.of("username","u_"+unique(),"email",email,"password",PASSWORD,"name","이메일 사용자","emailVerificationToken",token)));
+        var input=new HashMap<String,Object>(Map.of("username","u_"+unique(),"email",email,"password","Test123!","name","이메일 사용자","emailVerificationToken",token,"termsVersion","v1","termsAccepted",true,"privacyVersion","v1","privacyAccepted",true));
+        for(String invalidPassword:List.of("Test12!","Test123!"+"x".repeat(13))) {
+            input.put("password",invalidPassword);
+            mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+        }
+        input.put("password","Test123!");
+        var user=ok(body(request(post("/api/auth/signup/teacher"),null),input));
         assertThat(user.path("school").asText()).isEmpty();assertThat(user.path("role").asText()).isEqualTo("TEACHER");
     }
     @Test void unverifiedOrDifferentEmailCannotSignup() throws Exception {
         String email=unique()+"@example.test",token=createVerifiedEmail(email);
-        var input=new HashMap<String,Object>(Map.of("username","u_"+unique(),"email",unique()+"@example.test","password",PASSWORD,"name","사용자","emailVerificationToken",token));
+        var input=new HashMap<String,Object>(Map.of("username","u_"+unique(),"email",unique()+"@example.test","password",PASSWORD,"name","사용자","emailVerificationToken",token,"termsVersion","v1","termsAccepted",true,"privacyVersion","v1","privacyAccepted",true));
         mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("EMAIL_VERIFICATION_REQUIRED"));
         input.remove("emailVerificationToken");input.put("school","임의학교");input.put("inviteCode","x".repeat(43));
         mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
@@ -45,7 +52,7 @@ class SignupEmailApiTest extends AuthTestSupport {
     @Test void expiredAndConsumedTicketCannotRegisterAgain() throws Exception {
         String email=unique()+"@example.test",token=createVerifiedEmail(email);
         db.update("UPDATE signup_email_verifications SET token_expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE email=?",email);
-        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),Map.of("username","u_"+unique(),"email",email,"password",PASSWORD,"name","사용자","emailVerificationToken",token))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("EMAIL_VERIFICATION_REQUIRED"));
+        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),Map.of("username","u_"+unique(),"email",email,"password",PASSWORD,"name","사용자","emailVerificationToken",token,"termsVersion","v1","termsAccepted",true,"privacyVersion","v1","privacyAccepted",true))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("EMAIL_VERIFICATION_REQUIRED"));
     }
     @Test void deliveryFailureNeverGrantsVerificationAndCanRetry() throws Exception {
         String email=unique()+"@example.test";
@@ -65,7 +72,7 @@ class SignupEmailApiTest extends AuthTestSupport {
         mvc.perform(body(request(post("/api/auth/email-verifications/confirm"),null),Map.of("email",email,"code",code))).andExpect(status().isBadRequest());
         db.update("UPDATE signup_email_verifications SET last_sent_at=DATEADD('SECOND',-61,CURRENT_TIMESTAMP) WHERE email=?",email);
         mvc.perform(body(request(post("/api/auth/email-verifications"),null),Map.of("email",email))).andExpect(status().isOk());
-        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),Map.of("username","u_"+unique(),"email",email,"password",PASSWORD,"name","사용자","emailVerificationToken",result.path("emailVerificationToken").asText())))
+        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),Map.of("username","u_"+unique(),"email",email,"password",PASSWORD,"name","사용자","emailVerificationToken",result.path("emailVerificationToken").asText(),"termsVersion","v1","termsAccepted",true,"privacyVersion","v1","privacyAccepted",true)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("EMAIL_VERIFICATION_REQUIRED"));
     }
 }

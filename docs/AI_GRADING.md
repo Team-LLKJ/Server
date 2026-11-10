@@ -1,3 +1,5 @@
+> 신규 행동 근거 기반 V1 모델은 [PROCESS_GRADING.md](PROCESS_GRADING.md)를 참고하세요. 아래 문서의 기존 키워드 모델과 API는 호환용으로 유지되며 신규 모델의 점수로 자동 대체되지 않습니다.
+
 > 작업 상태: 압축본을 검증·수정한 로컬 백엔드 초안입니다. 커밋 승인 대기이며 새 기능은 아직 배포하지 않았습니다. 프런트 코드는 포함되지 않았습니다.
 
 # AI 활용 채점 API·알고리즘 (#18)
@@ -50,7 +52,7 @@ PDF 저장은 프런트의 브라우저 인쇄를 쓰므로 서버 API를 추가
 
 - 학생은 계정 없이 닉네임으로 참여하므로 `name`은 닉네임과 같은 값입니다.
 - `status`: 경고 이벤트가 1건 이상이면 `WARNING`, 아니면 제출 시 `SUBMITTED`, 그 외 `WRITING`. counts의 세 값은 겹치지 않으며 합이 totalElements입니다.
-- `warningCount`: WINDOW_LEAVE·SHORTCUT_CAPTURE·WINDOW_BLUR·CAPTURE_SHORTCUT·COPY_ATTEMPT 건수. PASTE·AI_ANSWER_COPY는 경고가 아니라 채점 신호라 세지 않습니다.
+- `warningCount`: WINDOW_LEAVE·SHORTCUT_CAPTURE·WINDOW_BLUR·CAPTURE_SHORTCUT·COPY_ATTEMPT·FULLSCREEN_EXIT·DEVTOOLS_OPEN 건수. PASTE·AI_ANSWER_COPY는 경고가 아니라 채점 신호라 세지 않습니다.
 - `totalScore`: 확정(`CONFIRMED`)이면 확정 총점, 아니면 AI 추천 총점. 미제출은 null.
 - `gradingStatus`: `NOT_STARTED`(교사 점수 없음) / `DRAFT`(일부 저장 또는 확정 뒤 수정) / `CONFIRMED`.
 - `submissionMode`: `MANUAL` / `AUTO_DEADLINE` / `AUTO_TEACHER_END`.
@@ -194,7 +196,7 @@ PDF 저장은 프런트의 브라우저 인쇄를 쓰므로 서버 API를 추가
 - 같은 값을 다시 보내도 결과가 같아 자동 저장 재시도에 안전합니다. 응답은 최신 rubric-scores 전체입니다.
 - 미제출 409 SUBMISSION_REQUIRED, 없는 기준 404 CRITERION_NOT_FOUND, 범위 밖 400 INVALID_REQUEST.
 - **확정 뒤 점수를 바꾸면 status가 DRAFT로 돌아갑니다.** 마지막 확정 총점은 `confirmedTotal`에 남고, 다시 confirm하면 갱신됩니다.
-- 수준이 실제로 바뀐 경우만 이력(`/rubric-scores/history`)에 이전·새 수준, 당시 AI 추천 수준, 교사, 시각을 남깁니다.
+- 수준 또는 feedback이 실제로 바뀌면 이력(`/rubric-scores/history`)에 이전·새 수준과 previousFeedback/feedback, 당시 AI 추천 수준, 교사, 시각을 남깁니다. 과거 이력의 근거 필드는 null입니다.
 
 `POST .../participants/{pid}/grade/confirm`
 
@@ -228,10 +230,31 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 
 - 구체적인 추가 질문: 같은 문항의 두 번째 이후 질문 중 20자 이상이거나 "방금, 위에서, 그 부분" 등 앞 응답을 가리키는 질문(답안 대리 작성 요청 제외). 추가 질문이 없으면 전체 질문에 같은 기준을 적용합니다.
 - 해당 AI 질문·완료 응답 등 근거가 없으면 관련 지표의 value/level과 추천 점수는 null입니다. 기록이 없다는 이유로 만점 또는0점을 주지 않습니다. ④는 항상 교사 확인이 필요합니다.
-- **문단 출처 판정**: 문단과 각 AI 응답을 공백·문장부호를 뺀 3글자 단위로 나눠, 문단 조각 중 AI 응답에도 있는 비율(포함률)을 계산합니다. 같은 문항에 `AI_ANSWER_COPY` 기록이 있으면 +0.15. 0.8 이상 AI_USED, 0.4 이상 AI_REFERENCED, 미만 DIRECT. `changedRatio = 1 − 포함률`.
+- **답안 출처 판정 V2** (`basis: TEXT_SIMILARITY_ESTIMATE_V2`, 모델 `LIT_RULE_BASED_EXPLAINED_V2_1`): 문단을 마침표·물음표·느낌표 기준 문장으로 나눠 문장마다 판정합니다. 평가 안내와 해당 문항 제목·내용에도 있는 표현은 비교에서 뺍니다.
+  1. 정규화(소문자, 공백·문장부호 제거) 후 `min-span-length`(20)글자 이상 AI 답변과 그대로 이어지면 AI (`reason: SPAN_MATCH`)
+  2. 3-gram 포함률이 `ai-referenced-threshold`(0.4) 이상이면 AI (`reason: GRAM_OVERLAP`)
+  3. 그 외 DIRECT. AI 답변 복사 기록 가산점은 없습니다.
+  - 분류는 DIRECT / AI_REFERENCED 두 가지뿐입니다. `contribution.direct + aiReferenced = 100`, `aiUsed`는 호환용으로 항상 0입니다. 비중은 문장 글자 수(문장 사이 공백 포함)로 합산합니다.
+  - 문단 `source`는 AI 문장이 하나라도 있으면 AI_REFERENCED입니다. 문장별 결과는 `sentences[]`(`questionId, paragraphId, text, source, reason, longestSpan, similarity, conversationId, start, end`)로 내려갑니다. `start/end`와 `contribution.segments`는 `answerTexts[].text` 기준 UTF-16 위치입니다.
+  - 단어를 모두 바꿔 쓴 문장은 글자 비교로 잡지 못하며, 아래 2단계 LLM 판정이 켜져 있을 때만 잡습니다.
+- **답안 출처 판정 2단계 (LLM, Haiku 먼저 → 애매한 것만 Gemini, 11월 10일 백엔드 전달본)** — `lit.grading.judge.enabled=true`이고 Claude Haiku(Anthropic) 키·모델이 있을 때만 동작합니다. 꺼져 있으면 `semanticStatus: DISABLED`이고 1단계 결과만 씁니다.
+  1. 후보: 1단계 DIRECT, 정규화 15자 이상, 학생이 AI에게 질문한 문항의 문장만. 후보는 그 문항의 AI 답변 문장(8개 초과 시 문항 문구를 뺀 2글자 조각 포함률 상위 8개).
+  2. 제출 1건의 대상 문장을 묶어 Claude Haiku에 1번 호출합니다. 단계 0~3(3: 거의 그대로 따라감, 2: 핵심 주장 같음, 1: 일반 내용·자기 경험 중심, 0: 다름)과 `closestCandidate`를 항상 받습니다. temperature 0, JSON만.
+  3. Haiku가 단계 2를 준 문장만 묶어 Gemini에 1번 호출합니다(Haiku 결과는 알려 주지 않음, 없으면 호출 안 함). 모델이 말하는 confidence는 쓰지 않습니다.
+  4. 판정표: Haiku 3 → AI(`reason: SEMANTIC`). Haiku 2 → Gemini 3이면 AI, Gemini 2면 DIRECT + `needsReview: true`, Gemini 0~1이면 DIRECT. Haiku 0~1 → DIRECT.
+  - 판정은 제출 후 백그라운드(`SemanticJudgeJob`)에서 돌고, 끝나기 전에는 `semanticStatus: PENDING`(1단계 결과 표시)입니다. 결과 상태: `DONE`, `PARTIAL`(Gemini 실패·미설정 → Haiku 단계 2 문장은 DIRECT + needsReview), `UNAVAILABLE`(Haiku 실패 → 1단계 결과만).
+  - `PARTIAL`·`UNAVAILABLE`은 LLM 일시 오류(503·시간 초과 등)일 수 있어 1분 뒤 자동으로 다시 판정합니다(첫 시도 포함 최대 3회, `grading_analyses.semantic_attempts`). 이미 받은 Haiku·Gemini 판정은 캐시를 쓰므로 실패한 호출만 다시 하고, 다시 판정하는 동안 화면은 직전 결과를 보여줍니다. 3회 모두 실패하면 그 상태로 남고 교사 확인 대상(needsReview)이 됩니다.
+  - needsReview 문장은 비율에서 직접으로 계산하고, 교사가 확정하면 그 값으로 바뀝니다.
+  - 문장별 `sentences[].semantic`에 `haikuLevel, geminiLevel, closestCandidateId, closestCandidateText, conversationId, ai, needsReview`가 내려갑니다.
+  - 판정은 `semantic_judgments`에 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장)의 SHA-256 해시를 키로 단계·closestCandidate만 저장합니다. 같은 문장은 다시 호출하지 않으며, 원문은 저장하지 않습니다.
+  - 학생 답안 문장과 AI 답변 문장이 Anthropic·Gemini에 전송됩니다. 개인정보 처리 방침에 "채점 보조 목적의 전송" 추가 여부를 확인한 뒤 켜세요.
+- **답안 출처 판정 3단계 (교사 문장 판정 수정)** — `PATCH /api/teacher/evaluations/{id}/participants/{participantId}/sentences/{sentenceId}`, 본문 `{"label":"AI"|"DIRECT"}`.
+  - `sentenceId`는 분석 응답 `sentences[].id`(예: `q1-p2-s1`)입니다. 현재 제출본에 없으면 404 `SENTENCE_NOT_FOUND`, 미제출이면 409 `SUBMISSION_REQUIRED`, label이 AI/DIRECT가 아니면 400.
+  - 교사 판정이 알고리즘보다 우선하고 그 학생 비율에 바로 반영된 분석(Analysis)을 돌려줍니다. 교사가 AI로 바꾼 문장은 `reason: TEACHER`, DIRECT로 바꾼 문장은 `reason: null`이며 `teacherLabel`이 붙고 `needsReview`는 false입니다. 같은 문장을 다시 고치면 마지막 판정을 씁니다.
+  - `sentence_labels`에 문장, 교사 판정, 그때의 알고리즘 판정·근거(source, reason, longestSpan, similarity, Haiku·Gemini 단계, needsReview), 설정·프롬프트 버전(config_json)을 이력으로 저장합니다. 수정 기록이 200문장 이상 쌓이면 기준값 보정에 씁니다.
 - **허용 범위 검사**:
   - Level 1(DISABLED): AI 대화가 있으면 VIOLATION, 200자 이상 붙여넣기·AI 답변 복사 기록은 CHECK.
-  - 높은 유사도 비중이 단계별 상한을 넘으면 모든 단계에서 CHECK입니다. 유사도만으로 VIOLATION을 확정하지 않습니다. 금지 정책과 내부 AI 호출 기록의 직접 불일치만 별도 확인 대상으로 표시합니다.
+  - AI 답변 사용(AI_REFERENCED) 문장 비중이 단계별 상한을 넘으면 모든 단계에서 CHECK입니다. 유사도만으로 VIOLATION을 확정하지 않습니다. 금지 정책과 내부 AI 호출 기록의 직접 불일치만 별도 확인 대상으로 표시합니다.
   - Level 1~3에서 답안 대리 작성 요청이 있으면 CHECK.
 - 질문 분류는 **키워드 규칙**입니다. 규칙에 걸리지 않으면 OTHER(method `RULE_UNMATCHED`)로 두고, LLM 분류는 쓰지 않습니다. 비용·응답 지연·결과 재현성 때문에 교사 채점 데이터가 쌓인 뒤 도입 여부를 정하는 것을 권합니다.
 
@@ -241,15 +264,19 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 
 | 키 | 기본 | 의미 |
 |---|---|---|
-| ai-used-threshold | 0.8 | AI_USED 경계 |
-| ai-referenced-threshold | 0.4 | AI_REFERENCED 경계 |
-| copy-event-bonus | 0.15 | AI 답변 복사 기록 가산 |
+| ai-referenced-threshold | 0.4 | 문장 3-gram 포함률이 이 값 이상이면 AI |
+| min-span-length | 20 | 정규화 후 이 글자 수 이상 그대로 일치하면 AI |
+| judge.enabled | false | 2단계 LLM 판정 사용 (`LIT_GRADING_JUDGE_ENABLED`) |
+| judge.anthropic.api-key / model | `ANTHROPIC_API_KEY` / claude-haiku-5-5 | 1차 판정(Claude Haiku). `LIT_GRADING_JUDGE_ANTHROPIC_*`. Messages API(`anthropic-version: 2023-06-01`) |
+| judge.gemini.api-key / model | `GEMINI_API_KEY` / `GEMINI_MODEL` | 2차 판정(애매한 것만). `LIT_GRADING_JUDGE_GEMINI_*`로 따로 지정 가능 |
+| judge.min-sentence-length / max-candidates | 15 / 8 | 보낼 문장 최소 길이, 문장당 후보 수 |
+| judge.timeout-seconds | 60 | LLM 호출 제한 시간 |
 | drafting-penalty | 1.0 | ① 대리 작성 요청 감점 가중치 |
 | appropriate-types | CONCEPT_UNDERSTANDING,RESEARCH,IDEA_EXPLORATION | ① 적절한 유형 |
 | specific-question-min-length | 20 | ② 구체적 질문 최소 글자 수 |
 | usage-high-share / usage-medium-share | 0.5 / 0.2 | 사용 방법별 정도 경계 |
 | long-paste-length | 200 | Level 1 붙여넣기 확인 기준 |
-| max-ai-used-share.{1..5} | 0, 0, 0.3, 0.7, 1.0 | 단계별 AI_USED 상한 |
+| max-ai-used-share.{1..5} | 0, 0, 0.3, 0.7, 1.0 | 단계별 AI 답변 사용 비중 상한(V2부터 AI 비중 전체에 적용, 재보정 필요) |
 | job-interval-ms | 3000 | 분석 작업 간격 |
 
 ## 9. 학생 화면이 남겨야 하는 데이터 (7-6)
@@ -262,15 +289,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 | 사용한 AI 도구·활용 부분·선택 이유 | `GET·PUT /api/evaluations/{id}/ai-disclosure` (`/api/student/...` 별칭) | 신규 |
 | 질문 유형 | 서버가 대화 조회·분석 시 붙입니다 | 프런트 작업 없음 |
 
-`PUT /api/evaluations/{id}/ai-disclosure` (학생 `X-Participant-Token`)
-
-```json
-{ "tools": "LIT 내장 AI", "usedParts": "문항 2 첫 문단", "reason": "개념만 확인하고 예시는 직접 찾았습니다." }
-```
-
-- 세 필드 모두 필수 문자열(빈 문자열 가능), 최대 500 / 4000 / 4000자. 시작 후·제출 전·종료 전만 저장할 수 있습니다(제출 후 409 ALREADY_SUBMITTED).
-- GET 응답: `{ evaluationId, participantId, tools, usedParts, reason, updatedAt, editable }`. 저장 전에는 빈 문자열과 updatedAt=null입니다.
-- 제출 화면에 이 칸을 두면 ②의 "선택 이유", ⑤ 투명성의 근거가 됩니다. 비워 두면 해당 항목이 0으로 계산됩니다.
+현재 AI 사용 기록은 시스템 자동 생성입니다. 학생 GET은 읽기 전용이며, 기존 PUT은 입력을 저장하지 않는 호환 엔드포인트입니다. 제출/자동 종료 때 tools·usedParts·reason, status, conversationIds, evidence를 한 번 생성해 저장합니다. 자동 기록은 학생 자기 공개에 대한 점수 근거로 사용하지 않습니다. [전체 계약](AUTOMATIC_AI_DISCLOSURE.md)을 참고하세요.
 
 
 ## 통합 검증 후 보완 (2026-10-31)
@@ -283,3 +302,11 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 - 채점 이력이 있으면 점수를 모두 삭제해도 기준 잠금이 풀리지 않습니다. 이력의 criterionId 의미를 보존합니다.
 - 분석 작업은 평가 잠금과 requested_at 버전을 검사합니다. 이전 분석 요청의 결과·오류가 새로운 요청이나 완료 결과를 덮어쓰지 않습니다.
 - 종료 후 저장 유예는 기본0입니다. 켠 경우에도 시간 만료는 실제 endsAt을 기준으로 유예를 계산하고, 채점·리포트가 생긴 뒤에는 저장을 허용하지 않습니다.
+
+## 교사 근거 계약 보완
+
+level만 전송하면 feedback을 유지합니다. feedback의 서버 제한은2000자, 초과400 INVALID_REQUEST. feedback=""는 근거 삭제입니다. 확정 오류 missingCriteria 및 보고서의 교사 근거 우선 적용은 [GRADING_FEEDBACK.md](GRADING_FEEDBACK.md)를 참고하세요.
+
+## 구조화 근거·가입 동의 후속 계약
+
+분석 reasons/정확한 quote, 정규화 답안 segments·PASTE 기록, 학생 상태/lastWarningAt, SSE와 비동기 ZIP은 [SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md](SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md)에 정의합니다. 기존 동기 ZIP·대화 ID·feedback 계약은 유지합니다.

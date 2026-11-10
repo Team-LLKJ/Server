@@ -11,12 +11,14 @@ import static kr.lit.api.AssessmentModels.*;
 
 /**
  * 7-4 채점 알고리즘. 제출 snapshot(답안·AI 대화·학습 이벤트)과 학생의 AI 사용 기록을 입력으로 받아
- * 허용 범위 검사 → 질문 분류 → 문단 출처 판정 → 지표(0~1) → 수준(round(4×s))을 계산합니다.
+ * 허용 범위 검사 → 질문 분류 → 문장 출처 판정(V2: 직접 작성/AI 답변 사용) → 지표(0~1) → 수준(round(4×s))을 계산합니다.
  * DB에 접근하지 않는 순수 계산이므로 같은 입력은 항상 같은 결과를 냅니다.
  */
 @Component
 public class AssessmentAnalyzer {
-    public static final String MODEL="LIT_RULE_BASED_RUBRIC_V1";
+    public static final String MODEL="LIT_RULE_BASED_EXPLAINED_V2_1";
+    public static final String CONTRIBUTION_BASIS="TEXT_SIMILARITY_ESTIMATE_V2";
+    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP",REASON_SEMANTIC="SEMANTIC",REASON_TEACHER="TEACHER",LABEL_AI="AI",LABEL_DIRECT="DIRECT";
     public record DisclosureInput(String tools,String usedParts,String reason) {
         static final DisclosureInput EMPTY=new DisclosureInput("","","");
     }
@@ -31,11 +33,35 @@ public class AssessmentAnalyzer {
         Map.entry(QuestionType.IDEA_EXPLORATION,Pattern.compile("(아이디어|브레인|발상|방향|구체화|어떻게\\s*하면|주제|구조|개요|목차|구성|접근)")),
         Map.entry(QuestionType.CONCEPT_UNDERSTANDING,Pattern.compile("(설명|개념|뜻|의미|이해|왜|원리|차이|무엇|뭐야|뭔가요|뭔지|힌트|어떤\\s*것|정의)"))
     );
+    /**
+     * 질문 하나의 분류. 스냅샷에 저장된 질문 용도(purposeClassification: 교사 확정 > LLM)가 있으면 그것을 쓰고,
+     * 없거나 UNDECIDED이면 키워드 규칙으로 대체합니다. PurposeUsageAnalyzer와 같은 분류 결과를 씁니다.
+     */
+    public static QuestionType classify(JsonNode turn) {
+        String text=turn.path("questionText").asText("");
+        String purpose=turn.path("purposeClassification").path("purpose").asText("");
+        return switch(purpose) {
+            case "UNDERSTAND" -> classify(text)==QuestionType.RESEARCH?QuestionType.RESEARCH:QuestionType.CONCEPT_UNDERSTANDING;
+            case "PLAN" -> QuestionType.IDEA_EXPLORATION;
+            case "REVIEW" -> QuestionType.VERIFICATION;
+            case "EDIT" -> QuestionType.EDIT;
+            case "DRAFT" -> QuestionType.ANSWER_DRAFTING;
+            case "OTHER" -> QuestionType.OTHER;
+            default -> classify(text);
+        };
+    }
+    /** 분류 출처: TEACHER(교사 확정), LLM, 아니면 키워드 규칙(RULE/RULE_UNMATCHED). */
+    static String classificationMethod(JsonNode turn,QuestionType type) {
+        var c=turn.path("purposeClassification");String purpose=c.path("purpose").asText("");
+        if(!purpose.isEmpty()&&!purpose.equals("UNDECIDED")) return c.path("teacherPurpose").isTextual()?"TEACHER":"LLM";
+        return type==QuestionType.OTHER?"RULE_UNMATCHED":"RULE";
+    }
     public static QuestionType classify(String text) {
         String t=text==null?"":text.toLowerCase(Locale.ROOT);
         for(var rule:RULES) if(rule.getValue().matcher(t).find()) return rule.getKey();
         return QuestionType.OTHER;
     }
+    static Pattern getClassificationPattern(QuestionType type){return RULES.stream().filter(rule->rule.getKey()==type).map(rule->Pattern.compile(rule.getValue().pattern(),Pattern.CASE_INSENSITIVE|Pattern.UNICODE_CASE)).findFirst().orElse(null);}
     private static final Pattern FOLLOW_UP_REFERENCE=Pattern.compile("(방금|위에서|앞에서|말한|제안한|네\\s*답|너의\\s*답|그\\s*중|그중|그\\s*부분|이\\s*부분|그렇다면|그러면)");
 
     // ---------- 문단 추출 ----------
@@ -86,6 +112,25 @@ public class AssessmentAnalyzer {
 
     // ---------- 분석 ----------
     public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now) {
+        return analyze(participantId,source,disclosure,now,SemanticInput.DISABLED);
+    }
+    /** 문장 판정 키. 2단계 LLM 판정 캐시·입력에서 같은 문장을 찾을 때 씁니다. */
+    static String sentenceKey(String questionId,String sentence) { return questionId+"\u0001"+sentence; }
+    /** 비교에서 뺄 문구: 평가 안내 + 문항 제목 + 문항 내용. */
+    static String excludedText(JsonNode source,JsonNode question) {
+        return plainText(source.path("evaluationContent").asText(""))+"\n"+question.path("title").asText("")+"\n"+plainText(question.path("content").asText(""));
+    }
+    /**
+     * semantic: 백그라운드에서 저장해 둔 2단계 LLM 판정. 1단계에서 DIRECT로 남은 문장에만 적용합니다.
+     * 판정은 입력으로만 받으므로 이 메서드는 계속 같은 입력에 같은 결과를 내는 순수 계산입니다.
+     */
+    public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now,SemanticInput semantic) {
+        return analyze(participantId,source,disclosure,now,semantic,Map.of());
+    }
+    /** teacherLabels: 교사가 고친 문장 판정(sentenceKey → AI|DIRECT). 알고리즘 판정보다 우선하며 비율에 바로 반영됩니다. */
+    public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now,SemanticInput semantic,Map<String,String> teacherLabels) {
+        if(semantic==null) semantic=SemanticInput.DISABLED;
+        if(teacherLabels==null) teacherLabels=Map.of();
         if(disclosure==null) disclosure=DisclosureInput.EMPTY;
         WorkModels.AiPolicy policy;
         try { policy=WorkModels.AiPolicy.valueOf(source.path("aiPolicy").asText("DISABLED")); }
@@ -100,54 +145,90 @@ public class AssessmentAnalyzer {
         // 3. 질문 분류
         var classified=new ArrayList<ClassifiedQuestion>();
         for(var t:turns) {
-            var type=classify(t.path("questionText").asText());
+            var type=classify(t);
             classified.add(new ClassifiedQuestion(t.path("id").asLong(),t.path("requestId").asText(),t.path("questionId").asText(),type,type.label(),
-                    type==QuestionType.OTHER?"RULE_UNMATCHED":"RULE"));
+                    classificationMethod(t,type)));
         }
         int totalQuestions=classified.size();
         var counts=new EnumMap<QuestionType,Integer>(QuestionType.class);
         for(var c:classified) counts.merge(c.type(),1,Integer::sum);
 
-        // 4. 문단 출처 판정
+        // 4. 문장 출처 판정 (V2) — 문단을 문장으로 나눠 DIRECT / AI_REFERENCED 두 가지로만 판정합니다.
+        //   ① 문항·안내 문구를 뺀 정규화 구간이 minSpanLength 이상 AI 답변과 그대로 이어지면 AI (SPAN_MATCH)
+        //   ② 문항·안내 문구를 뺀 3-gram 포함률 >= aiReferencedThreshold 이면 AI (GRAM_OVERLAP)
+        //   ③ 그 외 DIRECT. AI 답변 복사 기록 가산점은 쓰지 않습니다(복사했다면 ①로 잡힘).
         var declared=new HashMap<String,String>();
-        var copyQuestions=new HashSet<String>();
         int paste=0,copy=0,warnings=0,longPaste=0;
         var warningNames=WorkModels.ClientEventType.warningNames();
         for(var e:events) {
             String type=e.path("type").asText(),qid=e.path("questionId").isNull()?null:e.path("questionId").asText(null);
             if(type.equals("ANSWER_SAVED")&&qid!=null) declared.put(qid,e.path("details").path("source").asText("DIRECT"));
             if(type.equals("PASTE")) { paste++; if(e.path("details").path("length").asInt(0)>=config.getLongPasteLength()) longPaste++; }
-            if(type.equals("AI_ANSWER_COPY")) { copy++; if(qid!=null) copyQuestions.add(qid); }
+            if(type.equals("AI_ANSWER_COPY")) copy++;
             if(warningNames.contains(type)) warnings++;
         }
-        var paragraphs=new ArrayList<Paragraph>();
+        int minSpan=config.getMinSpanLength();double gramThreshold=config.getAiReferencedThreshold();
+        var references=new ArrayList<Map.Entry<JsonNode,SentenceSimilarity.Reference>>();
+        for(var t:completed) references.add(Map.entry(t,new SentenceSimilarity.Reference(t.path("answerText").asText(""),minSpan)));
+        var paragraphs=new ArrayList<Paragraph>();var sentences=new ArrayList<Sentence>();var segments=new ArrayList<Segment>();
+        long totalChars=0,aiChars=0;
         for(var entry:source.path("answers")) {
-            var q=entry.path("question");String qid=q.path("id").asText();int pos=q.path("position").asInt();
+            var q=entry.path("question");String qid=q.path("id").asText();int pos=q.path("position").asInt();int version=entry.path("answer").path("version").asInt();
+            var exclusion=new SentenceSimilarity.Exclusion(excludedText(source,q));
             var texts=paragraphs(entry.path("answer").path("content").asText(""));
+            int offset=0;
             for(int i=0;i<texts.size();i++) {
-                String text=texts.get(i);double best=0;Long bestId=null;
-                for(var t:completed) {
-                    double sim=containment(text,t.path("answerText").asText());
-                    if(sim>best||(sim==best&&bestId!=null&&qid.equals(t.path("questionId").asText()))) { best=sim;bestId=t.path("id").asLong(); }
+                String text=texts.get(i);String paragraphId="q"+pos+"-p"+(i+1);
+                var ranges=SentenceSimilarity.sentences(text);
+                double paragraphBest=0;Long paragraphConversation=null;boolean paragraphAi=false;int paragraphRank=-1;
+                for(int k=0;k<ranges.size();k++) {
+                    var range=ranges.get(k);String sentence=text.substring(range.start(),range.end());
+                    double best=0;int longest=0;Long conversation=null;double rankOverlap=-1;int rankSpan=-1;boolean rankSame=false;
+                    for(var ref:references) {
+                        var match=SentenceSimilarity.compare(sentence,ref.getValue(),exclusion);
+                        best=Math.max(best,match.overlap());longest=Math.max(longest,match.longestSpan());
+                        // 근거 응답: 긴 일치 구간 → 포함률 → 같은 문항 순으로 고릅니다.
+                        int spanKey=match.longestSpan()>=minSpan?match.longestSpan():0;boolean same=qid.equals(ref.getKey().path("questionId").asText());
+                        if(match.overlap()==0&&match.longestSpan()==0) continue;
+                        if(spanKey>rankSpan||spanKey==rankSpan&&(match.overlap()>rankOverlap||match.overlap()==rankOverlap&&same&&!rankSame)) {
+                            rankSpan=spanKey;rankOverlap=match.overlap();rankSame=same;conversation=ref.getKey().path("id").asLong();
+                        }
+                    }
+                    String reason=longest>=minSpan?REASON_SPAN:best>=gramThreshold?REASON_GRAM:null;
+                    // 2단계: 글자 비교로 DIRECT가 된 문장만 저장된 LLM 판정을 적용합니다.
+                    var verdict=semantic.verdicts().get(sentenceKey(qid,sentence));
+                    if(reason!=null) verdict=null;
+                    if(verdict!=null&&verdict.ai()) { reason=REASON_SEMANTIC;conversation=verdict.conversationId(); }
+                    String teacherLabel=teacherLabels.get(sentenceKey(qid,sentence));
+                    boolean needsReview=verdict!=null&&verdict.needsReview();
+                    if(teacherLabel!=null) {
+                        needsReview=false;
+                        if(LABEL_DIRECT.equals(teacherLabel)) reason=null;
+                        else if(reason==null) { reason=REASON_TEACHER;if(conversation==null&&verdict!=null) conversation=verdict.conversationId(); }
+                    }
+                    String src=reason==null?SOURCE_DIRECT:SOURCE_AI;
+                    // 문장 사이 공백까지 포함해 답안 텍스트를 빈틈없이 덮는 구간(segments)으로 비중을 계산합니다.
+                    int segStart=k==0?0:range.start(),segEnd=k+1<ranges.size()?ranges.get(k+1).start():text.length();
+                    int length=segEnd-segStart;totalChars+=length;if(reason!=null) aiChars+=length;
+                    double similarity=round(best,3);
+                    sentences.add(new Sentence(paragraphId+"-s"+(k+1),qid,paragraphId,sentence,src,reason,longest,similarity,
+                            reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true,
+                            needsReview,verdict,teacherLabel));
+                    segments.add(new Segment(qid,offset+segStart,offset+segEnd,reason==null?"STUDENT":SOURCE_AI,similarity,similarity,true,version));
+                    paragraphBest=Math.max(paragraphBest,best);
+                    if(reason!=null) {
+                        paragraphAi=true;int rank=reason.equals(REASON_SPAN)?3:reason.equals(REASON_GRAM)?2:1;
+                        if(rank>paragraphRank) { paragraphRank=rank;paragraphConversation=conversation; }
+                    }
                 }
-                double score=best;
-                if(best>0&&copyQuestions.contains(qid)) score=Math.min(1,best+config.getCopyEventBonus());
-                String src=score>=config.getAiUsedThreshold()?"AI_USED":score>=config.getAiReferencedThreshold()?"AI_REFERENCED":"DIRECT";
-                paragraphs.add(new Paragraph("q"+pos+"-p"+(i+1),qid,pos,text,src,round(best,3),src.equals("DIRECT")?1.0:round(1-best,3),
-                        src.equals("DIRECT")?null:bestId,true,declared.getOrDefault(qid,null)));
+                String src=paragraphAi?SOURCE_AI:SOURCE_DIRECT;
+                paragraphs.add(new Paragraph(paragraphId,qid,pos,text,src,paragraphBest,paragraphAi?round(1-paragraphBest,3):1.0,
+                        paragraphConversation,true,declared.getOrDefault(qid,null)));
+                offset+=text.length()+1;
             }
         }
-        long totalChars=paragraphs.stream().mapToLong(p->p.text().length()).sum();
-        double directShare=0,refShare=0,usedShare=0;
-        if(totalChars>0) for(var p:paragraphs) {
-            double share=(double)p.text().length()/totalChars;
-            switch(p.source()) {
-                case "AI_USED" -> usedShare+=share;
-                case "AI_REFERENCED" -> refShare+=share;
-                default -> directShare+=share;
-            }
-        }
-        var contribution=percentages(directShare,refShare,usedShare,totalChars==0);
+        double aiShare=totalChars==0?0:(double)aiChars/totalChars;
+        var contribution=percentages(aiShare,totalChars==0);
 
         boolean aiUsed=!turns.isEmpty()||copy>0||paragraphs.stream().anyMatch(p->!p.source().equals("DIRECT"));
         var signals=new Signals(totalQuestions,completed.size(),paste,copy,warnings,!disclosure.tools().isBlank(),
@@ -156,13 +237,13 @@ public class AssessmentAnalyzer {
         // 2. 허용 범위 검사
         var violations=new ArrayList<String>();var checks=new ArrayList<String>();
         int drafting=counts.getOrDefault(QuestionType.ANSWER_DRAFTING,0);
-        long usedParagraphs=paragraphs.stream().filter(p->p.source().equals("AI_USED")).count();
+        long aiSentences=sentences.stream().filter(x->x.reason()!=null).count();
         double maxUsed=config.getMaxAiUsedShare().getOrDefault(policy.level(),1.0);
         if(policy.level()==1&&!turns.isEmpty()) violations.add("AI 금지 평가인데 AI 대화가 "+turns.size()+"건 있습니다");
         if(policy.level()==1&&longPaste>0) checks.add(config.getLongPasteLength()+"자 이상 붙여넣기 "+longPaste+"건 (외부 출처 확인 필요)");
         if(policy.level()==1&&copy>0) checks.add("AI 답변 복사 기록 "+copy+"건");
-        if(usedShare>maxUsed+1e-9) {
-            String reason="허용 단계(Level "+policy.level()+") 대비 AI 문장을 그대로 사용한 비율이 높습니다 ("+usedParagraphs+"문단, "+Math.round(usedShare*100)+"%)";
+        if(aiShare>maxUsed+1e-9) {
+            String reason="허용 단계(Level "+policy.level()+") 대비 AI 답변을 사용한 것으로 추정되는 비율이 높습니다 ("+aiSentences+"문장, "+contribution.aiReferenced()+"%)";
             checks.add(reason+" (유사도 추정만으로 위반을 확정하지 않음)");
         }
         if(drafting>0&&policy.level()<=3) checks.add("답안 대리 작성 요청 "+drafting+"건");
@@ -171,6 +252,7 @@ public class AssessmentAnalyzer {
 
         // 5~7. 지표·수준·근거
         var indicators=new ArrayList<IndicatorResult>();
+        var explanations=new EnumMap<Indicator,List<Reason>>(Indicator.class);
         // ① 목적 적절성
         if(totalQuestions==0) indicators.add(unavailable(Indicator.PURPOSE,"AI 질문 기록이 없어 목적 적절성을 판단할 근거가 없습니다 (교사 확인 필요).",List.of()));
         else {
@@ -179,6 +261,11 @@ public class AssessmentAnalyzer {
                 if(config.getAppropriateTypes().contains(c.type().name())) appropriate++;
                 if(c.type()==QuestionType.ANSWER_DRAFTING) ev.add(new Evidence(c.conversationId(),null,null,"답안 대리 작성 요청"));
             }
+            var purposeReasons=new ArrayList<Reason>();
+            if(appropriate>0)purposeReasons.add(new Reason("CREDIT","AI 질문 "+totalQuestions+"건 중 "+appropriate+"건이 학습·탐색 목적 분류에 포함됐습니다.",null));
+            if(totalQuestions>appropriate)purposeReasons.add(new Reason("DEDUCTION","학습·탐색 목적 분류 밖의 질문은 "+(totalQuestions-appropriate)+"건입니다.",null));
+            if(drafting>0)purposeReasons.add(new Reason("DEDUCTION","답안 작성 요청 "+drafting+"건이 목적 적절성 산식에 반영됐습니다.",null));
+            explanations.put(Indicator.PURPOSE,purposeReasons);
             double s=clamp((double)appropriate/totalQuestions-config.getDraftingPenalty()*drafting/totalQuestions);
             indicators.add(result(Indicator.PURPOSE,s,"질문 "+totalQuestions+"개 중 "+appropriate+"개가 개념 이해·자료 탐색·아이디어 구체화 목적"
                     +(drafting>0?", 답안 대리 작성 요청 "+drafting+"건 감점":""),ev.isEmpty()?classified.stream().limit(5).map(c->new Evidence(c.conversationId(),null,null,c.label())).toList():ev));
@@ -202,12 +289,19 @@ public class AssessmentAnalyzer {
                 String qid=t.path("questionId").asText(),text=t.path("questionText").asText("");
                 boolean isSpecific=text.strip().length()>=config.getSpecificQuestionMinLength()||FOLLOW_UP_REFERENCE.matcher(text).find();
                 if(seen.add(qid)) continue;
-                followUps++; if(isSpecific&&classify(text)!=QuestionType.ANSWER_DRAFTING) specific++;
+                followUps++; if(isSpecific&&classify(t)!=QuestionType.ANSWER_DRAFTING) specific++;
             }
-            if(followUps==0) for(var t:turns) { followUps++; String text=t.path("questionText").asText(""); if(text.strip().length()>=config.getSpecificQuestionMinLength()&&classify(text)!=QuestionType.ANSWER_DRAFTING) specific++; }
+            if(followUps==0) for(var t:turns) { followUps++; String text=t.path("questionText").asText(""); if(text.strip().length()>=config.getSpecificQuestionMinLength()&&classify(t)!=QuestionType.ANSWER_DRAFTING) specific++; }
             double b=followUps==0?0:(double)specific/followUps;
             // (c) 선택 이유 작성 여부
             double c=disclosure.reason().isBlank()?0:1;
+            var selfReasons=new ArrayList<Reason>();long prior=askedQuestions.stream().filter(savedBefore::contains).count();
+            if(prior>0)selfReasons.add(new Reason("CREDIT","AI 질문 전 답안 저장 "+prior+"/"+askedQuestions.size()+"문항",null));
+            if(prior<askedQuestions.size())selfReasons.add(new Reason("DEDUCTION","AI 질문 전 답안 저장 미관측 "+(askedQuestions.size()-prior)+"/"+askedQuestions.size()+"문항",null));
+            if(specific>0)selfReasons.add(new Reason("CREDIT","구체화 규칙 충족 "+specific+"/"+followUps+"건",null));
+            if(specific<followUps)selfReasons.add(new Reason("DEDUCTION","구체화 규칙 미충족 "+(followUps-specific)+"/"+followUps+"건",null));
+            selfReasons.add(new Reason(c>0?"CREDIT":"DEDUCTION","AI 선택 이유 "+(c>0?"작성":"미작성"),null));
+            explanations.put(Indicator.SELF_DIRECTION,selfReasons);
             double s=(a+b+c)/3;
             indicators.add(result(Indicator.SELF_DIRECTION,s,String.format(Locale.ROOT,
                     "첫 AI 질문 전 자기 답안 작성 %d/%d문항, 구체적인 추가 질문 %d/%d건, AI 선택 이유 %s",
@@ -221,12 +315,17 @@ public class AssessmentAnalyzer {
                 var t=turns.get(i);if(!"COMPLETED".equals(t.path("state").asText())||t.path("answerText").isNull()) continue;
                 long id=t.path("id").asLong();String qid=t.path("questionId").asText();boolean action=false;String note=null;
                 for(int j=i+1;j<turns.size();j++) if(turns.get(j).path("questionId").asText().equals(qid)) {
-                    if(classify(turns.get(j).path("questionText").asText())==QuestionType.VERIFICATION) { action=true;note="후속 검증·반박 질문"; }
+                    if(classify(turns.get(j))==QuestionType.VERIFICATION) { action=true;note="후속 검증·반박 질문"; }
                     break;
                 }
-                if(!action) for(var p:paragraphs) if(p.source().equals("AI_REFERENCED")&&Objects.equals(p.conversationId(),id)) { action=true;note="AI 내용을 수정해 반영 ("+p.id()+")";break; }
+                // 긴 일치 구간 없이 내용만 겹치는 문장(GRAM_OVERLAP)은 AI 답변을 고쳐 쓴 신호로 봅니다.
+                if(!action) for(var x:sentences) if(REASON_GRAM.equals(x.reason())&&Objects.equals(x.conversationId(),id)) { action=true;note="AI 내용을 수정해 반영 ("+x.id()+")";break; }
                 if(action) { acted++; ev.add(new Evidence(id,null,null,note)); }
             }
+            var reviewReasons=new ArrayList<Reason>();
+            if(acted>0)reviewReasons.add(new Reason("CREDIT","완료 응답 "+completed.size()+"건 중 "+acted+"건에서 후속 검증·부분 유사도 수정 신호가 관측됐습니다.",null));
+            if(acted<completed.size())reviewReasons.add(new Reason("DEDUCTION","완료 응답 "+(completed.size()-acted)+"건에서는 검토 신호를 확인하지 못했습니다.",null));
+            explanations.put(Indicator.CRITICAL_REVIEW,reviewReasons);
             double s=(double)acted/completed.size();
             indicators.add(result(Indicator.CRITICAL_REVIEW,s,"AI 응답 "+completed.size()+"건 중 "+acted+"건에서 확인·반박·수정 행동이 있었습니다",ev));
         }
@@ -236,6 +335,11 @@ public class AssessmentAnalyzer {
         if(!aiUsed) indicators.add(unavailable(Indicator.TRANSPARENCY,"AI 사용 기록이 없어 기록할 대상이 없습니다 (교사 확인 필요).",List.of()));
         else {
             int recorded=(signals.disclosedTools()?1:0)+(totalQuestions>0?1:0)+(signals.disclosedUsedParts()?1:0);
+            var transparencyReasons=new ArrayList<Reason>();
+            transparencyReasons.add(new Reason(signals.disclosedTools()?"CREDIT":"DEDUCTION","AI 도구명 "+(signals.disclosedTools()?"작성":"미작성"),null));
+            transparencyReasons.add(new Reason(totalQuestions>0?"CREDIT":"DEDUCTION","서버 질문 기록 "+totalQuestions+"건",null));
+            transparencyReasons.add(new Reason(signals.disclosedUsedParts()?"CREDIT":"DEDUCTION","답안 활용 부분 "+(signals.disclosedUsedParts()?"작성":"미작성"),null));
+            explanations.put(Indicator.TRANSPARENCY,transparencyReasons);
             indicators.add(result(Indicator.TRANSPARENCY,recorded/3.0,"필수 기록 3개 중 "+recorded+"개 (사용 AI 도구 "+(signals.disclosedTools()?"O":"X")
                     +", 질문 기록 "+(totalQuestions>0?"O":"X")+", 답안 활용 부분 "+(signals.disclosedUsedParts()?"O":"X")+")",List.of()));
         }
@@ -248,16 +352,25 @@ public class AssessmentAnalyzer {
         }
         usage.sort(Comparator.comparingInt(Usage::count).reversed().thenComparing(u->u.type().ordinal()));
 
-        String summary=summary(totalQuestions,counts,contribution,compliance,paragraphs.isEmpty());
+        var structured=indicators.stream().map(i->new IndicatorResult(i.indicator(),i.value(),i.level(),i.reason(),i.level()==null?i.evidence():AssessmentTrace.getEvidence(i.indicator(),turns,sentences,config.getAppropriateTypes(),config.getSpecificQuestionMinLength()),List.copyOf(explanations.getOrDefault(i.indicator(),List.of())))).toList();
+        var trace=AssessmentTrace.buildTextTrace(source,paragraphs);
+        contribution=new Contribution(contribution.direct(),contribution.aiReferenced(),contribution.aiUsed(),contribution.basis(),List.copyOf(segments));
+        String summary=summary(totalQuestions,counts,contribution,compliance,paragraphs.isEmpty())+" 판단 요인: "+structured.stream().flatMap(i->i.reasons().stream()).map(r->(r.type().equals("CREDIT")?"가점 요인: ":"감점 요인: ")+r.text()).collect(java.util.stream.Collectors.joining(" · "));
         return new Analysis(participantId,"DONE",MODEL,policy.name(),policy.level(),compliance,contribution,usage,classified,paragraphs,
-                indicators,signals,summary,now,List.of(
+                structured,signals,summary,now,List.of(
                         "규칙 기반 추천 점수이며 근거가 없으면 null입니다. 최종 점수는 교사가 확정합니다.",
                         "텍스트 유사도 비율은 실제 학생 기여도가 아니며 이 영역의 추천 점수는 제공하지 않습니다.",
                         "질문 분류는 키워드 규칙 기반이며 LLM 분류는 사용하지 않습니다. 기타(RULE_UNMATCHED)는 교사 확인이 필요합니다.",
-                        "문단 출처는 AI 응답과의 문장 유사도·복사 기록으로 추정한 값입니다(estimated=true). 외부 AI·저장되지 않은 입력은 관측할 수 없습니다.",
-                        "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다."));
+                        "답안 출처는 문장마다 내장 AI 응답과의 긴 일치 구간·3-gram 포함률(문항·안내 문구 제외)로 추정한 값입니다(estimated=true). "+semanticLimitation(semantic.status())+" 외부 AI·저장되지 않은 입력은 관측할 수 없습니다.",
+                        "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다.","구조화 사유는 기존 규칙 산식의 관측 요인이며 개별 점수 증감량을 분리할 수 없어 scoreDelta를 생략합니다."),trace.texts(),AssessmentTrace.getPasteEvents(source),getDefinition(),List.copyOf(sentences),semantic.status());
     }
 
+    public Map<String,Object> getDefinition(){return Map.ofEntries(Map.entry("model",MODEL),Map.entry("basis",CONTRIBUTION_BASIS),
+            Map.entry("sources",List.of(SOURCE_DIRECT,SOURCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC,REASON_TEACHER)),
+            Map.entry("minSpanLength",config.getMinSpanLength()),Map.entry("aiReferencedThreshold",config.getAiReferencedThreshold()),
+            Map.entry("excludedText","평가 안내 + 문항 제목·내용"),Map.entry("indexUnit","UTF16_END_EXCLUSIVE"),
+            Map.entry("textNormalization","answerTexts.text (문단 사이 LF, HTML 제거·표 셀은 | 구분)"),Map.entry("usageMediumPercentage",20),
+            Map.entry("usageHighPercentage",50),Map.entry("studentContribution","실제 작성 비율은 제공하지 않음"));}
     private String summary(int questions,Map<QuestionType,Integer> counts,Contribution c,Compliance compliance,boolean empty) {
         var sb=new StringBuilder();
         if(questions==0) sb.append("AI 질문 기록이 없습니다. ");
@@ -266,8 +379,8 @@ public class AssessmentAnalyzer {
             sb.append("AI 질문 ").append(questions).append("건 중 ").append(good).append("건이 개념 이해·자료 탐색·아이디어 구체화 목적이었습니다. ");
         }
         if(empty) sb.append("최종 답안이 비어 있습니다. ");
-        else sb.append("최종 답안의 낮은 유사도 비중은 ").append(c.direct()).append("%, 부분 유사도 ").append(c.aiReferenced())
-                .append("%, 높은 유사도 ").append(c.aiUsed()).append("%입니다. 실제 저자 기여도 비율은 아닙니다. ");
+        else sb.append("최종 답안에서 직접 작성으로 추정되는 비중은 ").append(c.direct()).append("%, AI 답변 사용으로 추정되는 비중은 ").append(c.aiReferenced())
+                .append("%입니다. 실제 저자 기여도 비율은 아닙니다. ");
         sb.append("허용 범위 점검: ").append(switch(compliance.result()) { case OK -> "문제 없음"; case CHECK -> "확인 필요"; case VIOLATION -> "위반 가능성"; });
         if(!compliance.reasons().isEmpty()) sb.append(" (").append(String.join(", ",compliance.reasons())).append(")");
         return sb.append(".").toString();
@@ -279,14 +392,26 @@ public class AssessmentAnalyzer {
         s=clamp(s);
         return new IndicatorResult(indicator,round(s,3),(int)Math.round(4*s),reason,evidence);
     }
-    private static Contribution percentages(double d,double r,double u,boolean empty) {
-        if(empty) return new Contribution(0,0,0,"TEXT_SIMILARITY_ESTIMATE");
-        double[] raw={d*100,r*100,u*100};int[] floor=new int[3];int sum=0;
-        for(int i=0;i<3;i++) { floor[i]=(int)Math.floor(raw[i]); sum+=floor[i]; }
-        Integer[] order={0,1,2};
-        Arrays.sort(order,(x,y)->Double.compare(raw[y]-floor[y],raw[x]-floor[x]));
-        for(int i=0;i<100-sum&&i<3;i++) floor[order[i]]++;
-        return new Contribution(floor[0],floor[1],floor[2],"TEXT_SIMILARITY_ESTIMATE");
+    /** direct + aiReferenced = 100, aiUsed는 호환을 위해 항상 0입니다. */
+    static Contribution percentages(double aiShare,boolean empty) {
+        if(empty) return new Contribution(0,0,0,CONTRIBUTION_BASIS);
+        int ai=(int)Math.round(clamp(aiShare)*100);
+        if(ai==0&&aiShare>0) ai=1; // AI 문장이 있으면 0%로 숨기지 않습니다.
+        if(ai==100&&aiShare<1) ai=99;
+        return new Contribution(100-ai,ai,0,CONTRIBUTION_BASIS);
+    }
+    private static String semanticLimitation(String status) {
+        return switch(status==null?"DISABLED":status) {
+            case "DONE" -> "바꿔 쓴 문장은 Claude Haiku가 '거의 그대로 따라감'(단계 3)으로 판정했거나, Haiku 단계 2 문장을 Gemini가 단계 3으로 다시 판정한 경우만 AI로 셉니다(SEMANTIC). Gemini도 단계 2로 본 문장은 needsReview로 교사 확인이 필요합니다.";
+            case "PARTIAL" -> "Gemini 재판정이 실패해 Haiku 단계 2 문장은 needsReview로만 표시하고 비율에는 넣지 않았습니다.";
+            case "PENDING" -> "바꿔 쓴 문장에 대한 LLM 판정이 진행 중입니다.";
+            case "UNAVAILABLE" -> "LLM 판정을 사용할 수 없어 글자 비교 결과만 반영했습니다. 단어를 모두 바꿔 쓴 문장은 잡지 못합니다.";
+            default -> "단어를 모두 바꿔 쓴 문장은 잡지 못합니다.";
+        };
+    }
+    static String plainText(String html) {
+        if(html==null||html.isBlank()) return "";
+        return html.matches("(?s).*<\\s*(?:/?[A-Za-z]|!).*")?Jsoup.parseBodyFragment(html).text():html;
     }
     private static List<String> concat(List<String> a,List<String> b) { var out=new ArrayList<>(a);out.addAll(b);return List.copyOf(out); }
     static double clamp(double v) { return Double.isNaN(v)?0:Math.max(0,Math.min(1,v)); }

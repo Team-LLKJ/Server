@@ -12,21 +12,18 @@ import java.util.*;
 @ConfigurationProperties(prefix="lit.grading")
 @org.springframework.validation.annotation.Validated
 public class GradingConfig {
-    /** 문단 유사도(AI 응답 대비 3-gram 포함률)가 이 값 이상이면 AI_USED. */
-    @jakarta.validation.constraints.DecimalMin("0.0") @jakarta.validation.constraints.DecimalMax("1.0")
-    private double aiUsedThreshold=0.8;
-    /** 이 값 이상이면 AI_REFERENCED, 미만이면 DIRECT. */
+    /** 답안 출처 판정 V2: 문항 문구를 뺀 문장 3-gram 포함률이 이 값 이상이면 AI(AI_REFERENCED), 미만이면 DIRECT. */
     @jakarta.validation.constraints.DecimalMin("0.0") @jakarta.validation.constraints.DecimalMax("1.0")
     private double aiReferencedThreshold=0.4;
-    /** 같은 문항에 AI 답변 복사(AI_ANSWER_COPY) 기록이 있을 때 유사도에 더하는 값. */
-    @jakarta.validation.constraints.DecimalMin("0.0") @jakarta.validation.constraints.DecimalMax("1.0")
-    private double copyEventBonus=0.15;
+    /** 답안 출처 판정 V2: 정규화(공백·문장부호 제거) 후 이 글자 수 이상 AI 답변과 그대로 이어지면 다른 점수와 상관없이 AI. */
+    @jakarta.validation.constraints.Min(5) @jakarta.validation.constraints.Max(200)
+    private int minSpanLength=20;
     /** ① 목적 적절성: 답안 대리 작성 요청 비율에 곱하는 감점 가중치. */
     @jakarta.validation.constraints.DecimalMin("0.0") @jakarta.validation.constraints.DecimalMax("10.0")
     private double draftingPenalty=1.0;
     /** ① 목적 적절성에서 적절한 유형으로 보는 질문 유형. */
     @jakarta.validation.constraints.NotEmpty
-    private List<@jakarta.validation.constraints.Pattern(regexp="CONCEPT_UNDERSTANDING|RESEARCH|IDEA_EXPLORATION|ANSWER_DRAFTING|VERIFICATION|OTHER") String> appropriateTypes=new ArrayList<>(List.of("CONCEPT_UNDERSTANDING","RESEARCH","IDEA_EXPLORATION"));
+    private List<@jakarta.validation.constraints.Pattern(regexp="CONCEPT_UNDERSTANDING|RESEARCH|IDEA_EXPLORATION|ANSWER_DRAFTING|VERIFICATION|EDIT|OTHER") String> appropriateTypes=new ArrayList<>(List.of("CONCEPT_UNDERSTANDING","RESEARCH","IDEA_EXPLORATION"));
     /** ② 자기 주도: 추가 질문을 '구체적'으로 보는 최소 글자 수. */
     @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(4000)
     private int specificQuestionMinLength=20;
@@ -36,21 +33,19 @@ public class GradingConfig {
     /** AI 금지(Level 1) 평가에서 확인 대상으로 표시할 붙여넣기 길이(글자). */
     @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(10000000)
     private int longPasteLength=200;
-    /** AI 허용 단계별 AI_USED(그대로 사용) 문단 비율 상한. 초과 시 Level 1~2는 VIOLATION, 3~5는 CHECK. */
+    /** AI 허용 단계별 'AI 답변 사용'(AI_REFERENCED) 문장 비중 상한. 초과하면 허용 범위 점검이 CHECK(확인 필요)가 됩니다. */
     private Map<Integer,Double> maxAiUsedShare=new HashMap<>(Map.of(1,0.0,2,0.0,3,0.3,4,0.7,5,1.0));
 
-    @jakarta.validation.constraints.AssertTrue(message="유사도 경계는 0<=referenced<used<=1이어야 합니다.")
-    public boolean isThresholdOrderValid() {return aiReferencedThreshold>=0&&aiReferencedThreshold<aiUsedThreshold&&aiUsedThreshold<=1;}
+    @jakarta.validation.constraints.AssertTrue(message="유사도 경계는 0<referenced<=1인 유한한 값이어야 합니다.")
+    public boolean isThresholdOrderValid() {return Double.isFinite(aiReferencedThreshold)&&aiReferencedThreshold>0&&aiReferencedThreshold<=1;}
     @jakarta.validation.constraints.AssertTrue(message="사용 비중 경계는 0<=medium<high<=1이어야 합니다.")
     public boolean isUsageOrderValid() {return usageMediumShare>=0&&usageMediumShare<usageHighShare&&usageHighShare<=1;}
     @jakarta.validation.constraints.AssertTrue(message="AI 단계별 상한은1~5단계의 유한한0~1 값이어야 합니다.")
     public boolean isPolicySharesValid() {return maxAiUsedShare!=null&&maxAiUsedShare.keySet().equals(Set.of(1,2,3,4,5))&&maxAiUsedShare.values().stream().allMatch(v->v!=null&&Double.isFinite(v)&&v>=0&&v<=1);}
-    public double getAiUsedThreshold() { return aiUsedThreshold; }
-    public void setAiUsedThreshold(double v) { aiUsedThreshold=v; }
     public double getAiReferencedThreshold() { return aiReferencedThreshold; }
     public void setAiReferencedThreshold(double v) { aiReferencedThreshold=v; }
-    public double getCopyEventBonus() { return copyEventBonus; }
-    public void setCopyEventBonus(double v) { copyEventBonus=v; }
+    public int getMinSpanLength() { return minSpanLength; }
+    public void setMinSpanLength(int v) { minSpanLength=v; }
     public double getDraftingPenalty() { return draftingPenalty; }
     public void setDraftingPenalty(double v) { draftingPenalty=v; }
     public List<String> getAppropriateTypes() { return appropriateTypes; }

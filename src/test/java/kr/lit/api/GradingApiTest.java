@@ -35,7 +35,7 @@ class GradingApiTest extends AuthTestSupport {
         assertThat(all.path("items")).isEqualTo(all.path("students"));assertThat(all.path("students").size()).isEqualTo(1);
         var filtered=ok(request(get(path).param("query","하"),teacher));assertThat(filtered.path("totalElements").asInt()).isEqualTo(2);
         as(teacher);var warning=reports.students(e.id(),0,100).students().stream().filter(s->s.participantId().equals(third.participantId())).findFirst().orElseThrow();
-        assertThat(warning.status()).isEqualTo("WARNING");assertThat(warning.submissionStatus()).isEqualTo("SUBMITTED");
+        assertThat(warning.status()).isEqualTo("SUBMITTED");assertThat(warning.submissionStatus()).isEqualTo("SUBMITTED");
         mvc.perform(request(get(path).param("query","%"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("totalElements").value(0));
         mvc.perform(request(get(path).param("size","101"),teacher)).andExpect(status().isBadRequest());
     }
@@ -64,9 +64,9 @@ class GradingApiTest extends AuthTestSupport {
         var f=fixture(false);Instant at=Instant.now();
         for(var type:ClientEventType.values())work.recordClientEvent(f.id(),f.token(),new ClientEvent(type,at,f.q()));
         var turn=work.reserve(f.id(),f.token(),f.q(),new Ask("usage-chat","아이디어를 검증해줘"),"stub","local-stub");work.finish(turn,"응답",null);
-        var activity=grading.activity(f.id(),f.pid());assertThat(activity.studentContribution()).isNull();assertThat(activity.warningsTotal()).isEqualTo(5);
-        assertThat(activity.warnings().stream().map(ActivityWarning::type)).containsExactly("WINDOW_LEAVE","SHORTCUT_CAPTURE","WINDOW_BLUR","CAPTURE_SHORTCUT","COPY_ATTEMPT");
-        assertThat(activity.warnings().get(0).occurredAt()).isEqualTo(at);assertThat(activity.summary()).contains("AI 질문 1건","신고 5건");
+        var activity=grading.activity(f.id(),f.pid());assertThat(activity.studentContribution()).isNull();assertThat(activity.warningsTotal()).isEqualTo(10);
+        assertThat(activity.warnings().stream().map(ActivityWarning::type)).containsExactly("WINDOW_LEAVE","SHORTCUT_CAPTURE","WINDOW_BLUR","CAPTURE_SHORTCUT","COPY_ATTEMPT","FULLSCREEN_EXIT","FULLSCREEN_LEAVE","DEVTOOLS_OPEN","FULLSCREEN","DEVTOOLS");
+        assertThat(activity.warnings().get(0).occurredAt()).isEqualTo(at);assertThat(activity.summary()).contains("AI 질문 1건","신고 10건");
         assertThat(activity.usage().stream().mapToDouble(Usage::percentage).sum()).isEqualTo(100.0);
         mvc.perform(request(get("/api/teacher/evaluations/"+f.id()+"/participants/"+f.pid()+"/learning-events"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("$[1].type").value("WINDOW_LEAVE"));
     }
@@ -126,7 +126,7 @@ class GradingApiTest extends AuthTestSupport {
         var f=fixture(true);grading.saveCriterion(f.id(),f.pid(),"PURPOSE_CLARITY",new ScoreInput(18,0));
         var result=mvc.perform(request(get(root(f)+"/report.pdf"),teacher)).andExpect(status().isOk()).andExpect(content().contentType("application/pdf")).andReturn().getResponse().getContentAsByteArray();
         try(var doc=org.apache.pdfbox.Loader.loadPDF(result)) {
-            String text=new org.apache.pdfbox.text.PDFTextStripper().getText(doc);assertThat(text).contains("18 / 20","미입력","부분합","표 답안","[빈 셀]").doesNotContain("<table>");
+            String text=new org.apache.pdfbox.text.PDFTextStripper().getText(doc);assertThat(text).contains("18 / 20","미채점","표 답안","[빈 셀]").doesNotContain("<table>");
             javax.imageio.ImageIO.write(new org.apache.pdfbox.rendering.PDFRenderer(doc).renderImageWithDPI(0,100),"png",java.nio.file.Path.of("/tmp/lit-grading-review.png").toFile());
         }
         mvc.perform(request(get(root(f)+"/report/pdf"),teacher)).andExpect(status().isOk());

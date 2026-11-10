@@ -1,4 +1,7 @@
 spring:
+  web:
+    resources:
+      add-mappings: false
   datasource:
     url: ${DATABASE_URL:jdbc:h2:file:./data/lit}
     username: ${DATABASE_USER:sa}
@@ -42,10 +45,25 @@ lit:
     # 평가 종료(교사 종료·시간 만료) 후 자동 제출된 학생의 마지막 답안 저장을 받아 주는 유예 시간(초). 0이면 유예 없음.
     end-grace-seconds: ${LIT_EVALUATION_END_GRACE_SECONDS:0}
   grading:
+    process-interval-ms: ${LIT_PROCESS_GRADING_INTERVAL_MS:3000}
     # AI 활용 채점 알고리즘 가중치·경계값 (docs/AI_GRADING.md 참고)
-    ai-used-threshold: ${LIT_GRADING_AI_USED_THRESHOLD:0.8}
+    # 답안 출처 판정 V2: 문장 3-gram 포함률 기준, 정규화 후 그대로 이어지는 최소 일치 글자 수
     ai-referenced-threshold: ${LIT_GRADING_AI_REFERENCED_THRESHOLD:0.4}
-    copy-event-bonus: ${LIT_GRADING_COPY_EVENT_BONUS:0.15}
+    min-span-length: ${LIT_GRADING_MIN_SPAN_LENGTH:20}
+    # 채점용 LLM 판정(답안 출처 2단계·질문 용도 분류). Claude Haiku 먼저, 애매한 것만 Gemini. 학생 대화용 lit.ai.*와 별도이며 기본은 꺼짐.
+    judge:
+      enabled: ${LIT_GRADING_JUDGE_ENABLED:false}
+      timeout-seconds: ${LIT_GRADING_JUDGE_TIMEOUT_SECONDS:60}
+      min-sentence-length: 15
+      max-candidates: 8
+      anthropic:
+        api-key: ${LIT_GRADING_JUDGE_ANTHROPIC_API_KEY:${ANTHROPIC_API_KEY:}}
+        model: ${LIT_GRADING_JUDGE_ANTHROPIC_MODEL:claude-haiku-5-5}
+        endpoint: ${LIT_GRADING_JUDGE_ANTHROPIC_ENDPOINT:https://api.anthropic.com/v1/messages}
+      gemini:
+        api-key: ${LIT_GRADING_JUDGE_GEMINI_API_KEY:${GEMINI_API_KEY:}}
+        model: ${LIT_GRADING_JUDGE_GEMINI_MODEL:${GEMINI_MODEL:}}
+        endpoint: ${LIT_GRADING_JUDGE_GEMINI_ENDPOINT:https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent}
     drafting-penalty: ${LIT_GRADING_DRAFTING_PENALTY:1.0}
     specific-question-min-length: ${LIT_GRADING_SPECIFIC_QUESTION_MIN_LENGTH:20}
     usage-high-share: 0.5
@@ -60,6 +78,7 @@ lit:
       5: 1.0
   auth:
     mail-from: ${LIT_MAIL_FROM:}
+    password-reset-url: ${LIT_PASSWORD_RESET_URL:}
 
 management:
   endpoints:
@@ -74,3 +93,14 @@ management:
       group:
         readiness:
           include: readinessState,db
+
+springdoc:
+  api-docs:
+    path: /api/openapi
+  swagger-ui:
+    path: /api/docs
+    disable-swagger-default-url: true
+    persist-authorization: false
+    operations-sorter: alpha
+    tags-sorter: alpha
+  paths-to-match: /api/**

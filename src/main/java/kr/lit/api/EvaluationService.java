@@ -37,12 +37,13 @@ public class EvaluationService {
  }
  private void available(Evaluation e){
   if(e.state().equals("ENDED"))throw fail(HttpStatus.CONFLICT,"EVALUATION_ENDED","종료된 평가입니다.");
-  if(e.pin()==null)throw fail(HttpStatus.CONFLICT,"CLASS_NOT_STARTED","반 시작 후 PIN으로 참여할 수 있습니다.");
+  if(e.pin()==null)throw fail(HttpStatus.CONFLICT,"CLASS_NOT_STARTED","대기실을 연 후 PIN으로 참여할 수 있습니다.");
   if(!e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.GONE,"PIN_EXPIRED","만료된 평가입니다.");
  }
  public Created create(String title,int minutes){return create(title,minutes,"");}
  public Created create(String title,int minutes,String evaluationContent){return create(title,minutes,evaluationContent,null);}
- public Created create(String title,int minutes,String evaluationContent,Integer durationMinutes){
+ public Created create(String title,int minutes,String evaluationContent,Integer durationMinutes){return create(title,minutes,evaluationContent,durationMinutes,null,null);}
+ public Created create(String title,int minutes,String evaluationContent,Integer durationMinutes,List<?> criteria,com.fasterxml.jackson.databind.JsonNode antiCheat){
   String teacherId=kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER).userId();
   // The database unique constraint also protects concurrent PIN creation.
   String pin=null;
@@ -52,6 +53,8 @@ public class EvaluationService {
   String id=UUID.randomUUID().toString(); Instant expiry=Instant.now().plusSeconds(minutes*60L);
   try {db.update("INSERT INTO evaluations(id,title,pin,state,expires_at,teacher_id,evaluation_content,duration_minutes) VALUES (?,?,?,'WAITING',?,?,?,?)",id,title.strip(),pin,OffsetDateTime.ofInstant(expiry,ZoneOffset.UTC),teacherId,evaluationContent==null?"":Guidelines.clean(evaluationContent),durationMinutes==null?minutes:durationMinutes);}
   catch(org.springframework.dao.DuplicateKeyException e){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시도해주세요.");}
+  db.update("INSERT INTO evaluation_settings(evaluation_id,ai_policy) VALUES (?,'HINT_ONLY')",id);
+  work.saveCreationSettings(id,criteria,antiCheat);
   return new Created(id,title.strip(),pin,"WAITING",expiry,baseUrl+"?pin="+pin,"/api/teacher/evaluations/"+id+"/qr");
  }
  @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
@@ -77,10 +80,8 @@ public class EvaluationService {
  public Joined join(String pin,String nickname,String token){
   var e=byPin(pin);available(e);
   if(token!=null&&!token.isBlank()) {
-   var ids=db.queryForList("SELECT id FROM participants WHERE evaluation_id=? AND ((token_hashed=TRUE AND token=?) OR (token_hashed=FALSE AND token=?))",String.class,e.id(),kr.lit.auth.AuthService.hash(token),token);
-   if(ids.isEmpty()||!token.matches("[a-f0-9]{64}"))throw fail(HttpStatus.UNAUTHORIZED,"INVALID_PARTICIPANT_TOKEN","재접속 토큰이 올바르지 않습니다.");
-   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=?",ids.get(0));
-   var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(e.id(),token);
+   var guest=new kr.lit.auth.ParticipantAccess(db).authenticateReconnect(e.id(),token);
+   db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=? AND expelled_at IS NULL",guest.participantId());
    return new Joined(guest.participantId(),token,personalLobby(e,guest.participantId()));
   }
   if(!e.state().equals("WAITING")&&e.assessmentId()==null)throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작된 평가에는 새로 참여할 수 없습니다.");
@@ -122,19 +123,30 @@ public class EvaluationService {
   db.update("UPDATE evaluations SET ends_at=?,expires_at=?,duration_minutes=duration_minutes+? WHERE id=?",deadline.plusMinutes(additionalMinutes),deadline.plusMinutes(additionalMinutes),additionalMinutes,id);
   return lobby(read(id));
  }
+ void openClassLobby(String id,int minutes) {
+  var e=read(id);
+  if(e.assessmentId()==null||!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"CLASS_LOBBY_LOCKED","시작 전 반만 대기실을 열 수 있습니다.");
+  if(minutes<1||minutes>1440)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","대기실 유효 시간은1~1440분이어야 합니다.");
+  // 같은 대기실 재진입·중복 클릭은 기존 PIN과 유효 시간을 유지합니다.
+  if(e.pin()!=null&&e.expiresAt()!=null&&e.expiresAt().isAfter(Instant.now()))return;
+  String pin=e.pin();
+  for(int i=0;pin==null&&i<100;i++) {
+   String candidate=String.format(Locale.ROOT,"%06d",random.nextInt(1000000));
+   if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE pin=?",Integer.class,candidate)==0)pin=candidate;
+  }
+  if(pin==null)throw fail(HttpStatus.SERVICE_UNAVAILABLE,"PIN_UNAVAILABLE","PIN을 다시 생성해주세요.");
+  var expires=OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(minutes);
+  try {db.update("UPDATE evaluations SET pin=?,expires_at=? WHERE id=?",pin,expires,id);}
+  catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 대기실 열기를 다시 시도해주세요.");}
+ }
  void activateClass(String id,int minutes) {
   var e=read(id);
   if(e.assessmentId()==null||!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작 전 반 회차가 아닙니다.");
-  if(minutes<1||minutes>1440)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","유효 시간은1~1440분이어야 합니다.");
-  String pin=null;
-  for(int i=0;i<100;i++) {
-   String candidate=String.format(Locale.ROOT,"%06d",random.nextInt(1000000));
-   if(db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE pin=?",Integer.class,candidate)==0){pin=candidate;break;}
-  }
-  if(pin==null)throw fail(HttpStatus.SERVICE_UNAVAILABLE,"PIN_UNAVAILABLE","PIN을 다시 생성해주세요.");
+  if(e.pin()==null)throw fail(HttpStatus.CONFLICT,"CLASS_LOBBY_REQUIRED","먼저 대기실을 열어 학생에게 PIN을 안내해주세요.");
+  available(e);
+  if(minutes<1||minutes>1440)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","풀이 시간은1~1440분이어야 합니다.");
   var now=OffsetDateTime.now(ZoneOffset.UTC);var end=now.plusMinutes(minutes);
-  try {db.update("UPDATE evaluations SET pin=?,state='STARTED',started_at=?,ends_at=?,expires_at=?,duration_minutes=? WHERE id=?",pin,now,end,end,minutes,id);}
-  catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"PIN_COLLISION","PIN 생성에 실패했습니다. 다시 시작해주세요.");}
+  db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=?,duration_minutes=? WHERE id=?",now,end,end,minutes,id);
  }
  public Lobby end(String id){var e=read(id);if(e.assessmentId()!=null&&e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"EVALUATION_NOT_STARTED","시작 전인 반은 종료할 수 없습니다.");work.finishEvaluation(id,false);return lobby(read(id));}
  public record Updated(String id,String title,String pin,String state,Instant expiresAt,int durationMinutes){}
@@ -159,7 +171,7 @@ public class EvaluationService {
  void deleteFromAssessment(String id){
   var e=read(id);
   if(e.state().equals("STARTED")&&e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.CONFLICT,"EVALUATION_IN_PROGRESS","진행 중인 평가는 종료한 뒤 삭제해주세요.");
-  for(String table:List.of("notifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
+  for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
     "usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
    db.update("DELETE FROM "+table+" WHERE evaluation_id=?",id);
   db.update("DELETE FROM answers WHERE participant_id IN (SELECT id FROM participants WHERE evaluation_id=?)",id);

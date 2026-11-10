@@ -29,7 +29,7 @@
 ```
 
 - username: 영문·숫자·밑줄 4~30자, 소문자 정규화·중복 불가.
-- password: 공백 불가·10~128자, PBKDF2 해시로 저장.
+- password는 8~20자이며 공백만 입력할 수 없습니다. PBKDF2 해시로 저장합니다.
 - email: 이메일 형식·최대254자·소문자 정규화·중복 불가.
 - name: 공백 불가·최대50자.
 - emailVerificationToken: 인증번호 확인 API로 발급받은 43자리 토큰, 해당 이메일에만 유효·15분·일회용.
@@ -41,12 +41,13 @@
 응답:
 
 ```json
-{"tokenType":"Bearer","accessToken":"43자리 토큰","accessExpiresAt":"2026-10-26T12:15:00Z","refreshToken":"43자리 토큰","refreshExpiresAt":"2026-11-09T12:00:00Z","user":{"id":"uuid","username":"teacher01","email":"teacher@example.com","name":"교사","school":"테스트학교","role":"TEACHER","status":"ACTIVE","grade":null,"classNumber":null,"studentNumber":null,"createdAt":"2026-10-26T12:00:00Z"}}
+{"tokenType":"Bearer","accessToken":"43자리 토큰","accessExpiresAt":"2026-10-26T14:00:00Z","refreshToken":"43자리 토큰","refreshExpiresAt":"2026-11-09T12:00:00Z","user":{"id":"uuid","username":"teacher01","email":"teacher@example.com","name":"교사","school":"테스트학교","role":"TEACHER","status":"ACTIVE","grade":null,"classNumber":null,"studentNumber":null,"createdAt":"2026-10-26T12:00:00Z"}}
 ```
 
 - 교사 보호 API: `Authorization: Bearer {accessToken}`.
 - `/api/teacher/evaluations` 생성·설정·조회·시작·종료·학생 기록 조회는 로그인한 교사 및 평가 소유권을 검사.
-- Access Token 15분, Refresh Token 최초 로그인 기준 최대14일의 opaque 난수 토큰. JWT가 아니며 DB에는 해시만 저장.
+- Access Token 2시간, Refresh Token 최초 로그인 기준 최대14일의 opaque 난수 토큰. JWT가 아니며 DB에는 해시만 저장.
+- 신규 로그인·갱신 시 발급하는 Access Token부터 적용하며, 기존 토큰의 만료 시간은 유지합니다. Refresh Token 만료까지 2시간 미만이면 Access Token도 해당 시각에 만료됩니다.
 - 갱신 Body: `{"refreshToken":"발급받은 토큰"}`. 갱신 시 두 토큰 모두 교체, 이전 토큰 폐기. 이미 사용한 Refresh Token 재사용 시 해당 로그인 세션 계열 전체 폐기.
 - 로그아웃은 현재 세션 계열만 폐기. 로그인 실패5회 시 계정15분 제한.
 - 학생 참가자 토큰으로 수업 생성이나 교사 API 호출 불가.
@@ -93,7 +94,7 @@ X-Participant-Token: {participantToken}
 평가 시작 후 신규 참여는 차단하고 기존 토큰 재접속만 허용합니다.
 토큰을 잃은 경우 닉네임만으로 기존 기록을 복구하지 않습니다. 재접속할 클라이언트가 토큰을 보관해야 합니다.
 
-비밀번호 찾기·재설정은 이번 개발 범위에서 제외했습니다. 신규 회원가입 인증을 위해서는 SMTP 메일 발송 설정이 필요합니다.
+비밀번호 찾기·재설정은 [PASSWORD_RESET.md](PASSWORD_RESET.md)에 정의합니다. `POST /api/auth/password-reset/request`(이메일), `/confirm`(token·newPassword)은 비로그인 공개 API입니다. 성공하면 모든 로그인 세션이 폐기됩니다. 신규 회원가입 인증을 위해서는 SMTP 메일 발송 설정이 필요합니다.
 
 ## 오류
 

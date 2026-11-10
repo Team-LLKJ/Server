@@ -1,3 +1,5 @@
+# For the deployed Web SPA, configure-report-mjs-nginx.py preserves API locations and adds text/javascript for .mjs.
+# SSE responses use X-Accel-Buffering: no and keepalive comments.
 # Replace YOUR_API_DOMAIN. Use Certbot to enable HTTPS after DNS points to EC2.
 server {
     listen 80;

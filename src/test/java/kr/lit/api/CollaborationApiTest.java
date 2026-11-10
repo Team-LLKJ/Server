@@ -31,7 +31,7 @@ class CollaborationApiTest extends AuthTestSupport {
     String base(String id) {return "/api/teacher/assessments/"+id;}
     String eval(String id) {return "/api/teacher/evaluations/"+id;}
     EvaluationService.Joined participant(Fixture f) {
-        as(f.editor());var c=templates.start(f.id(),f.classId(),45);var p=evaluations.join(c.pin(),"참가 학생",null);
+        as(f.editor());templates.openLobby(f.id(),f.classId(),60);var c=templates.start(f.id(),f.classId(),45);var p=evaluations.join(c.pin(),"참가 학생",null);
         var q=work.configuration(f.classId()).questions().get(0).id();
         work.save(f.classId(),p.participantToken(),q,new SaveAnswer("내가 작성한 근거입니다.",0,AnswerSource.DIRECT,null));
         return p;
@@ -107,7 +107,7 @@ class CollaborationApiTest extends AuthTestSupport {
         var editor=newTeacher();as(editor);var ns=new NotificationService(db);ns.saveSettings(false,false);as(teacher);var t=templates.create(input("알림 설정"));
         ok(body(request(post(base(t.id())+"/collaborators"),teacher),Map.of("email",editor.user().email())));
         assertThat(notices(editor.user().id(),"ASSESSMENT_SHARED",t.id())).isEqualTo(1);
-        as(teacher);var c=templates.addClass(t.id(),"1반");var s=templates.start(t.id(),c.classId(),45);var p=evaluations.join(s.pin(),"학생",null);
+        as(teacher);var c=templates.addClass(t.id(),"1반");templates.openLobby(t.id(),c.classId(),60);var s=templates.start(t.id(),c.classId(),45);var p=evaluations.join(s.pin(),"학생",null);
         var review=work.review(c.classId(),p.participantToken());work.submit(c.classId(),p.participantToken(),review.reviewToken());
         assertThat(notices(teacher.user().id(),"SUBMISSION",t.id())).isEqualTo(1);assertThat(notices(editor.user().id(),"SUBMISSION",t.id())).isZero();
     }

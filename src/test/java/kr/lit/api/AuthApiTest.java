@@ -3,6 +3,7 @@ package kr.lit.api;
 import kr.lit.auth.*;
 import kr.lit.auth.AuthModels.*;
 import org.junit.jupiter.api.Test;
+import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.*;
@@ -10,7 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class AuthApiTest extends AuthTestSupport {
-    Map<String,Object> signup(String token,String suffix) {return Map.of("username","t_"+suffix,"email",suffix+"@example.test","password",PASSWORD,"name","교사","emailVerificationToken",token);}
+    Map<String,Object> signup(String token,String suffix) {return Map.of("username","t_"+suffix,"email",suffix+"@example.test","password",PASSWORD,"name","교사","emailVerificationToken",token,"termsVersion","v1","termsAccepted",true,"privacyVersion","v1","privacyAccepted",true);}
     @Test void studentsNeedNoAccountsAndCannotCreateClasses() throws Exception {
         int usersBefore=db.queryForObject("SELECT COUNT(*) FROM app_users",Integer.class);
         mvc.perform(request(body(post("/api/auth/signup/student"),Map.of("role","TEACHER")),null)).andExpect(status().isGone()).andExpect(jsonPath("code").value("STUDENT_ACCOUNTS_DISABLED"));
@@ -32,6 +33,24 @@ class AuthApiTest extends AuthTestSupport {
         var user=ok(request(body(post("/api/auth/signup/teacher"),signup(token,suffix)),null));
         assertThat(user.path("role").asText()).isEqualTo("TEACHER");assertThat(user.path("school").asText()).isEmpty();
         mvc.perform(request(body(post("/api/auth/signup/teacher"),signup(token,suffix)),null)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("EMAIL_VERIFICATION_REQUIRED"));
+    }
+    @Test void loginAndRefreshIssueTwoHourAccessTokens() throws Exception {
+        var before=Instant.now();
+        var login=ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null));
+        assertThat(Instant.parse(login.path("accessExpiresAt").asText()))
+                .isBetween(before.plusSeconds(7200),Instant.now().plusSeconds(7200));
+        var storedFamilyExpiry=db.queryForObject("SELECT refresh_expires_at FROM auth_sessions WHERE refresh_hash=?",OffsetDateTime.class,AuthService.hash(login.path("refreshToken").asText())).toInstant();
+        var refreshedBefore=Instant.now();
+        var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(login.path("refreshToken").asText())),null));
+        assertThat(Instant.parse(refreshed.path("accessExpiresAt").asText()))
+                .isBetween(refreshedBefore.plusSeconds(7200),Instant.now().plusSeconds(7200));
+        assertThat(Instant.parse(refreshed.path("refreshExpiresAt").asText())).isEqualTo(storedFamilyExpiry);
+    }
+    @Test void accessTokenCannotOutliveRefreshFamily() throws Exception {
+        var familyExpiry=OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(30).withNano(0);
+        db.update("UPDATE auth_sessions SET refresh_expires_at=? WHERE refresh_hash=?",familyExpiry,AuthService.hash(teacher.refreshToken()));
+        var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null));
+        assertThat(Instant.parse(refreshed.path("accessExpiresAt").asText())).isEqualTo(familyExpiry.toInstant());
     }
     @Test void refreshRotationAndReuseRevokeSessionFamily() throws Exception {
         var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null));String access=refreshed.get("accessToken").asText();
@@ -57,7 +76,7 @@ class AuthApiTest extends AuthTestSupport {
     @Test void concurrentVerificationConsumptionAllowsOneSignup() throws Exception {
         String suffix=unique(),email=suffix+"@example.test",token=createVerifiedEmail(email);
         var gate=new CountDownLatch(1);var executor=Executors.newFixedThreadPool(2);
-        Callable<Boolean> register=()->{gate.await();try{auth.signupTeacher(new TeacherSignup("t_"+unique(),PASSWORD,email,"교사",token));return true;}catch(ApiError.Failure ex){return false;}};
+        Callable<Boolean> register=()->{gate.await();try{auth.signupTeacher(new TeacherSignup("t_"+unique(),PASSWORD,email,"교사",token,"v1",true,"v1",true));return true;}catch(ApiError.Failure ex){return false;}};
         try{var a=executor.submit(register);var b=executor.submit(register);gate.countDown();assertThat(List.of(a.get(),b.get())).containsExactlyInAnyOrder(true,false);}finally{executor.shutdownNow();}
     }
     @Test void failedLoginCounterTemporarilyLocksTeacherAccount() throws Exception {
@@ -67,10 +86,18 @@ class AuthApiTest extends AuthTestSupport {
         db.update("UPDATE app_users SET locked_until=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",teacher.user().id());
         ok(request(body(post("/api/auth/login"),new Login(teacher.user().username(),PASSWORD)),null));
     }
-    @Test void passwordRecoveryEndpointsAreNotAvailable() throws Exception {
+    @Test void passwordRecoveryEndpointsValidateRequiredFields() throws Exception {
         for(String endpoint:List.of("request","confirm")) {
-            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),null)).andExpect(status().isNotFound());
-            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),teacher)).andExpect(status().isNotFound());
+            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),null)).andExpect(status().isBadRequest());
+            mvc.perform(request(body(post("/api/auth/password-reset/"+endpoint),Map.of()),teacher)).andExpect(status().isBadRequest());
         }
+    }
+    @Test void signupAcceptsEightCharactersAndRejectsSevenWithoutConsumingVerification() throws Exception {
+        String suffix=unique(),token=createVerifiedEmail(suffix+"@example.test");
+        var input=new LinkedHashMap<>(signup(token,suffix));input.put("password","Abc123!");
+        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+        input.put("password","Abc123!x");
+        mvc.perform(body(request(post("/api/auth/signup/teacher"),null),input)).andExpect(status().isCreated());
+        mvc.perform(body(request(post("/api/auth/login"),null),new Login("t_"+suffix,"Abc123!x"))).andExpect(status().isOk());
     }
 }

@@ -148,7 +148,15 @@ CREATE TABLE IF NOT EXISTS grading_score_changes (
  criterion_id INT NOT NULL, previous_level INT, score_level INT, ai_level INT,
  teacher_id VARCHAR(36) NOT NULL REFERENCES app_users(id), changed_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
+ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS previous_feedback VARCHAR(2000);
+ALTER TABLE grading_score_changes ADD COLUMN IF NOT EXISTS feedback VARCHAR(2000);
 CREATE INDEX IF NOT EXISTS idx_grading_changes_participant ON grading_score_changes(participant_id,id);
+CREATE TABLE IF NOT EXISTS participant_policy_acceptances (
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ policy_version VARCHAR(64) NOT NULL, accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ PRIMARY KEY(participant_id,policy_version)
+);
 CREATE TABLE IF NOT EXISTS ai_disclosures (
  participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id),
  evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
@@ -162,6 +170,7 @@ CREATE TABLE IF NOT EXISTS notifications (
  evaluation_id VARCHAR(36), participant_id VARCHAR(36), dedupe_key VARCHAR(200),
  created_at TIMESTAMP WITH TIME ZONE NOT NULL, read_at TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_dedupe ON notifications(user_id,dedupe_key);
 CREATE TABLE IF NOT EXISTS user_settings (
@@ -225,3 +234,104 @@ CREATE TABLE IF NOT EXISTS signup_email_verifications (
  verified_at TIMESTAMP WITH TIME ZONE, token_hash VARCHAR(64),
  token_expires_at TIMESTAMP WITH TIME ZONE, used_at TIMESTAMP WITH TIME ZONE
 );
+
+CREATE TABLE IF NOT EXISTS process_grading_policies (
+ evaluation_id VARCHAR(36) PRIMARY KEY REFERENCES evaluations(id) ON DELETE CASCADE,
+ policy_json CLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS process_grading_jobs (
+ id VARCHAR(36) PRIMARY KEY,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+ version INT NOT NULL,status VARCHAR(30) NOT NULL,input_hash VARCHAR(64) NOT NULL,input_json CLOB NOT NULL,
+ rubric_version VARCHAR(80) NOT NULL,model VARCHAR(100),result_json CLOB,error_code VARCHAR(100),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,started_at TIMESTAMP WITH TIME ZONE,heartbeat_at TIMESTAMP WITH TIME ZONE,completed_at TIMESTAMP WITH TIME ZONE,
+ UNIQUE(participant_id,version)
+);
+CREATE INDEX IF NOT EXISTS idx_process_jobs_status ON process_grading_jobs(status,created_at);
+CREATE TABLE IF NOT EXISTS process_grading_reviews (
+ job_id VARCHAR(36) NOT NULL REFERENCES process_grading_jobs(id) ON DELETE CASCADE,
+ revision INT NOT NULL,review_json CLOB NOT NULL,PRIMARY KEY(job_id,revision)
+);
+
+
+CREATE TABLE IF NOT EXISTS email_change_verifications (
+ user_id VARCHAR(36) PRIMARY KEY REFERENCES app_users(id),
+ email VARCHAR(254) NOT NULL, code_hash VARCHAR(255) NOT NULL,
+ password_hash VARCHAR(255) NOT NULL, last_sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ expires_at TIMESTAMP WITH TIME ZONE NOT NULL, attempts INT NOT NULL DEFAULT 0
+);
+
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+ token_hash VARCHAR(64) PRIMARY KEY,
+ user_id VARCHAR(36) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+ password_fingerprint VARCHAR(64) NOT NULL,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+ used_at TIMESTAMP WITH TIME ZONE,
+ invalidated_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id,created_at);
+
+CREATE TABLE IF NOT EXISTS report_archive_jobs (
+ id VARCHAR(36) PRIMARY KEY,user_id VARCHAR(36) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+ scope_id VARCHAR(36) NOT NULL,assessment BOOLEAN NOT NULL,class_id VARCHAR(36),format VARCHAR(3) NOT NULL,
+ include_conversations BOOLEAN NOT NULL,status VARCHAR(20) NOT NULL,file_path VARCHAR(2000),error_code VARCHAR(80),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL,started_at TIMESTAMP WITH TIME ZONE,completed_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_archive_jobs_pending ON report_archive_jobs(status,created_at);
+
+CREATE TABLE IF NOT EXISTS system_ai_disclosures (
+ participant_id VARCHAR(36) PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+ disclosure_json CLOB NOT NULL
+);
+
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS expelled_at TIMESTAMP WITH TIME ZONE;
+
+-- 답안 출처 판정 2단계(LLM 바꿔 쓰기 판정). 원문 없이 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장) 해시만 키로 저장합니다.
+CREATE TABLE IF NOT EXISTS semantic_judgments (
+ cache_key VARCHAR(64) PRIMARY KEY,
+ provider VARCHAR(20) NOT NULL, model VARCHAR(100) NOT NULL, prompt_version VARCHAR(40) NOT NULL,
+ judge_level INT NOT NULL, closest_candidate VARCHAR(200),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_status VARCHAR(20);
+ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_failed_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_grading_analyses_semantic ON grading_analyses(semantic_status);
+
+-- 답안 출처 판정 3단계: 교사의 문장 판정 수정 기록(기준값 보정용 정답). 마지막 판정이 그 학생 비율에 반영됩니다.
+CREATE TABLE IF NOT EXISTS sentence_labels (
+ id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id),
+ question_id VARCHAR(36) NOT NULL, sentence_id VARCHAR(60) NOT NULL, sentence_text CLOB NOT NULL,
+ teacher_label VARCHAR(10) NOT NULL, algorithm_source VARCHAR(20) NOT NULL, algorithm_reason VARCHAR(20),
+ longest_span INT NOT NULL, similarity DOUBLE PRECISION NOT NULL, haiku_level INT, gemini_level INT, needs_review BOOLEAN NOT NULL,
+ config_json CLOB NOT NULL, teacher_id VARCHAR(36) NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sentence_labels_participant ON sentence_labels(participant_id,id);
+
+-- 질문 용도 LLM 분류(Haiku 3회 → 불일치만 Gemini). 대화(ai_turns) 하나당 한 행, 같은 입력은 다시 호출하지 않습니다.
+CREATE TABLE IF NOT EXISTS purpose_classifications (
+ conversation_id BIGINT PRIMARY KEY REFERENCES ai_turns(id),
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id),
+ status VARCHAR(20) NOT NULL, purpose VARCHAR(20), votes VARCHAR(100), gemini_purpose VARCHAR(20),
+ needs_review BOOLEAN NOT NULL, method VARCHAR(40), haiku_model VARCHAR(100), gemini_model VARCHAR(100), prompt_version VARCHAR(40) NOT NULL,
+ attempts INT NOT NULL, error_code VARCHAR(60), updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_purpose_classifications_participant ON purpose_classifications(participant_id);
+-- 교사가 확정한 질문 용도(보정 기록). 마지막 확정이 적용됩니다.
+CREATE TABLE IF NOT EXISTS purpose_labels (
+ id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ conversation_id BIGINT NOT NULL REFERENCES ai_turns(id),
+ evaluation_id VARCHAR(36) NOT NULL REFERENCES evaluations(id),
+ participant_id VARCHAR(36) NOT NULL REFERENCES participants(id),
+ teacher_purpose VARCHAR(20) NOT NULL, llm_status VARCHAR(20), llm_purpose VARCHAR(20), votes VARCHAR(100), gemini_purpose VARCHAR(20),
+ needs_review BOOLEAN NOT NULL, method VARCHAR(40), prompt_version VARCHAR(40), teacher_id VARCHAR(36) NOT NULL,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_purpose_labels_participant ON purpose_labels(participant_id,id);

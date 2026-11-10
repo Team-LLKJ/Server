@@ -31,6 +31,9 @@ class TemplateController {
     @DeleteMapping("/{id}/collaborators/{teacherId}") ResponseEntity<Void> unshare(@PathVariable String id,@PathVariable String teacherId) {
         templates.unshare(id,teacherId);return ResponseEntity.noContent().build();
     }
+    @PostMapping("/{id}/classes/{classId}/lobby") ClassView openLobby(@PathVariable String id,@PathVariable String classId,@Valid @RequestBody StartInput input) {
+        return templates.openLobby(id,classId,input.expiresInMinutes());
+    }
     @PostMapping("/{id}/classes/{classId}/start") ClassView start(@PathVariable String id,@PathVariable String classId,@Valid @RequestBody StartInput input) {
         return templates.start(id,classId,input.expiresInMinutes());
     }

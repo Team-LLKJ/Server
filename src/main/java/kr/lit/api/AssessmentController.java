@@ -12,6 +12,7 @@ class AssessmentController {
     private final AssessmentService assessment;
     AssessmentController(AssessmentService assessment) { this.assessment=assessment; }
 
+    @GetMapping("/analysis/definition") Object getAnalysisDefinition(@PathVariable String id){return assessment.getAnalysisDefinition(id);}
     @GetMapping("/submissions")
     Submissions submissions(@PathVariable String id,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="100") int size,
                             @RequestParam(defaultValue="") String query) { return assessment.submissions(id,page,size,query); }
@@ -24,6 +25,11 @@ class AssessmentController {
     }
     @GetMapping("/participants/{participantId}/analysis")
     Analysis analysis(@PathVariable String id,@PathVariable String participantId) { return assessment.analysis(id,participantId); }
+    /** 3단계: 교사의 문장 판정 수정(AI|DIRECT). 비율에 바로 반영된 분석을 돌려줍니다. */
+    @PatchMapping("/participants/{participantId}/sentences/{sentenceId}")
+    Analysis labelSentence(@PathVariable String id,@PathVariable String participantId,@PathVariable String sentenceId,@Valid @RequestBody SentenceLabelInput input) {
+        return assessment.labelSentence(id,participantId,sentenceId,input);
+    }
     @PostMapping("/analysis/run")
     @ResponseStatus(org.springframework.http.HttpStatus.ACCEPTED)
     AnalysisRun run(@PathVariable String id) { return assessment.run(id); }
