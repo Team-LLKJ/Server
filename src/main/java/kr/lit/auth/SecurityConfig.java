@@ -47,6 +47,7 @@ public class SecurityConfig {
                 .accessDeniedHandler((req,res,ex)->error(res,json,403,"ACCESS_DENIED","접근 권한이 없습니다.")))
             .authorizeHttpRequests(a->a
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                .requestMatchers("/api/docs","/api/swagger-ui/**","/api/openapi","/api/openapi/**","/api/openapi.yaml").permitAll()
                 .requestMatchers("/actuator/health","/actuator/health/readiness","/actuator/health/liveness").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/policies/current").permitAll()
                 .requestMatchers("/api/auth/signup/student","/api/auth/signup/teacher","/api/auth/email-verifications","/api/auth/email-verifications/confirm","/api/auth/username-availability","/api/auth/login","/api/auth/refresh","/api/auth/password-reset/request","/api/auth/password-reset/confirm","/api/participation/verify","/api/participation/join","/api/participation/reconnect").permitAll()

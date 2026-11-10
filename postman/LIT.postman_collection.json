@@ -4059,6 +4059,58 @@
           }
         }
       ]
+    },
+    {
+      "name": "Swagger·OpenAPI 문서",
+      "description": "서버와 같은 baseUrl의 자동 생성 명세. 문서 조회는 공개이며 실제 보호 API의 토큰 검사는 유지됩니다.",
+      "item": [
+        {
+          "name": "OpenAPI JSON 조회",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/openapi"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"OpenAPI JSON\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const spec = pm.response.json();",
+                  "  pm.expect(spec.openapi).to.match(/^3\\./);",
+                  "  pm.expect(spec.paths).to.have.property(\"/api/auth/login\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Swagger UI 설정 조회",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/openapi/swagger-config"
+          }
+        },
+        {
+          "name": "Swagger UI 열기 (브라우저 권장)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/docs"
+          }
+        }
+      ]
     }
   ]
 }
