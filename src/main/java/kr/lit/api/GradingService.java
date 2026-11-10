@@ -14,7 +14,18 @@ import static kr.lit.api.ReportModels.*;
 public class GradingService {
     private final ReportService reports;
     private final JdbcTemplate db;
-    public GradingService(ReportService reports,JdbcTemplate db) {this.reports=reports;this.db=db;}
+    private final PurposeClassifier purposes;
+    private final AssessmentService assessment;
+    public GradingService(ReportService reports,JdbcTemplate db,PurposeClassifier purposes,AssessmentService assessment) {this.reports=reports;this.db=db;this.purposes=purposes;this.assessment=assessment;}
+    /** 교사가 질문 용도를 확정합니다. LLM 결과보다 우선하며 보정 기록으로 저장되고, AI 활용 분석도 같은 분류로 다시 계산합니다. */
+    public PurposeUsageAnalyzer.View setPurpose(String id,String pid,long conversationId,PurposeInput input) {
+        reports.detail(id,pid);
+        String teacherId=kr.lit.auth.AccountAccess.require(kr.lit.auth.AuthModels.Role.TEACHER).userId();
+        if(!purposes.label(id,pid,conversationId,input.purpose(),teacherId))
+            throw new ApiError.Failure(HttpStatus.NOT_FOUND,"CONVERSATION_NOT_FOUND","해당 학생의 AI 대화를 찾을 수 없습니다.");
+        assessment.refreshAfterPurpose(pid);
+        return getUsageAnalysis(id,pid);
+    }
     private ApiError.Failure fail(String code,String text) {return new ApiError.Failure(HttpStatus.BAD_REQUEST,code,text);}
     public GradingAnswers answers(String id,String pid) {
         var detail=reports.detail(id,pid);var questions=new ArrayList<GradingQuestion>();

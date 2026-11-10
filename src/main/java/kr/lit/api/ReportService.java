@@ -16,9 +16,9 @@ import static kr.lit.api.ReportModels.*;
 public class ReportService {
  private final AutomaticDisclosureService automaticDisclosure;
  private final JdbcTemplate db; private final ObjectMapper json; private final EvaluationService evaluations;
- private final ParticipantAccess participants; private final WorkService work; private final ReportGradingService grading;
- public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work,ReportGradingService grading,AutomaticDisclosureService automaticDisclosure) {
-  this.automaticDisclosure=automaticDisclosure;
+ private final ParticipantAccess participants; private final WorkService work; private final ReportGradingService grading; private final PurposeClassifier purposes;
+ public ReportService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ParticipantAccess participants,WorkService work,ReportGradingService grading,AutomaticDisclosureService automaticDisclosure,PurposeClassifier purposes) {
+  this.automaticDisclosure=automaticDisclosure;this.purposes=purposes;
   this.db=db;this.json=json;this.evaluations=evaluations;this.participants=participants;this.work=work;this.grading=grading;
  }
  private ApiError.Failure fail(HttpStatus status,String code,String message){return new ApiError.Failure(status,code,message);}
@@ -56,7 +56,8 @@ public class ReportService {
   var items=ids.stream().map(p->student(id,p)).toList();
   return new Students(items,page,size,count,(count+size-1)/size,new Counts(submitted,warnings,count-warnings-submitted),items);
  }
- private JsonNode source(String id,String pid){
+ private JsonNode source(String id,String pid){return purposes.annotate(pid,rawSource(id,pid));}
+ private JsonNode rawSource(String id,String pid){
   person(id,pid);
   var stored=db.queryForList("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,pid);
   if(!stored.isEmpty()) {

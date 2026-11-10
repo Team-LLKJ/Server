@@ -23,7 +23,7 @@ public class GradingConfig {
     private double draftingPenalty=1.0;
     /** ① 목적 적절성에서 적절한 유형으로 보는 질문 유형. */
     @jakarta.validation.constraints.NotEmpty
-    private List<@jakarta.validation.constraints.Pattern(regexp="CONCEPT_UNDERSTANDING|RESEARCH|IDEA_EXPLORATION|ANSWER_DRAFTING|VERIFICATION|OTHER") String> appropriateTypes=new ArrayList<>(List.of("CONCEPT_UNDERSTANDING","RESEARCH","IDEA_EXPLORATION"));
+    private List<@jakarta.validation.constraints.Pattern(regexp="CONCEPT_UNDERSTANDING|RESEARCH|IDEA_EXPLORATION|ANSWER_DRAFTING|VERIFICATION|EDIT|OTHER") String> appropriateTypes=new ArrayList<>(List.of("CONCEPT_UNDERSTANDING","RESEARCH","IDEA_EXPLORATION"));
     /** ② 자기 주도: 추가 질문을 '구체적'으로 보는 최소 글자 수. */
     @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(4000)
     private int specificQuestionMinLength=20;

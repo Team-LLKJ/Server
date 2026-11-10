@@ -33,6 +33,29 @@ public class AssessmentAnalyzer {
         Map.entry(QuestionType.IDEA_EXPLORATION,Pattern.compile("(아이디어|브레인|발상|방향|구체화|어떻게\\s*하면|주제|구조|개요|목차|구성|접근)")),
         Map.entry(QuestionType.CONCEPT_UNDERSTANDING,Pattern.compile("(설명|개념|뜻|의미|이해|왜|원리|차이|무엇|뭐야|뭔가요|뭔지|힌트|어떤\\s*것|정의)"))
     );
+    /**
+     * 질문 하나의 분류. 스냅샷에 저장된 질문 용도(purposeClassification: 교사 확정 > LLM)가 있으면 그것을 쓰고,
+     * 없거나 UNDECIDED이면 키워드 규칙으로 대체합니다. PurposeUsageAnalyzer와 같은 분류 결과를 씁니다.
+     */
+    public static QuestionType classify(JsonNode turn) {
+        String text=turn.path("questionText").asText("");
+        String purpose=turn.path("purposeClassification").path("purpose").asText("");
+        return switch(purpose) {
+            case "UNDERSTAND" -> classify(text)==QuestionType.RESEARCH?QuestionType.RESEARCH:QuestionType.CONCEPT_UNDERSTANDING;
+            case "PLAN" -> QuestionType.IDEA_EXPLORATION;
+            case "REVIEW" -> QuestionType.VERIFICATION;
+            case "EDIT" -> QuestionType.EDIT;
+            case "DRAFT" -> QuestionType.ANSWER_DRAFTING;
+            case "OTHER" -> QuestionType.OTHER;
+            default -> classify(text);
+        };
+    }
+    /** 분류 출처: TEACHER(교사 확정), LLM, 아니면 키워드 규칙(RULE/RULE_UNMATCHED). */
+    static String classificationMethod(JsonNode turn,QuestionType type) {
+        var c=turn.path("purposeClassification");String purpose=c.path("purpose").asText("");
+        if(!purpose.isEmpty()&&!purpose.equals("UNDECIDED")) return c.path("teacherPurpose").isTextual()?"TEACHER":"LLM";
+        return type==QuestionType.OTHER?"RULE_UNMATCHED":"RULE";
+    }
     public static QuestionType classify(String text) {
         String t=text==null?"":text.toLowerCase(Locale.ROOT);
         for(var rule:RULES) if(rule.getValue().matcher(t).find()) return rule.getKey();
@@ -122,9 +145,9 @@ public class AssessmentAnalyzer {
         // 3. 질문 분류
         var classified=new ArrayList<ClassifiedQuestion>();
         for(var t:turns) {
-            var type=classify(t.path("questionText").asText());
+            var type=classify(t);
             classified.add(new ClassifiedQuestion(t.path("id").asLong(),t.path("requestId").asText(),t.path("questionId").asText(),type,type.label(),
-                    type==QuestionType.OTHER?"RULE_UNMATCHED":"RULE"));
+                    classificationMethod(t,type)));
         }
         int totalQuestions=classified.size();
         var counts=new EnumMap<QuestionType,Integer>(QuestionType.class);
@@ -266,9 +289,9 @@ public class AssessmentAnalyzer {
                 String qid=t.path("questionId").asText(),text=t.path("questionText").asText("");
                 boolean isSpecific=text.strip().length()>=config.getSpecificQuestionMinLength()||FOLLOW_UP_REFERENCE.matcher(text).find();
                 if(seen.add(qid)) continue;
-                followUps++; if(isSpecific&&classify(text)!=QuestionType.ANSWER_DRAFTING) specific++;
+                followUps++; if(isSpecific&&classify(t)!=QuestionType.ANSWER_DRAFTING) specific++;
             }
-            if(followUps==0) for(var t:turns) { followUps++; String text=t.path("questionText").asText(""); if(text.strip().length()>=config.getSpecificQuestionMinLength()&&classify(text)!=QuestionType.ANSWER_DRAFTING) specific++; }
+            if(followUps==0) for(var t:turns) { followUps++; String text=t.path("questionText").asText(""); if(text.strip().length()>=config.getSpecificQuestionMinLength()&&classify(t)!=QuestionType.ANSWER_DRAFTING) specific++; }
             double b=followUps==0?0:(double)specific/followUps;
             // (c) 선택 이유 작성 여부
             double c=disclosure.reason().isBlank()?0:1;
@@ -292,7 +315,7 @@ public class AssessmentAnalyzer {
                 var t=turns.get(i);if(!"COMPLETED".equals(t.path("state").asText())||t.path("answerText").isNull()) continue;
                 long id=t.path("id").asLong();String qid=t.path("questionId").asText();boolean action=false;String note=null;
                 for(int j=i+1;j<turns.size();j++) if(turns.get(j).path("questionId").asText().equals(qid)) {
-                    if(classify(turns.get(j).path("questionText").asText())==QuestionType.VERIFICATION) { action=true;note="후속 검증·반박 질문"; }
+                    if(classify(turns.get(j))==QuestionType.VERIFICATION) { action=true;note="후속 검증·반박 질문"; }
                     break;
                 }
                 // 긴 일치 구간 없이 내용만 겹치는 문장(GRAM_OVERLAP)은 AI 답변을 고쳐 쓴 신호로 봅니다.

@@ -11,8 +11,8 @@ import static kr.lit.api.ProcessGradingModels.*;
 
 @Repository
 public class ProcessGradingRepository {
-    private final JdbcTemplate db;private final ObjectMapper json;
-    public ProcessGradingRepository(JdbcTemplate db,ObjectMapper json){this.db=db;this.json=json;}
+    private final JdbcTemplate db;private final ObjectMapper json;private final PurposeClassifier purposes;
+    public ProcessGradingRepository(JdbcTemplate db,ObjectMapper json,PurposeClassifier purposes){this.db=db;this.json=json;this.purposes=purposes;}
     public String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception ex){throw new IllegalStateException("Cannot serialize process grading",ex);}}
     public <T> T decode(String value,Class<T> type){try{return json.readValue(value,type);}catch(Exception ex){throw new IllegalStateException("Invalid stored process grading",ex);}}
     public Optional<Policy> getPolicy(String id){return db.queryForList("SELECT policy_json FROM process_grading_policies WHERE evaluation_id=?",String.class,id).stream().findFirst().map(s->decode(s,Policy.class));}
@@ -25,6 +25,7 @@ public class ProcessGradingRepository {
         if(rows.isEmpty())throw new IllegalArgumentException("SUBMISSION_REQUIRED");
         var row=rows.get(0);JsonNode snapshot;
         try{snapshot=json.readTree((String)row.get("SNAPSHOT"));}catch(Exception ex){throw new IllegalStateException(ex);}
+        snapshot=purposes.annotate(pid,snapshot);
         var sources=new ArrayList<Source>();var ids=new ArrayList<String>();var limitations=new ArrayList<String>();
         for(var a:snapshot.path("answers")) {
             String q=a.path("question").path("id").asText();ids.add(q);
