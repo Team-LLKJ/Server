@@ -53,6 +53,25 @@ class ProcessGradingEngineTest {
         var overrides=Arrays.stream(Criterion.values()).map(c->new LevelOverride(c==Criterion.TRANSPARENCY?GLOBAL:"q1",c,4,"교사가 행동을 확인함")).toList();
         assertThat(engine.applyReview(in,held,overrides).total()).isEqualByComparingTo("75.00");
     }
+    @Test void teacherCanOverrideAiScoreWithDirectScore() {
+        var in=input(1);var ai=engine.evaluate(in,output(in,4,4,4,4,4));assertThat(ai.total()).isEqualByComparingTo("75.00");
+        var reviewed=engine.applyReview(in,ai,List.of(LevelOverride.ofScore("q1",Criterion.CONTRIBUTION,new java.math.BigDecimal("22.5"),"핵심 판단을 직접 확인함")));
+        var cell=reviewed.cells().stream().filter(c->c.criterion()==Criterion.CONTRIBUTION).findFirst().orElseThrow();
+        assertThat(cell.level()).isNull();assertThat(cell.score()).isEqualByComparingTo("22.50");assertThat(cell.status()).isEqualTo("TEACHER_REVIEWED");assertThat(cell.reason()).isEqualTo("핵심 판단을 직접 확인함");
+        assertThat(reviewed.total()).isEqualByComparingTo("78.75");
+        var held=engine.hold(in,"누락");
+        var all=Arrays.stream(Criterion.values()).map(c->LevelOverride.ofScore(c==Criterion.TRANSPARENCY?GLOBAL:"q1",c,java.math.BigDecimal.valueOf(c.maxScore()),"만점 확인")).toList();
+        assertThat(engine.applyReview(in,held,all).total()).isEqualByComparingTo("100.00");
+    }
+    @Test void rejectsInvalidDirectScores() {
+        var in=input(1);var ai=engine.evaluate(in,output(in,4,4,4,4,4));
+        for(var bad:List.of(LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("15.01"),"만점 초과"),
+                LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("-1"),"음수"),
+                LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("3.333"),"소수 셋째 자리"),
+                new LevelOverride("q1",Criterion.PURPOSE,4,"수준과 점수 동시",java.math.BigDecimal.TEN),
+                new LevelOverride("q1",Criterion.PURPOSE,null,"둘 다 없음",null)))
+            assertThatThrownBy(()->engine.applyReview(in,ai,List.of(bad))).hasMessage("INVALID_OVERRIDE");
+    }
     @Test void rejectsDuplicateCriteriaAndKeepsCounterEvidenceAndLimits() {
         var in=input(1);var output=output(in,4,4,4,4,4);var duplicate=new ArrayList<>(output.recommendations());duplicate.add(duplicate.get(0));
         assertThatThrownBy(()->engine.evaluate(in,new AiOutput(output.compliance(),duplicate))).isInstanceOf(IllegalArgumentException.class);

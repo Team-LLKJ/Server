@@ -108,7 +108,7 @@ public class ReportLayout {
             rows.add(List.of("AI 추천",cell.level()==null?cell.status().equals("NOT_APPLICABLE")?"평가 대상 아님":"판단 보류":cell.level()+"단계 · "+cell.score()+" / "+cell.maxScore()+"점"));
             var teacher=grading.teacherReview();
             var override=teacher==null?null:teacher.overrides().stream().filter(o->o.criterion()==cell.criterion()&&o.questionId().equals(cell.questionId())).findFirst().orElse(null);
-            rows.add(List.of("교사 검토",teacher==null?"검토 전":(teacher.confirmed()?"최종 확정":"검토 중")+(override==null?"":": "+override.level()+"단계 · "+override.reason())));
+            rows.add(List.of("교사 검토",teacher==null?"검토 전":(teacher.confirmed()?"최종 확정":"검토 중")+(override==null?"":": "+(override.score()!=null?override.score().stripTrailingZeros().toPlainString()+" / "+cell.maxScore()+"점 (점수 직접 입력)":override.level()+"단계")+" · "+override.reason())));
             rows.add(List.of("평가 이유",cell.reason()));
             if(cell.details()!=null){
                 for(var credit:cell.details().credits())rows.add(List.of("가점 근거 · "+credit.title(),credit.explanation()+"\n"+formatCitations(credit.evidence())));

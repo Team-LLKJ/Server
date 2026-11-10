@@ -126,6 +126,18 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 
 PUT review의 overrides는 해당 검토의 전체 보정 목록입니다. 생략한 항목은 AI 검증 결과로 계산합니다. reason은 필수이며 누가·언제 수정했는지 저장합니다. 새 검토는 confirmed=false로 돌아가고 이전 검토·확정 이력을 남깁니다. expectedRevision이 다르면409 PROCESS_REVIEW_VERSION_CONFLICT입니다.
 
+#### 교사 점수 직접 입력
+
+AI가 정한 점수를 수준(level) 대신 점수로 바로 덮어쓸 수 있습니다. 한 항목에는 `level`과 `score` 중 **하나만** 보냅니다.
+
+```json
+{"questionId":"문항 ID","criterion":"CONTRIBUTION","score":21.5,"reason":"학생의 핵심 판단을 직접 확인했다."}
+```
+
+- `score`: 0 이상, 그 영역 만점(목적 적절성·투명성 15, 자기 주도·기여 25, 비판적 검토 20) 이하, 소수 둘째 자리까지. 문항 배점 비율은 기존과 같이 곱해 총점을 계산합니다.
+- 결과 칸은 `status: TEACHER_REVIEWED`, `level: null`, `score`는 입력값입니다. 분석 화면 영역 요약 `label`은 `교사 점수 입력`입니다.
+- 둘 다 보내거나 둘 다 빠졌거나 범위를 벗어나면 400 `INVALID_PROCESS_REVIEW`입니다. 저장·이력·확정(`POST …/confirm`)은 수준 보정과 같습니다.
+
 검토 응답 `{revision,teacherId,reviewedAt,overrides,complianceDecision,complianceReason,result,confirmed}`의 revision으로 확정합니다.
 
 ```json

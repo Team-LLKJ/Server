@@ -101,9 +101,14 @@ public class ProcessGradingEngine {
         var keys=keys(input);var seen=new HashSet<String>();var cells=new ArrayList<>(original.cells());
         for(var override:overrides) {
             String key=key(override.questionId(),override.criterion());
-            if(!keys.contains(key)||!seen.add(key)||override.level()==null||override.level()<minimumLevel(input)||override.level()>maximumLevel(input)||override.reason()==null||override.reason().isBlank())throw new IllegalArgumentException("INVALID_OVERRIDE");
+            if(!keys.contains(key)||!seen.add(key)||override.reason()==null||override.reason().isBlank())throw new IllegalArgumentException("INVALID_OVERRIDE");
+            // 수준과 점수 중 정확히 하나만 받습니다. 점수는 0 이상 영역 만점 이하, 소수 둘째 자리까지입니다.
+            if((override.level()==null)==(override.score()==null))throw new IllegalArgumentException("INVALID_OVERRIDE");
+            if(override.level()!=null&&(override.level()<minimumLevel(input)||override.level()>maximumLevel(input)))throw new IllegalArgumentException("INVALID_OVERRIDE");
+            if(override.score()!=null&&(override.score().signum()<0||override.score().compareTo(BigDecimal.valueOf(override.criterion().maxScore()))>0||override.score().stripTrailingZeros().scale()>2))throw new IllegalArgumentException("INVALID_OVERRIDE");
+            BigDecimal teacherScore=override.score()!=null?override.score().setScale(2,RoundingMode.HALF_UP):score(input,override.criterion(),override.level());
             for(int i=0;i<cells.size();i++)if(key(cells.get(i).questionId(),cells.get(i).criterion()).equals(key)) {
-                var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),score(input,old.criterion(),override.level()),"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations(),old.details()));
+                var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),teacherScore,"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations(),old.details()));
             }
         }
         return calculate(input,cells,original.compliance(),original.limitations(),original.summary());
