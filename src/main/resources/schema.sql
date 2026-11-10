@@ -289,3 +289,13 @@ CREATE TABLE IF NOT EXISTS system_ai_disclosures (
 );
 
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS expelled_at TIMESTAMP WITH TIME ZONE;
+
+-- 답안 출처 판정 2단계(LLM 바꿔 쓰기 판정). 원문 없이 (모델, 프롬프트 버전, 문항, 학생 문장, 후보 문장) 해시만 키로 저장합니다.
+CREATE TABLE IF NOT EXISTS semantic_judgments (
+ cache_key VARCHAR(64) PRIMARY KEY,
+ provider VARCHAR(20) NOT NULL, model VARCHAR(100) NOT NULL, prompt_version VARCHAR(40) NOT NULL,
+ judge_level INT NOT NULL, closest_candidate VARCHAR(200),
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+ALTER TABLE grading_analyses ADD COLUMN IF NOT EXISTS semantic_status VARCHAR(20);
+CREATE INDEX IF NOT EXISTS idx_grading_analyses_semantic ON grading_analyses(semantic_status);

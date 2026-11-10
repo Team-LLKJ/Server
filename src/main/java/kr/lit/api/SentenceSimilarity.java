@@ -88,6 +88,15 @@ final class SentenceSimilarity {
         return new Match(overlap, longest);
     }
 
+    /** 2단계 후보 고르기용: 문항 문구를 뺀 학생 문장 2글자 조각 중 후보 문장에도 있는 비율. */
+    static double bigramContainment(String student, String candidate, String excluded) {
+        Set<String> grams = windows(AssessmentAnalyzer.normalize(student), 2);
+        grams.removeAll(windows(AssessmentAnalyzer.normalize(excluded), 2));
+        if (grams.isEmpty()) return 0;
+        Set<String> target = windows(AssessmentAnalyzer.normalize(candidate), 2);
+        return (double) grams.stream().filter(target::contains).count() / grams.size();
+    }
+
     /** 문장 하나의 위치(문단 문자열 기준 UTF-16, end 미포함). */
     record Span(int start, int end) {}
 
