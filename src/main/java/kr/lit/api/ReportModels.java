@@ -42,7 +42,10 @@ public final class ReportModels {
  public record Analysis(String method,String status,List<Classification> classifications,List<String> missingData,
                         List<String> limitations) {}
  public record Detail(Student student,JsonNode work,Analysis analysis,TeacherReview teacherReview) {}
- public record GradingCriterion(int criterionId,String name,int maxScore,Double score,boolean teacherScored,String feedback,String aiReason) {}
+ /** notApplicable: 학생 단위 루브릭에서 해당 없음(NA) 항목(배점은 다른 항목에 재분배). */
+ public record GradingCriterion(int criterionId,String name,int maxScore,Double score,boolean teacherScored,String feedback,String aiReason,boolean notApplicable) {
+     public GradingCriterion(int criterionId,String name,int maxScore,Double score,boolean teacherScored,String feedback,String aiReason){this(criterionId,name,maxScore,score,teacherScored,feedback,aiReason,false);}
+ }
  public record GradingSnapshot(String status,List<GradingCriterion> criteria,String rubricVersion,String summary,
      ProcessGradingModels.Result aiRecommendation,ProcessGradingModels.Review teacherReview,InputPathAnalyzer.View inputPaths,PurposeUsageAnalyzer.View purposeUsage,ProcessGradingModels.AnalysisScope analysisScope) {
      public GradingSnapshot(String status,List<GradingCriterion> criteria){this(status,criteria,null,null,null,null,null,null,null);}

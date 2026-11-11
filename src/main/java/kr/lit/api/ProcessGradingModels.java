@@ -54,14 +54,31 @@ public final class ProcessGradingModels {
     public record AiOutput(Compliance compliance,List<Recommendation> recommendations,String summary) {
         public AiOutput(Compliance compliance,List<Recommendation> recommendations){this(compliance,recommendations,null);}
     }
+    /**
+     * LLM 루브릭 판정 정보(학생 단위 칸에만). votes: Gemini 회차별 단계(무효 회차 null, "NA"·"HOLD" 가능), haikuLevel: 엇갈렸을 때 Haiku 답,
+     * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA), runs: 회차별 원래 답(근거 포함, 보정용).
+     */
+    public record JudgeInfo(List<Object> votes,Object haikuLevel,boolean needsReview,String reviewReason,String method,List<RubricJudge.Run> runs,
+                            String promptVersion,String geminiModel,String haikuModel) {
+        /** 교사가 확정한 뒤에는 확인 필요를 풉니다(나머지 기록은 보존). */
+        public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel);}
+    }
+    /**
+     * 채점 한 칸. 문항별 채점은 questionId가 문항 id(투명성은 GLOBAL), LLM 루브릭 판정(학생 단위)은 questionId=null이고 항목마다 한 칸입니다.
+     */
     public record Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,
-                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details) {
-        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null);}
+                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details,JudgeInfo judge) {
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null,null);}
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,null);}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public int maxScore(){return criterion.maxScore();}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public String criterionName(){return criterion.displayName();}
     }
+    /**
+     * 부분 점수. 문항별 채점은 문항 가중치를 곱한 값입니다. 학생 단위(LLM 루브릭)는 NA 항목 배점을 나머지 항목에 비례 재분배해 100점 만점으로 환산한 값이고
+     * (HOLD 항목은 재분배하지 않고 자기 배점을 그대로 heldMaxScore로 남김), notApplicableMaxScore만 원래 배점 합입니다.
+     */
     public record PartialScore(BigDecimal assessedScore,BigDecimal assessedMaxScore,BigDecimal heldMaxScore,BigDecimal notApplicableMaxScore) {}
     public record Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations,String summary,PartialScore partialScore) {
         public Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations){this(status,compliance,cells,total,limitations,null,null);}
@@ -69,10 +86,10 @@ public final class ProcessGradingModels {
     public record Job(String id,String evaluationId,String participantId,int version,String status,String inputHash,
                       String rubricVersion,String model,Instant createdAt,Instant completedAt,Result result,String errorCode) {}
     /**
-     * 교사 검토 한 칸. 수준(level)이나 점수(score) 중 하나만 보냅니다.
+     * 교사 검토 한 칸. 수준(level)이나 점수(score) 중 하나만 보냅니다. 학생 단위 결과(LLM 루브릭)는 questionId를 null로 보냅니다.
      * score는 그 영역 만점 이하(소수 둘째 자리까지)로, AI 추천 점수를 그대로 덮어씁니다. 이때 칸의 level은 null입니다.
      */
-    public record LevelOverride(@NotBlank String questionId,@NotNull Criterion criterion,@Min(0) @Max(5) Integer level,
+    public record LevelOverride(@Size(max=100) String questionId,@NotNull Criterion criterion,@Min(0) @Max(5) Integer level,
                            @NotBlank @Size(max=2000) String reason,
                            @DecimalMin("0") @DecimalMax("25") @Digits(integer=2,fraction=2) BigDecimal score) {
         public LevelOverride(String questionId,Criterion criterion,Integer level,String reason){this(questionId,criterion,level,reason,null);}

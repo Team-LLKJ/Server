@@ -52,6 +52,7 @@ public class ProcessGradingService {
     public Review saveReview(String id,String pid,String jobId,ReviewRequest request) {
         String teacher=requireTeacher(id);var job=getRun(id,pid,jobId);repository.lockJob(jobId);
         if(job.result()==null||!Set.of("DONE","HOLD").contains(job.status()))throw fail(HttpStatus.CONFLICT,"PROCESS_RESULT_REQUIRED","검토 가능한 분석 결과가 필요합니다.");
+        requireLatest(id,pid,jobId);
         int revision=repository.getReview(jobId).map(Review::revision).orElse(0);
         if(request.expectedRevision()!=revision)throw fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_VERSION_CONFLICT","최신 교사 검토를 확인해주세요.");
         Result result;
@@ -59,10 +60,14 @@ public class ProcessGradingService {
         var review=new Review(revision+1,teacher,Instant.now(),request.overrides(),request.complianceDecision(),request.complianceReason(),result,false);
         repository.saveReview(jobId,review);return review;
     }
-    public Review confirmReview(String id,String pid,String jobId,ConfirmRequest request) {
-        String teacher=requireTeacher(id);var job=getRun(id,pid,jobId);repository.lockJob(jobId);
+    /** 마지막 제출본의 마지막 분석만 검토·확정할 수 있습니다(다시 제출·재분석하면 이전 결과는 STALE). */
+    private void requireLatest(String id,String pid,String jobId) {
         if(!repository.getJobs(id,pid).get(0).id().equals(jobId)||!repository.getCurrentSubmissionHash(id,pid).equals(repository.getInput(jobId).submissionHash()))
             throw fail(HttpStatus.CONFLICT,"PROCESS_RESULT_STALE","재분석 또는 제출본 변경 후 최신 결과를 검토해주세요.");
+    }
+    public Review confirmReview(String id,String pid,String jobId,ConfirmRequest request) {
+        String teacher=requireTeacher(id);var job=getRun(id,pid,jobId);repository.lockJob(jobId);
+        requireLatest(id,pid,jobId);
         var review=repository.getReview(jobId).orElseThrow(()->fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_REQUIRED","먼저 교사 검토를 저장해주세요."));
         if(review.revision()!=request.expectedRevision())throw fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_VERSION_CONFLICT","최신 교사 검토를 확인해주세요.");
         if(review.result().total()==null||review.complianceDecision().equals("HOLD"))throw fail(HttpStatus.CONFLICT,"PROCESS_CONFIRMATION_HELD","판단 보류 항목과 규정 준수 검토를 먼저 완료해주세요.");

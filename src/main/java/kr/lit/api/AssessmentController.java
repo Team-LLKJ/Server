@@ -19,11 +19,6 @@ class AssessmentController {
     GradingQueue.Progress retryGrading(@PathVariable String id,@PathVariable String participantId){return assessment.retryGrading(id,participantId);}
     /** 판정 호출의 실제 토큰 수(학생·용도·모델별 합계). */
     @GetMapping("/judge-usage") JudgeUsage.Summary judgeUsage(@PathVariable String id){return assessment.judgeUsage(id);}
-    /** ③ 교사의 루브릭 단계 확정 {"level":4}(1~5단계). needsReview가 풀리고 점수를 다시 계산한 rubric-scores를 돌려줍니다. */
-    @PatchMapping("/participants/{participantId}/criteria/{criterionId}/level")
-    Scores saveLevel(@PathVariable String id,@PathVariable String participantId,@PathVariable int criterionId,@Valid @RequestBody LevelInput input) {
-        return assessment.saveLevel(id,participantId,criterionId,input);
-    }
 
     @GetMapping("/analysis/definition") Object getAnalysisDefinition(@PathVariable String id){return assessment.getAnalysisDefinition(id);}
     @GetMapping("/submissions")

@@ -1,3 +1,5 @@
+> **LLM 루브릭 판정(학생 단위)**: rubric 키가 설정되면 과정 채점 결과가 학생 단위 칸(`questionId=null`)과 NA 재분배 총점으로 바뀝니다. [AI_JUDGE.md](AI_JUDGE.md#-루브릭-단계--과정-채점process-grading에-붙음) 참고.
+
 # AI 활용 과정 평가 V1 API
 
 첨부된 최종 요약안을 `LIT_PROCESS_RUBRIC_V1`으로 구현합니다. 이는 LIT 제안 척도이며 공식 인증 점수가 아닙니다. Web은 변경하지 않았습니다. 기존 `/analysis`, `/rubric-scores`의 키워드 규칙 기반 모델과 별개인 `/process-grading` API입니다. 기존 채점·PDF/HWP 리포트를 자동 대체하거나 학교 성적에 반영하지 않습니다. 프런트가 새 API를 연동해야 새 결과를 표시합니다.

@@ -9,7 +9,7 @@ AI 판정은 추천이며 최종 결정은 교사입니다. 애매한 것은 `ne
 |---|---|---|---|---|
 | ① 답안 기여도 | 제출 직후(대기열) | Claude Haiku 1번(문장 묶음) | Gemini(analysis 키), Haiku 단계 2 문장만 | Haiku 단계 2 |
 | ② AI 사용 방법 | 학생이 질문할 때(백그라운드) | Gemini(analysis 키) 3번 | Haiku 1번, 엇갈린 질문만 | 3번이 엇갈림 |
-| ③ 루브릭 단계 | ①②가 끝난 뒤 | Gemini(rubric 키) 3번(항목마다) | Haiku 1번, 엇갈린 항목만 | 3번이 엇갈림(인용 검증 후) |
+| ③ 루브릭 단계 | ①②가 끝난 뒤(과정 채점 작업) | Gemini(rubric 키) 3번(항목마다) | Haiku 1번, 엇갈린 항목만 | 3번이 엇갈림(인용 검증 후) |
 
 - 두 번째 모델에는 첫 모델의 답을 알려 주지 않습니다.
 - 질문 용도·루브릭은 temperature를 지정하지 않습니다(모델 기본값). 0이면 3번이 항상 같아 애매한 것을 찾지 못합니다.
@@ -32,9 +32,9 @@ AI 판정은 추천이며 최종 결정은 교사입니다. 애매한 것은 `ne
 
 ## 채점 대기열과 공개 시점
 
-- 학생별 `gradingStatus`: `QUEUED`(분석 전) / `GRADING`(답안 기여도·질문 용도·루브릭 진행 중, 실패 후 재시도 대기 포함) / `DONE` / `FAILED`(3번 다시 시도해도 실패).
+- 학생별 `gradingStatus`: `QUEUED`(분석 전) / `GRADING`(답안 기여도·질문 용도·루브릭 진행 중) / `DONE` / `FAILED`(마지막 과정 채점 작업 실패 등).
 - `GET /api/teacher/evaluations/{id}/grading-status` — 반 전체 진행(예: `done` 24 / `submitted` 30)과 학생별 상태. 평가 중에도 볼 수 있습니다.
-- `POST /api/teacher/evaluations/{id}/participants/{pid}/grading/retry` — FAILED 학생 다시 채점.
+- `POST /api/teacher/evaluations/{id}/participants/{pid}/grading/retry` — FAILED 학생 다시 채점(실패한 과정 채점이면 새 작업).
 - **평가가 끝나기 전(교사 종료·시간 만료 전)에는 결과를 내려 주지 않습니다.** `analysis`, `rubric-scores`, `usage-analysis`가 409 `GRADING_RESULTS_NOT_READY`를 돌려줍니다(`lit.grading.results-after-end`, 기본 true).
 - 평가가 끝났는데 `DONE`이 아닌 학생은 응답의 `gradingStatus`로 "채점 중입니다"를 표시합니다.
 - 다시 제출하면 마지막 제출만 채점합니다. 진행 중이던 이전 판정은 저장하지 않습니다.
@@ -56,27 +56,31 @@ AI 판정은 추천이며 최종 결정은 교사입니다. 애매한 것은 `ne
 
 교사 확정: `PATCH .../students/{pid}/conversations/{conversationId}/purpose` `{"purpose":"REVIEW"}`
 
-## ③ 루브릭 단계
+## ③ 루브릭 단계 — 과정 채점(process-grading)에 붙음
 
-- 학생 한 명 × 항목 5개(평가 기준의 indicator가 PURPOSE·SELF_DIRECTION·CRITICAL_REVIEW·CONTRIBUTION·TRANSPARENCY인 항목). 교사가 만든 MANUAL 항목은 판정하지 않습니다.
-- 학생 기록: `Q`=문항, `U`=질문(LLM 용도 표시), `A`=AI 답변(1500자까지), `S`=대화 밖 활동(붙여넣기·복사·화면 이탈), `ANS`=최종 답안 문장(출처 판정 표시), `DIS`=활용 설명란.
-- 프롬프트 순서: 지시·공통 규칙·답 형식(system) → 학생 기록 → 항목 본문. 같은 학생의 5개 항목 호출이 앞부분을 공유합니다(Gemini 암묵 캐시).
-- 항목 본문: `src/main/resources/grading/rubric-judge-v1.md` (v3 루브릭 표 + 경계 판정, 문서의 문구 수정 3곳 반영). 루브릭 문서가 바뀌면 이 파일과 `RubricJudge.PROMPT_VERSION`을 함께 바꿉니다.
-- 인용 검증: 각 답의 `evidence.quote`를 원문에서 공백·문장부호를 빼고 찾습니다. 없는 인용은 버리고, 근거가 하나도 남지 않은 단계 답은 그 회차를 무효로 봅니다.
-- 확정: 3번 모두 같으면 확정. 엇갈리면 Haiku 1번 → Gemini 다수결과 같으면 확정, 다르거나 실패하면 `level: null`, `needsReview: true`, `reviewReason: "DISAGREEMENT"`.
-- 특수 경우(모델 호출 없음): AI 대화 0개 → 자기 주도적 사고만 판정, 나머지 `NA`. 학생 질문 2개 이하 → `INSUFFICIENT_DATA`(교사 직접 입력).
-- 점수: `배점 × (단계 − 1) ÷ 4`, 소수 첫째 자리 반올림(15점 4단계 = 11.3). 교사 점수도 같은 규칙입니다. **NA 항목은 총점과 만점에서 뺍니다**(`maxTotal`), 확정할 때도 요구하지 않습니다.
-- `lit.grading.judge.rubric.stop-when-two-agree=true`로 "2번 같으면 멈춤"(아직 검증 전, 기본 false).
+rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기존 문항별 Gemini 추천 대신 이 판정으로 결과를 만듭니다. 화면·API는 기존 과정 채점 그대로입니다.
 
-`GET .../participants/{pid}/rubric-scores` 항목마다 기존 필드(`ai`, `teacher`) + `notApplicable` + `judgment`:
-```json
-{"criterionId":3,"status":"OK","level":4,"score":15.0,"votes":[4,4,4],"haikuLevel":null,"needsReview":false,"reviewReason":null,
- "evidence":[{"src":"U","quote":"...","messageId":881,"sentenceId":null,"eventId":null,"range":[0,42]}],
- "met":"...","blocked":"...","teacherLevel":null,"method":"LLM_GEMINI_X3","runs":[...]}
-```
-응답 최상위: `gradingStatus`, `reviewCount`, `maxTotal`. `ai`는 LLM 판정이 확정됐을 때 그 값(0~4 척도)이고, 판정 전·실패 시에는 기존 규칙 기반 추천입니다.
+- **학생 단위**: 항목마다 한 칸, `Cell.questionId = null`(문항 가중치 없음). 작업 `model`은 `LLM_RUBRIC_GEMINI_X3_HAIKU`.
+- **시점**: 제출 때 작업이 만들어지고, 질문 용도·답안 기여도 분류가 끝난 학생부터 처리합니다(최대 10분 기다린 뒤에는 있는 결과로 진행).
+- **학생 기록**: 제출 시점에 고정된 `Input.sources`로 만듭니다. `Q`=문항, `U`=질문(질문 용도 표시), `A`=AI 답변(1500자까지), `S`=브라우저 경고(붙여넣기 등), `ANS`=최종 답안 문단, `DIS`=활용 설명란.
+- **프롬프트 순서**: 지시·공통 규칙·답 형식(system) → 학생 기록 → 항목 본문(`grading/rubric-judge-v1.md`, v3 표 + 경계 판정 + 문서의 문구 수정 3곳). 바꾸면 `RubricJudge.PROMPT_VERSION`도 올립니다.
+- **인용 검증**: 각 답의 인용을 원문에서 공백·문장부호를 빼고 찾아 `Citation`(sourceId·start·end·location)으로 연결합니다. 원문에 없는 인용은 버리고, 근거가 하나도 남지 않은 단계 답은 그 회차를 무효로 봅니다.
+- **확정**: 3번 모두 같으면 `RECOMMENDED`. 엇갈리면 Haiku 1번 → Gemini 다수결과 같으면 `RECOMMENDED`, 아니면 `HOLD`(level·score null, `judge.needsReview=true`, `judge.reviewReason="DISAGREEMENT"`).
+- **특수 경우(모델 호출 없음)**: AI 질문 0개 → 자기 주도적 사고만 판정, 나머지 `NOT_APPLICABLE`. 학생 질문 2개 이하 → `HOLD`(`INSUFFICIENT_DATA`). 사전 정책의 제외 항목은 `NOT_APPLICABLE`. 사전 정책이 없어도 판정하며, AI 미사용 정책이 `NOT_APPLICABLE`이면 전 항목 NA.
+- **칸 점수**: `배점 × (단계 − 1) ÷ 4`, 소수 첫째 자리(15점 4단계 = 11.3).
+- **총점(NA 재분배)**: NA 항목 배점을 나머지 항목에 비례해 나눠 100점 만점으로 환산합니다. 단계가 있는 칸은 정확한 값으로 합산한 뒤 소수 첫째 자리로 반올림합니다(자기 주도 25점 하나만 남고 4단계면 18.75 × 4 = 75.0).
+  **HOLD 항목은 재분배하지 않습니다**: 자기 몫을 `heldMaxScore`로 남겨 두고 총점은 null, 교사가 채우면 그 몫으로 계산합니다. `partialScore`는 환산값이고 `notApplicableMaxScore`만 원래 배점 합입니다.
+- 칸마다 `judge`: `votes`(Gemini 회차별), `haikuLevel`, `needsReview`, `reviewReason`, `method`, `runs`(회차별 원래 답·근거), `promptVersion`, 모델 이름.
+- 같은 기록·프롬프트·모델이면 `rubric_judgments`에 저장된 판정을 다시 씁니다(재분석해도 다시 부르지 않음).
 
-교사 확정: `PATCH .../participants/{pid}/criteria/{criterionId}/level` `{"level":4}` (1~5단계, 기존 `PUT rubric-scores/{criterionId}`의 0~4와 같은 기록)
+교사 검토·확정(기존 API):
+- `PUT .../process-grading/participants/{pid}/runs/{jobId}/review` — `overrides[].questionId`는 **null**, `criterion`, `level`(1~5) 또는 `score`, `reason`. 교사가 채운 칸은 `TEACHER_REVIEWED`이고 `judge.needsReview`가 풀립니다.
+- `POST .../runs/{jobId}/confirm` — HOLD 칸이 남아 있거나 규정 준수 판단이 HOLD면 409 `PROCESS_CONFIRMATION_HELD`.
+- **마지막 제출본만**: 다시 제출하면(종료 후 유예 시간의 마지막 저장으로 자동 제출본이 갱신되면) 시작 전인 이전 작업은 `SUPERSEDED`가 되고, 이전 작업의 검토·확정은 409 `PROCESS_RESULT_STALE`입니다.
+
+학생 PDF·HWP: 학생 단위 결과는 **교사가 확정한 결과만** 씁니다. 확정 전에는 점수·AI 추천 없이 "채점 중", 확정 후 항목 점수와 총점(재분배 100점 만점), NA 항목은 "해당 없음"으로 표시합니다.
+
+`rubric-scores` API(규칙 기반 추천)는 LLM 판정을 쓰지 않습니다. 반올림만 같은 규칙(소수 첫째 자리)입니다.
 
 ## 비용 확인
 
@@ -88,9 +92,9 @@ AI 판정은 추천이며 최종 결정은 교사입니다. 애매한 것은 `ne
 |---|---|
 | `semantic_judgments` / `sentence_labels` | ① 판정 캐시 / 교사 확정 |
 | `purpose_classifications` / `purpose_labels` | ② 질문별 결과(`votes`, `haiku_purpose`) / 교사 확정 |
-| `rubric_runs` | ③ 학생별 대기열(제출 버전, 상태, 시도 횟수) |
-| `rubric_judgments` | ③ 항목별 판정 JSON(회차별 원래 답, 최종값, 프롬프트 버전, 모델) |
-| `rubric_labels` | ③ 교사 확정(그때의 AI 판정 포함) |
+| `process_grading_jobs` / `process_grading_reviews` | ③ 작업별 결과(학생 단위 칸) / 교사 검토·확정 기록(보정용) |
+| `rubric_judgments` | ③ 항목별 판정 캐시(회차별 원래 답, 최종값, 프롬프트 버전, 모델) |
+| `rubric_runs`, `rubric_labels` | 사용하지 않음(#62의 이전 구조, 기존 데이터 삭제용으로만 남김) |
 | `judge_usage` | 호출별 토큰 |
 
 ## 배포 전 확인

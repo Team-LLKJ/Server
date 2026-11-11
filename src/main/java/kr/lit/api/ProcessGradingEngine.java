@@ -97,8 +97,14 @@ public class ProcessGradingEngine {
         cells.add(excluded(input,Criterion.TRANSPARENCY)?notApplicable(GLOBAL,Criterion.TRANSPARENCY):held(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,null,reason,"",List.of(),List.of(),List.of()),reason));
         return calculate(input,cells,new Compliance("INSUFFICIENT_EVIDENCE",reason,List.of(),List.of()),List.of(reason),null);
     }
+    /** 학생 단위 결과(LLM 루브릭, 칸마다 questionId=null)인지. */
+    public static boolean studentLevel(List<Cell> cells){return cells!=null&&!cells.isEmpty()&&cells.stream().allMatch(c->c.questionId()==null);}
+    /** LLM 루브릭 판정 칸으로 학생 단위 결과를 만듭니다(점수 계산은 NA 재분배). */
+    public Result studentResult(Input input,List<Cell> cells,Compliance compliance,List<String> limitations,String summary){return calculate(input,cells,compliance,limitations,summary);}
     public Result applyReview(Input input,Result original,List<LevelOverride> overrides) {
-        var keys=keys(input);var seen=new HashSet<String>();var cells=new ArrayList<>(original.cells());
+        boolean student=studentLevel(original.cells());
+        var keys=student?original.cells().stream().map(c->key(c.questionId(),c.criterion())).collect(java.util.stream.Collectors.toSet()):keys(input);
+        var seen=new HashSet<String>();var cells=new ArrayList<>(original.cells());
         for(var override:overrides) {
             String key=key(override.questionId(),override.criterion());
             if(!keys.contains(key)||!seen.add(key)||override.reason()==null||override.reason().isBlank())throw new IllegalArgumentException("INVALID_OVERRIDE");
@@ -106,14 +112,17 @@ public class ProcessGradingEngine {
             if((override.level()==null)==(override.score()==null))throw new IllegalArgumentException("INVALID_OVERRIDE");
             if(override.level()!=null&&(override.level()<minimumLevel(input)||override.level()>maximumLevel(input)))throw new IllegalArgumentException("INVALID_OVERRIDE");
             if(override.score()!=null&&(override.score().signum()<0||override.score().compareTo(BigDecimal.valueOf(override.criterion().maxScore()))>0||override.score().stripTrailingZeros().scale()>2))throw new IllegalArgumentException("INVALID_OVERRIDE");
-            BigDecimal teacherScore=override.score()!=null?override.score().setScale(2,RoundingMode.HALF_UP):score(input,override.criterion(),override.level());
+            BigDecimal teacherScore=override.score()!=null?override.score().setScale(2,RoundingMode.HALF_UP)
+                    :student?RubricJudge.score(override.criterion().maxScore(),override.level()):score(input,override.criterion(),override.level());
             for(int i=0;i<cells.size();i++)if(key(cells.get(i).questionId(),cells.get(i).criterion()).equals(key)) {
-                var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),teacherScore,"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations(),old.details()));
+                var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),teacherScore,"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations(),old.details(),
+                        old.judge()==null?null:old.judge().reviewed()));
             }
         }
         return calculate(input,cells,original.compliance(),original.limitations(),original.summary());
     }
     private Result calculate(Input input,List<Cell> cells,Compliance compliance,List<String> limitations,String summary) {
+        if(studentLevel(cells)) return calculateStudent(cells,compliance,limitations,summary);
         BigDecimal total=BigDecimal.ZERO,assessed=BigDecimal.ZERO,held=BigDecimal.ZERO,notApplicable=BigDecimal.ZERO;
         boolean complete=input.policy()!=null&&input.policy().questionWeights()!=null;
         for(var c:cells){
@@ -131,7 +140,29 @@ public class ProcessGradingEngine {
         var partial=new PartialScore(total.setScale(2,RoundingMode.HALF_UP),assessed.setScale(2,RoundingMode.HALF_UP),held.setScale(2,RoundingMode.HALF_UP),notApplicable.setScale(2,RoundingMode.HALF_UP));
         return new Result(status,compliance,List.copyOf(cells),complete&&assessed.signum()>0?total.setScale(2,RoundingMode.HALF_UP):null,limitations,summary,partial);
     }
+    /**
+     * 학생 단위 점수: NA(해당 없음) 항목 배점을 나머지 항목에 비례 재분배해 100점 만점으로 환산합니다.
+     * HOLD(판정 보류·교사 확인 필요) 항목은 재분배하지 않고 자기 배점을 그대로 둔 채 점수를 기다립니다(heldMaxScore, 총점 null).
+     * 단계가 있는 칸은 배점 × (단계 − 1) ÷ 4의 정확한 값으로 합산하고, 교사가 점수를 직접 넣은 칸은 그 점수를 씁니다. 총점·부분 점수는 소수 첫째 자리 반올림.
+     */
+    private Result calculateStudent(List<Cell> cells,Compliance compliance,List<String> limitations,String summary) {
+        BigDecimal na=BigDecimal.ZERO,base=BigDecimal.ZERO;
+        for(var c:cells){var max=BigDecimal.valueOf(c.criterion().maxScore());if(c.status().equals("NOT_APPLICABLE"))na=na.add(max);else base=base.add(max);}
+        if(base.signum()==0)return new Result("NOT_APPLICABLE",compliance,List.copyOf(cells),null,limitations,summary,
+                new PartialScore(BigDecimal.ZERO.setScale(1),BigDecimal.ZERO.setScale(1),BigDecimal.ZERO.setScale(1),na.setScale(1)));
+        BigDecimal factor=BigDecimal.valueOf(100).divide(base,12,RoundingMode.HALF_UP);
+        BigDecimal total=BigDecimal.ZERO,assessed=BigDecimal.ZERO,held=BigDecimal.ZERO;boolean complete=true;
+        for(var c:cells){
+            if(c.status().equals("NOT_APPLICABLE"))continue;
+            var max=BigDecimal.valueOf(c.criterion().maxScore());
+            BigDecimal exact=c.level()!=null?max.multiply(BigDecimal.valueOf(c.level()-1)).divide(BigDecimal.valueOf(4)):c.score();
+            if(exact==null){complete=false;held=held.add(max.multiply(factor));continue;}
+            total=total.add(exact.multiply(factor));assessed=assessed.add(max.multiply(factor));
+        }
+        var partial=new PartialScore(total.setScale(1,RoundingMode.HALF_UP),assessed.setScale(1,RoundingMode.HALF_UP),held.setScale(1,RoundingMode.HALF_UP),na.setScale(1,RoundingMode.HALF_UP));
+        return new Result(complete?"DONE":"HOLD",compliance,List.copyOf(cells),complete?total.setScale(1,RoundingMode.HALF_UP):null,limitations,summary,partial);
+    }
     private BigDecimal score(Input input,Criterion c,int level){return BigDecimal.valueOf(c.maxScore()).multiply(BigDecimal.valueOf(level-minimumLevel(input))).divide(BigDecimal.valueOf(4));}
     private Set<String> keys(Input input){var keys=new HashSet<String>();for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY&&!excluded(input,c))keys.add(key(q,c));if(!excluded(input,Criterion.TRANSPARENCY))keys.add(key(GLOBAL,Criterion.TRANSPARENCY));return keys;}
-    private String key(String q,Criterion c){return q+":"+c;}
+    private String key(String q,Criterion c){return Objects.toString(q,"")+":"+c;}
 }
