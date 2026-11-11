@@ -23,7 +23,7 @@ public class ReportArchiveJobRepository {
     public boolean isActive(String user){return db.queryForObject("SELECT COUNT(*) FROM app_users WHERE id=? AND user_role='TEACHER' AND user_status='ACTIVE'",Integer.class,user)>0;}
     public void completeJob(String id,String path){db.update("UPDATE report_archive_jobs SET status='DONE',file_path=?,completed_at=CURRENT_TIMESTAMP WHERE id=?",path,id);}
     public void failJob(String id,String code){db.update("UPDATE report_archive_jobs SET status='FAILED',error_code=?,completed_at=CURRENT_TIMESTAMP WHERE id=?",code,id);}
-    public List<Job> getExpired(){return query("SELECT * FROM report_archive_jobs WHERE status='DONE' AND completed_at<DATEADD('HOUR',-1,CURRENT_TIMESTAMP)");}
+    public List<Job> getExpired(){return query("SELECT * FROM report_archive_jobs WHERE status='DONE' AND completed_at<(CURRENT_TIMESTAMP - INTERVAL '1' HOUR)");}
     public void expireJob(String id){db.update("UPDATE report_archive_jobs SET status='EXPIRED',file_path=NULL WHERE id=?",id);}
-    public void recoverJobs(){db.update("UPDATE report_archive_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND started_at<DATEADD('MINUTE',-15,CURRENT_TIMESTAMP)");}
+    public void recoverJobs(){db.update("UPDATE report_archive_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND started_at<(CURRENT_TIMESTAMP - INTERVAL '15' MINUTE)");}
 }

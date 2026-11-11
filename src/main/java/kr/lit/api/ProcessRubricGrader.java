@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -123,7 +124,7 @@ public class ProcessRubricGrader {
     }
     private void save(Input input,RubricJudge.Judgment judgment,String key) {
         try {
-            db.update("MERGE INTO rubric_judgments(participant_id,indicator,evaluation_id,cache_key,result_json,prompt_version,created_at) KEY(participant_id,indicator) VALUES (?,?,?,?,?,?,?)",
+            DatabaseUpsert.save(db,"rubric_judgments","participant_id,indicator,evaluation_id,cache_key,result_json,prompt_version,created_at","participant_id,indicator","?,?,?,?,?,?,?",
                     input.participantId(),judgment.indicator().name(),input.evaluationId(),key,json.writeValueAsString(judgment),judgment.promptVersion(),OffsetDateTime.now(ZoneOffset.UTC));
         } catch(Exception ex) { throw new IllegalStateException(ex); }
     }

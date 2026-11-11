@@ -1,4 +1,6 @@
 package kr.lit.auth;
+
+import kr.lit.db.DatabaseUpsert;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import java.time.OffsetDateTime;
@@ -11,7 +13,7 @@ public class SignupEmailRepository {
     public boolean existsUsername(String username) {return db.queryForObject("SELECT COUNT(*) FROM app_users WHERE username=?",Integer.class,username)>0;}
     public Map<String,Object> lockVerification(String email) {
         // MERGE updates only the key and preserves existing verification fields.
-        db.update("MERGE INTO signup_email_verifications(email) KEY(email) VALUES (?)",email);
+        DatabaseUpsert.save(db,"signup_email_verifications","email","email","?",email);
         return db.queryForMap("SELECT * FROM signup_email_verifications WHERE email=? FOR UPDATE",email);
     }
     public void saveChallenge(String email,String hash,OffsetDateTime sent,OffsetDateTime expires) {

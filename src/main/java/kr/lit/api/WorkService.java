@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.*;
 import org.springframework.http.HttpStatus;
@@ -116,7 +117,7 @@ public class WorkService {
         var antiCheat=config.antiCheat()==null?null:CommonSettingsRules.antiCheat(json,config.antiCheat());
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());
-        db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
+        DatabaseUpsert.save(db,"evaluation_settings","evaluation_id,ai_policy","evaluation_id","?,?",id,resolved.name());
         if(config.guidelines()!=null) {
             db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(config.guidelines()),id);
         }
@@ -215,7 +216,7 @@ public class WorkService {
             }catch(IllegalArgumentException invalid){throw failure(HttpStatus.BAD_REQUEST,invalid.getMessage(),"편집 이력의 구간·버전·결과 텍스트·AI 인용을 확인해주세요.");}
         }
         var timestamp=OffsetDateTime.now(ZoneOffset.UTC);
-        db.update("MERGE INTO answers(participant_id,question_id,content,version,updated_at) KEY(participant_id,question_id) VALUES (?,?,?,?,?)",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
+        DatabaseUpsert.save(db,"answers","participant_id,question_id,content,version,updated_at","participant_id,question_id","?,?,?,?,?",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
         var change=new LinkedHashMap<String,Object>();
         change.put("previousContent",old.content());change.put("content",safeContent);
         change.put("previousVersion",old.version());change.put("version",old.version()+1);
@@ -255,7 +256,7 @@ public class WorkService {
     /** 제출과 함께 분석 작업을 저장하고 커밋 후 실행을 요청합니다. */
     void requestAnalysis(String evaluationId,String participantId) {
         String jobId=processGrading.queueSubmission(evaluationId,participantId);
-        db.update("MERGE INTO grading_analyses(participant_id,evaluation_id,analysis_status,requested_at) KEY(participant_id) VALUES (?,?,'PENDING',?)",
+        DatabaseUpsert.save(db,"grading_analyses","participant_id,evaluation_id,analysis_status,requested_at","participant_id","?,?,'PENDING',?",
                 participantId,evaluationId,OffsetDateTime.now(ZoneOffset.UTC));
         events.publishEvent(new SubmissionAnalysisDispatcher.Request(evaluationId,participantId,jobId));
     }
@@ -457,10 +458,10 @@ public class WorkService {
     }
     public void expirePending() {
         // Recover persisted requests left pending by a server crash; never resend them automatically.
-        var ids=db.queryForList("SELECT DISTINCT evaluation_id FROM ai_turns WHERE state='PENDING' AND created_at<DATEADD('SECOND',-120,CURRENT_TIMESTAMP)",String.class);
+        var ids=db.queryForList("SELECT DISTINCT evaluation_id FROM ai_turns WHERE state='PENDING' AND created_at<(CURRENT_TIMESTAMP - INTERVAL '120' SECOND)",String.class);
         for(String id:ids) {
             evaluation(id);
-            var stale=db.query("SELECT * FROM ai_turns WHERE evaluation_id=? AND state='PENDING' AND created_at<DATEADD('SECOND',-120,CURRENT_TIMESTAMP)",this::turn,id);
+            var stale=db.query("SELECT * FROM ai_turns WHERE evaluation_id=? AND state='PENDING' AND created_at<(CURRENT_TIMESTAMP - INTERVAL '120' SECOND)",this::turn,id);
             for(var t:stale) {
                 String person=db.queryForObject("SELECT participant_id FROM ai_turns WHERE id=?",String.class,t.id());
                 db.update("UPDATE ai_turns SET state='FAILED',error_code='AI_REQUEST_ABANDONED',completed_at=CURRENT_TIMESTAMP WHERE id=?",t.id());

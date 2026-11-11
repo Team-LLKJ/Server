@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.*;
 import org.jsoup.Jsoup;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,7 +19,7 @@ public class ProcessGradingRepository {
     public Optional<Policy> getPolicy(String id){return db.queryForList("SELECT policy_json FROM process_grading_policies WHERE evaluation_id=?",String.class,id).stream().findFirst().map(s->decode(s,Policy.class));}
     public List<String> getQuestionIds(String id){return db.queryForList("SELECT id FROM questions WHERE evaluation_id=? ORDER BY position,id",String.class,id);}
     public String getEvaluationState(String id){return db.queryForObject("SELECT state FROM evaluations WHERE id=? FOR UPDATE",String.class,id);}
-    public void savePolicy(String id,Policy policy){db.update("MERGE INTO process_grading_policies(evaluation_id,policy_json) KEY(evaluation_id) VALUES (?,?)",id,encode(policy));}
+    public void savePolicy(String id,Policy policy){DatabaseUpsert.save(db,"process_grading_policies","evaluation_id,policy_json","evaluation_id","?,?",id,encode(policy));}
     public String queueSubmission(String id,String pid) {
         // 호출자는 평가 행을 잠근 제출 트랜잭션입니다. 제출 시점의 모든 입력을 별도 보존합니다.
         var rows=db.queryForList("SELECT s.snapshot,s.review_token,e.title FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.evaluation_id=? AND s.participant_id=?",id,pid);
@@ -83,7 +84,7 @@ public class ProcessGradingRepository {
     public List<PendingJob> getPendingJobRows(){return db.query("SELECT id,participant_id,created_at FROM process_grading_jobs WHERE status='PENDING' ORDER BY created_at LIMIT 20",
             (r,n)->new PendingJob(r.getString(1),r.getString(2),r.getTimestamp(3).toInstant()));}
     public boolean claimJob(String id){return db.update("UPDATE process_grading_jobs SET status='RUNNING',started_at=CURRENT_TIMESTAMP,heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'",id)==1;}
-    public void recoverJobs(){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND COALESCE(heartbeat_at,started_at)<DATEADD('MINUTE',-5,CURRENT_TIMESTAMP)");}
+    public void recoverJobs(){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND COALESCE(heartbeat_at,started_at)<(CURRENT_TIMESTAMP - INTERVAL '5' MINUTE)");}
     public void touchJob(String id){db.update("UPDATE process_grading_jobs SET heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",id);}
     public void completeJob(String id,String model,Result result){db.update("UPDATE process_grading_jobs SET status=?,model=?,result_json=?,completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",result.status(),model,encode(result),id);}
     public void failJob(String id,String code){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code=?,completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",code,id);}

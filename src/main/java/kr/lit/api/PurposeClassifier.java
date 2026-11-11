@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -205,8 +206,9 @@ public class PurposeClassifier {
         return out;
     }
     private void save(String evaluationId,String participantId,long conversationId,String status,Result result,int attempts,String error) {
-        db.update("MERGE INTO purpose_classifications(conversation_id,evaluation_id,participant_id,status,purpose,votes,haiku_purpose,needs_review,method,haiku_model,gemini_model,prompt_version,attempts,error_code,updated_at) "+
-                "KEY(conversation_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        DatabaseUpsert.save(db,"purpose_classifications",
+                "conversation_id,evaluation_id,participant_id,status,purpose,votes,haiku_purpose,needs_review,method,haiku_model,gemini_model,prompt_version,attempts,error_code,updated_at",
+                "conversation_id","?,?,?,?,?,?,?,?,?,?,?,?,?,?,?",
                 conversationId,evaluationId,participantId,status,result==null?null:result.purpose(),result==null?null:String.join(",",result.votes()),
                 result==null?null:result.haikuPurpose(),result!=null&&result.needsReview(),result==null?null:result.method(),
                 client.anthropicModel(),client.geminiModel(),PROMPT_VERSION,attempts,error,OffsetDateTime.now(ZoneOffset.UTC));

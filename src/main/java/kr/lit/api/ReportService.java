@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.*;
 import kr.lit.auth.*;
 import org.springframework.http.HttpStatus;
@@ -46,7 +47,7 @@ public class ReportService {
  public Students students(String id,int page,int size){return students(id,page,size,"");}
  public Students students(String id,int page,int size,String query){
   teacher(id);if(page<0||size<1||size>100||query==null||query.length()>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100, query는100자 이하입니다.");
-  String filter=" FROM participants p WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0";
+  String filter=" FROM participants p WHERE p.evaluation_id=? AND POSITION(LOWER(?) IN LOWER(p.nickname))>0";
   String q=query.strip();
   long count=db.queryForObject("SELECT COUNT(*)"+filter,Long.class,id,q);
   String warning="EXISTS (SELECT 1 FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ("+WorkModels.ClientEventType.warningSql()+"))";
@@ -156,7 +157,7 @@ public class ReportService {
    boolean equal=before==null?rating.score()==null:rating.score()!=null&&before*next.maxScore()==rating.score()*priorMax;
    if(!equal) db.update("INSERT INTO teacher_review_changes(evaluation_id,participant_id,criterion_id,previous_score,score,teacher_id,changed_at,review_version,previous_max_score,max_score) VALUES (?,?,?,?,?,?,?,?,?,?)",id,pid,rating.criterion().name(),before,rating.score(),next.teacherId(),OffsetDateTime.ofInstant(next.reviewedAt(),ZoneOffset.UTC),next.version(),priorMax,next.maxScore());
   }
-  db.update("MERGE INTO teacher_reviews(participant_id,evaluation_id,review_json,updated_at) KEY(participant_id) VALUES (?,?,?,CURRENT_TIMESTAMP)",pid,id,encode(next));
+  DatabaseUpsert.save(db,"teacher_reviews","participant_id,evaluation_id,review_json,updated_at","participant_id","?,?,?,CURRENT_TIMESTAMP",pid,id,encode(next));
  }
  public List<ReviewChange> reviewHistory(String id,String pid,long afterId,int limit){
   teacher(id);person(id,pid);if(afterId<0||limit<1||limit>200)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이력 조회 범위를 확인해주세요.");
