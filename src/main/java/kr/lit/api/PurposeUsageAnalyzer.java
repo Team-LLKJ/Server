@@ -39,8 +39,11 @@ public class PurposeUsageAnalyzer {
      * 질문별 결과. purpose는 최종 용도(교사 확정 > LLM 확정·임시 > 키워드), votes는 Gemini 3회 답, haikuPurpose는 불일치 때 Haiku 답.
      * purposes·weightPerPurpose는 이전 응답과의 호환용(항상 [purpose], 1.0).
      */
-    public record Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String haikuPurpose,
-                           boolean needsReview,String teacherPurpose,String method,List<Purpose> purposes,double weightPerPurpose) {}
+    public record Question(long conversationId,String questionId,String quote,Purpose purpose,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="Gemini 3회 답(용도 값)") List<String> votes,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답, 아니면 null",allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String haikuPurpose,
+                           boolean needsReview,@io.swagger.v3.oas.annotations.media.Schema(allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String teacherPurpose,
+                           @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","TEACHER","KEYWORD_FALLBACK"}) String method,List<Purpose> purposes,double weightPerPurpose) {}
     public record Group(Purpose purpose,String name,double percentage,int count,List<Question> representativeQuestions) {}
     /**
      * usage: 5개 항목 비율(확정+임시 용도, OTHER·UNDECIDED 제외). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
