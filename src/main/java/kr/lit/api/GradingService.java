@@ -16,7 +16,8 @@ public class GradingService {
     private final JdbcTemplate db;
     private final PurposeClassifier purposes;
     private final AssessmentService assessment;
-    public GradingService(ReportService reports,JdbcTemplate db,PurposeClassifier purposes,AssessmentService assessment) {this.reports=reports;this.db=db;this.purposes=purposes;this.assessment=assessment;}
+    private final GradingQueue queue;
+    public GradingService(ReportService reports,JdbcTemplate db,PurposeClassifier purposes,AssessmentService assessment,GradingQueue queue) {this.reports=reports;this.db=db;this.purposes=purposes;this.assessment=assessment;this.queue=queue;}
     /** 교사가 질문 용도를 확정합니다. LLM 결과보다 우선하며 보정 기록으로 저장되고, AI 활용 분석도 같은 분류로 다시 계산합니다. */
     public PurposeUsageAnalyzer.View setPurpose(String id,String pid,long conversationId,PurposeInput input) {
         reports.detail(id,pid);
@@ -74,7 +75,11 @@ public class GradingService {
         return new Activity(null,usage,recent,warningCount,warningCount>200,summary,detail.analysis().method(),AssessmentTrace.getPasteEvents(detail.work()),0,purposeAnalysis,new InputPathAnalyzer().analyzePaths(detail.work()));
     }
     public InputPathAnalyzer.View getInputPaths(String id,String pid){return new InputPathAnalyzer().analyzePaths(reports.detail(id,pid).work());}
-    public PurposeUsageAnalyzer.View getUsageAnalysis(String id,String pid){return new PurposeUsageAnalyzer().analyzeUsage(reports.detail(id,pid).work());}
+    public PurposeUsageAnalyzer.View getUsageAnalysis(String id,String pid){
+        var detail=reports.detail(id,pid);
+        if(!queue.resultsVisible(id)) throw new ApiError.Failure(HttpStatus.CONFLICT,"GRADING_RESULTS_NOT_READY","평가가 끝난 뒤 채점 결과를 볼 수 있습니다.");
+        return new PurposeUsageAnalyzer().analyzeUsage(detail.work());
+    }
     private String purposeLabel(String purpose) {return switch(purpose) {
         case "IDEATION"->"아이디어 탐색";case "RESEARCH"->"자료 조사";case "STRUCTURING"->"구조화";
         case "VERIFICATION"->"검증";case "REVISION"->"답안 수정";case "ANSWER_DRAFTING"->"답안 생성 요청";

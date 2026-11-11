@@ -59,7 +59,7 @@ class SemanticJudgeApiTest extends AuthTestSupport {
         var after=assessment.analysis(f.id(),f.pid());
         assertThat(after.semanticStatus()).isEqualTo("DONE");
         var s=sentence(after,PARAPHRASE);
-        assertThat(s.source()).isEqualTo("AI_REFERENCED");assertThat(s.reason()).isEqualTo("SEMANTIC");assertThat(s.needsReview()).isFalse();
+        assertThat(s.source()).isEqualTo("AI");assertThat(s.reason()).isEqualTo("SEMANTIC");assertThat(s.needsReview()).isFalse();
         assertThat(s.semantic().haikuLevel()).isEqualTo(3);assertThat(s.semantic().geminiLevel()).isNull();assertThat(s.conversationId()).isNotNull();
         assertThat(sentence(after,OWN).source()).isEqualTo("DIRECT");
         assertThat(after.contribution().aiReferenced()).isPositive();assertThat(after.contribution().direct()+after.contribution().aiReferenced()).isEqualTo(100);
@@ -129,7 +129,7 @@ class SemanticJudgeApiTest extends AuthTestSupport {
         job.process(f.id(),f.pid());
         var a=assessment.analysis(f.id(),f.pid());
         assertThat(a.semanticStatus()).isEqualTo("DONE");
-        assertThat(sentence(a,PARAPHRASE)).matches(s->s.source().equals("AI_REFERENCED")&&s.semantic().geminiLevel()==3&&!s.needsReview());
+        assertThat(sentence(a,PARAPHRASE)).matches(s->s.source().equals("AI")&&s.semantic().geminiLevel()==3&&!s.needsReview());
         verify(client,times(1)).judgeWithHaiku(any());verify(client,times(2)).judgeWithGemini(any());
         assertThat(attempts(f.pid())).isEqualTo(1);
     }

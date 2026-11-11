@@ -51,13 +51,27 @@ public final class AssessmentModels {
     public record Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
                            boolean needsReview,SemanticVerdict semantic,String teacherLabel) {
+        /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String closestAiSentence(){return semantic==null?null:semantic.closestCandidateText();}
+        /** 교사가 확정한 출처(AI|DIRECT, 확정 전 null). */
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String teacherSource(){return teacherLabel;}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public Integer haikuLevel(){return semantic==null?null:semantic.haikuLevel();}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public Integer geminiLevel(){return semantic==null?null:semantic.geminiLevel();}
         public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
                         double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated){
             this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null,null);
         }
     }
     /** 교사의 문장 판정 수정(3단계 보정 자료). AI 또는 DIRECT. */
-    public record SentenceLabelInput(@NotBlank @Pattern(regexp="AI|DIRECT") String label) {}
+    public record SentenceLabelInput(@Pattern(regexp="AI|DIRECT") String label,@Pattern(regexp="AI|DIRECT") String source) {
+        public SentenceLabelInput(String label){this(label,null);}
+        /** label(이전 이름)과 source(문서 이름) 중 들어온 값. */
+        public String value(){return source!=null?source:label;}
+    }
     /**
      * 2단계 LLM 판정 결과(문장 하나). haikuLevel·geminiLevel은 0~3 단계(3: 거의 그대로 따라감, 2: 핵심 주장 같음,
      * 1: 일반적 내용·자기 경험 중심, 0: 다름). geminiLevel은 Haiku 단계 2라서 Gemini에 보낸 문장만 있고, 보내지 않았거나 실패하면 null입니다.
@@ -81,6 +95,9 @@ public final class AssessmentModels {
     public record Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,
                            Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,
                            List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition,List<Sentence> sentences,String semanticStatus) {
+        /** 교사 확인이 필요한 문장 수. */
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public int reviewCount(){return sentences==null?0:(int)sentences.stream().filter(Sentence::needsReview).count();}
         public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of(),List.of(),null);}
     }
     public record AnalysisRun(String evaluationId,int queued,String status) {}
@@ -88,10 +105,27 @@ public final class AssessmentModels {
     // ---- 점수 ----
     public record AiScore(int level,double score,String reason,List<Evidence> evidence,List<Reason> reasons) {}
     public record TeacherScore(int level,double score,String feedback,Instant updatedAt) {}
-    public record CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted) {}
+    /**
+     * ③ 루브릭 LLM 판정(항목 하나). status: OK | NA(해당 없음, 총점에서 뺌) | HOLD(보류). level·score는 확정됐을 때만 값이 있고,
+     * needsReview=true면 교사 직접 입력이 필요합니다(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA). level은 1~5단계(teacherLevel도 같은 척도).
+     * votes는 Gemini 회차별 답(무효 회차는 null), haikuLevel은 엇갈렸을 때 Haiku 답, runs는 회차별 원래 답(참고·보정용)입니다.
+     */
+    public record RubricJudgmentView(int criterionId,String status,Integer level,java.math.BigDecimal score,List<Object> votes,Object haikuLevel,
+                                     boolean needsReview,String reviewReason,List<RubricJudge.Evidence> evidence,String met,String blocked,
+                                     Integer teacherLevel,String method,List<RubricJudge.Run> runs) {}
+    public record CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted,
+                                 boolean notApplicable,RubricJudgmentView judgment) {
+        public CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted){
+            this(criterionId,name,maxScore,indicator,ai,teacher,adjusted,false,null);
+        }
+    }
     public record ComplianceReview(ComplianceResult ai,ComplianceDecision decision,String note) {}
+    /** maxTotal: NA(해당 없음) 항목을 뺀 만점. gradingStatus: QUEUED | GRADING | DONE | FAILED(제출 전 null). reviewCount: 교사 확인이 필요한 항목 수. */
     public record Scores(String participantId,List<CriterionScore> criteria,Double totalAi,Double totalTeacher,double totalCurrent,
-                         String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria,String summary) {}
+                         String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria,String summary,
+                         int maxTotal,String gradingStatus,int reviewCount) {}
+    /** 교사의 루브릭 단계 확정(1~5단계). */
+    public record LevelInput(@jakarta.validation.constraints.NotNull @Min(1) @Max(5) Integer level,@Size(max=2000) String feedback) {}
     public record ScoreInput(@Min(0) @Max(4) Integer level,@Size(max=2000) String feedback) {}
     public record ConfirmInput(Boolean acceptAiForMissing) {}
     public record ComplianceInput(@NotNull ComplianceDecision decision,@Size(max=1000) String note) {}

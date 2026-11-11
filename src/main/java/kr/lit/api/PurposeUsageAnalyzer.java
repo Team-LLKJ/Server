@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /**
  * AI 사용 방법(질문 용도) 분석. 질문 하나에 주된 용도 하나만 매기고, 비율은 "질문 몇 개 중 몇 개"입니다. 점수가 아닙니다.
- * 용도는 스냅샷 대화에 붙은 purposeClassification(교사 확정 > LLM: Haiku 3회 일치, 불일치는 Gemini 임시 용도)을 쓰고,
+ * 용도는 스냅샷 대화에 붙은 purposeClassification(교사 확정 > LLM: Gemini 3회 일치, 불일치는 Haiku 임시 용도)을 쓰고,
  * 아직 분류 전이거나 실패한 질문은 키워드 규칙으로 대체해 method에 표시합니다. AssessmentAnalyzer.classify와 같은 결과를 씁니다.
  */
 public class PurposeUsageAnalyzer {
@@ -21,7 +21,7 @@ public class PurposeUsageAnalyzer {
             catch(IllegalArgumentException ex) { return Optional.empty(); }
         }
     }
-    public static final String METHOD_LLM="LLM_HAIKU_X3",METHOD_LLM_GEMINI="LLM_HAIKU_X3_GEMINI",METHOD_TEACHER="TEACHER",METHOD_KEYWORD="KEYWORD_FALLBACK";
+    public static final String METHOD_LLM="LLM_GEMINI_X3",METHOD_LLM_HAIKU="LLM_GEMINI_X3_HAIKU",METHOD_TEACHER="TEACHER",METHOD_KEYWORD="KEYWORD_FALLBACK";
     /** 키워드 대체 규칙(우선순위 순서대로 첫 일치). LLM 분류가 없거나 실패한 질문에만 씁니다. */
     private static final List<Map.Entry<Purpose,Pattern>> KEYWORDS=List.of(
         Map.entry(Purpose.DRAFT,Pattern.compile("답안|정답|대신|작성해|써\\s*줘|써줘|풀어\\s*줘|완성해|만들어\\s*줘|이어\\s*(써|쓰)|덧붙|붙여\\s*줘|늘려\\s*줘|추가해\\s*줘")),
@@ -36,15 +36,15 @@ public class PurposeUsageAnalyzer {
     }
 
     /**
-     * 질문별 결과. purpose는 최종 용도(교사 확정 > LLM 확정·임시 > 키워드), votes는 Haiku 3회 답, geminiPurpose는 불일치 때 Gemini 답.
+     * 질문별 결과. purpose는 최종 용도(교사 확정 > LLM 확정·임시 > 키워드), votes는 Gemini 3회 답, haikuPurpose는 불일치 때 Haiku 답.
      * purposes·weightPerPurpose는 이전 응답과의 호환용(항상 [purpose], 1.0).
      */
-    public record Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String geminiPurpose,
+    public record Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String haikuPurpose,
                            boolean needsReview,String teacherPurpose,String method,List<Purpose> purposes,double weightPerPurpose) {}
     public record Group(Purpose purpose,String name,double percentage,int count,List<Question> representativeQuestions) {}
     /**
      * usage: 5개 항목 비율(확정+임시 용도, OTHER·UNDECIDED 제외). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
-     * undecidedCount: Haiku 세 답이 모두 다르고 Gemini도 실패한 질문 수. pendingCount: 아직 LLM 분류 전이라 키워드로 대체한 질문 수.
+     * undecidedCount: Gemini 세 답이 모두 다르고 Haiku도 실패한 질문 수. pendingCount: 아직 LLM 분류 전이라 키워드로 대체한 질문 수.
      */
     public record View(String method,String status,int questionCount,int missingRecords,List<Group> usage,List<Question> questions,List<String> limitations,
                        int reviewCount,int otherCount,int undecidedCount,int pendingCount) {}
@@ -63,7 +63,7 @@ public class PurposeUsageAnalyzer {
             else method=c.path("method").asText(METHOD_LLM);
             var votes=new ArrayList<String>();for(var v:c.path("votes"))votes.add(v.asText());
             String teacher=c.path("teacherPurpose").isTextual()?c.path("teacherPurpose").asText():null;
-            questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("geminiPurpose").isTextual()?c.path("geminiPurpose").asText():null,
+            questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("haikuPurpose").isTextual()?c.path("haikuPurpose").asText():null,
                     teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0));
             methods.add(method);
             if(!"COMPLETED".equals(turn.path("state").asText()))missing++;
@@ -79,7 +79,7 @@ public class PurposeUsageAnalyzer {
         String method=methods.isEmpty()?METHOD_KEYWORD:methods.size()==1?methods.iterator().next():"MIXED";
         var limitations=new ArrayList<String>();
         limitations.add("질문 하나에 주된 용도 하나만 매긴 비율입니다(질문 몇 개 중 몇 개). 점수가 아닙니다.");
-        if(review>0)limitations.add("Haiku 세 번의 분류가 엇갈린 질문 "+review+"개는 임시 용도로 계산했으며 교사 확인이 필요합니다.");
+        if(review>0)limitations.add("Gemini 세 번의 분류가 엇갈린 질문 "+review+"개는 임시 용도로 계산했으며 교사 확인이 필요합니다.");
         if(undecided>0)limitations.add("용도를 정하지 못한 질문 "+undecided+"개는 비율에서 뺐습니다.");
         if(methods.contains(METHOD_KEYWORD))limitations.add("LLM 분류 전이거나 실패한 질문은 키워드 규칙으로 대체했습니다(method=KEYWORD_FALLBACK).");
         return new View(method,missing>0?"PARTIAL":questions.isEmpty()?"NO_RECORDS":"READY",questions.size(),missing,groups,List.copyOf(questions),

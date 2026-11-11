@@ -43,7 +43,7 @@ class AnswerContributionV2Test {
 
     @Test void verbatimSentenceIsAiBySpanMatch() {
         var s = only(analyze("<p>청년층은 더 많은 취업 기회를 찾아 수도권이나 대도시로 이동하는 경향이 강합니다.</p>"));
-        assertThat(s.source()).isEqualTo("AI_REFERENCED");
+        assertThat(s.source()).isEqualTo("AI");
         assertThat(s.reason()).isEqualTo("SPAN_MATCH");
         assertThat(s.longestSpan()).isGreaterThanOrEqualTo(20);
         assertThat(s.conversationId()).isEqualTo(7L);
@@ -51,7 +51,7 @@ class AnswerContributionV2Test {
 
     @Test void slightlyEditedSentenceIsAi() {
         var s = only(analyze("<p>청년층은 더 많은 일자리 기회를 찾아 수도권이나 대도시로 이동하는 경향이 크다.</p>"));
-        assertThat(s.source()).isEqualTo("AI_REFERENCED");
+        assertThat(s.source()).isEqualTo("AI");
     }
 
     @Test void fullParaphraseStaysDirectInStageOne() {
@@ -79,7 +79,7 @@ class AnswerContributionV2Test {
                 + "할머니는 병원에 가려면 한 시간 넘게 기다려야 한다고 말씀하셨다. 나는 교통과 의료 문제부터 해결해야 한다고 생각한다.";
         var a = analyze("<p>청년층은 더 많은 취업 기회를 찾아 수도권이나 대도시로 이동하는 경향이 강합니다. " + own + "</p>");
         assertThat(a.sentences()).hasSize(4);
-        assertThat(a.sentences()).extracting(Sentence::source).containsExactly("AI_REFERENCED", "DIRECT", "DIRECT", "DIRECT");
+        assertThat(a.sentences()).extracting(Sentence::source).containsExactly("AI", "DIRECT", "DIRECT", "DIRECT");
         assertThat(a.paragraphs().get(0).source()).isEqualTo("AI_REFERENCED");
         var c = a.contribution();
         assertThat(c.aiReferenced()).isBetween(20, 40);

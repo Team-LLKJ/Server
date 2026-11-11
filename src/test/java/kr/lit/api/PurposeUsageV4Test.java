@@ -11,17 +11,17 @@ class PurposeUsageV4Test {
     static String turn(long id,String text,String classification){
         return "{\"id\":"+id+",\"questionId\":\"q\",\"questionText\":\""+text+"\",\"state\":\"COMPLETED\""+(classification==null?"":",\"purposeClassification\":"+classification)+"}";
     }
-    static String llm(String purpose,String votes,String gemini,boolean review,String method){
-        return "{\"status\":\"DONE\",\"purpose\":\""+purpose+"\",\"votes\":["+votes+"],\"geminiPurpose\":"+(gemini==null?"null":"\""+gemini+"\"")+",\"needsReview\":"+review+",\"teacherPurpose\":null,\"method\":\""+method+"\"}";
+    static String llm(String purpose,String votes,String haiku,boolean review,String method){
+        return "{\"status\":\"DONE\",\"purpose\":\""+purpose+"\",\"votes\":["+votes+"],\"haikuPurpose\":"+(haiku==null?"null":"\""+haiku+"\"")+",\"needsReview\":"+review+",\"teacherPurpose\":null,\"method\":\""+method+"\"}";
     }
 
     @Test void usesStoredClassificationsAndCountsOneQuestionOnce() throws Exception {
         var source=json.readTree("{\"conversations\":["+String.join(",",
-                turn(1,"광합성이 뭐야?",llm("UNDERSTAND","\"UNDERSTAND\",\"UNDERSTAND\",\"UNDERSTAND\"",null,false,"LLM_HAIKU_X3")),
-                turn(2,"40%는 누가 센 거야?",llm("REVIEW","\"REVIEW\",\"REVIEW\",\"UNDERSTAND\"","REVIEW",true,"LLM_HAIKU_X3_GEMINI")),
-                turn(3,"이 문장 고쳐줘",llm("EDIT","\"EDIT\",\"EDIT\",\"EDIT\"",null,false,"LLM_HAIKU_X3")),
-                turn(4,"제출 버튼 어디 있어?",llm("OTHER","\"OTHER\",\"OTHER\",\"OTHER\"",null,false,"LLM_HAIKU_X3")),
-                turn(5,"애매한 질문",llm("UNDECIDED","\"PLAN\",\"REVIEW\",\"DRAFT\"",null,true,"LLM_HAIKU_X3")))+"]}");
+                turn(1,"광합성이 뭐야?",llm("UNDERSTAND","\"UNDERSTAND\",\"UNDERSTAND\",\"UNDERSTAND\"",null,false,"LLM_GEMINI_X3")),
+                turn(2,"40%는 누가 센 거야?",llm("REVIEW","\"REVIEW\",\"REVIEW\",\"UNDERSTAND\"","REVIEW",true,"LLM_GEMINI_X3_HAIKU")),
+                turn(3,"이 문장 고쳐줘",llm("EDIT","\"EDIT\",\"EDIT\",\"EDIT\"",null,false,"LLM_GEMINI_X3")),
+                turn(4,"제출 버튼 어디 있어?",llm("OTHER","\"OTHER\",\"OTHER\",\"OTHER\"",null,false,"LLM_GEMINI_X3")),
+                turn(5,"애매한 질문",llm("UNDECIDED","\"PLAN\",\"REVIEW\",\"DRAFT\"",null,true,"LLM_GEMINI_X3")))+"]}");
         var view=new PurposeUsageAnalyzer().analyzeUsage(source);
         assertThat(view.status()).isEqualTo("READY");assertThat(view.questionCount()).isEqualTo(5);
         assertThat(view.usage()).extracting(PurposeUsageAnalyzer.Group::purpose).containsExactly(UNDERSTAND,REVIEW,EDIT);
@@ -30,7 +30,7 @@ class PurposeUsageV4Test {
         assertThat(view.usage().get(0).percentage()).isIn(33.3,33.4);
         assertThat(view.reviewCount()).isEqualTo(2);assertThat(view.otherCount()).isEqualTo(1);assertThat(view.undecidedCount()).isEqualTo(1);
         var q2=view.questions().get(1);
-        assertThat(q2.votes()).containsExactly("REVIEW","REVIEW","UNDERSTAND");assertThat(q2.geminiPurpose()).isEqualTo("REVIEW");assertThat(q2.needsReview()).isTrue();
+        assertThat(q2.votes()).containsExactly("REVIEW","REVIEW","UNDERSTAND");assertThat(q2.haikuPurpose()).isEqualTo("REVIEW");assertThat(q2.needsReview()).isTrue();
         assertThat(q2.purposes()).containsExactly(REVIEW);assertThat(q2.weightPerPurpose()).isEqualTo(1.0);
         assertThat(view.method()).isEqualTo("MIXED");
     }
@@ -57,7 +57,7 @@ class PurposeUsageV4Test {
         assertThat(partial.status()).isEqualTo("PARTIAL");assertThat(partial.questionCount()).isEqualTo(1);
     }
     @Test void assessmentClassifyUsesSameStoredPurpose() throws Exception {
-        var turn=json.readTree(turn(1,"이 문장 고쳐줘",llm("REVIEW","\"REVIEW\",\"REVIEW\",\"REVIEW\"",null,false,"LLM_HAIKU_X3")));
+        var turn=json.readTree(turn(1,"이 문장 고쳐줘",llm("REVIEW","\"REVIEW\",\"REVIEW\",\"REVIEW\"",null,false,"LLM_GEMINI_X3")));
         assertThat(AssessmentAnalyzer.classify(turn)).isEqualTo(AssessmentModels.QuestionType.VERIFICATION);
         assertThat(AssessmentAnalyzer.classify(json.readTree(turn(2,"이 문장 고쳐줘",null)))).isEqualTo(AssessmentAnalyzer.classify("이 문장 고쳐줘"));
         assertThat(PurposeClassifier.majority(java.util.List.of("PLAN","REVIEW","PLAN"))).isEqualTo("PLAN");
