@@ -24,6 +24,21 @@ class OpenApiTest extends AuthTestSupport {
         assertThat(spec.path("components").path("schemas").has("Login")).isTrue();
         assertThat(paths.toString()).doesNotContain("/actuator/");
     }
+    @Test void sameNamedNestedModelsGetDistinctSchemasWithJudgeFields() throws Exception {
+        var schemas=ok(request(get("/api/openapi"),null)).path("components").path("schemas");
+        // 이름이 같은 중첩 레코드는 "바깥클래스.이름"으로 따로 나옵니다(덮어쓰지 않음).
+        assertThat(schemas.has("AssessmentModels.Analysis")).isTrue();assertThat(schemas.has("ReportModels.Analysis")).isTrue();
+        assertThat(schemas.path("AssessmentModels.Analysis").path("properties").has("sentences")).isTrue();
+        assertThat(schemas.path("AssessmentModels.Analysis").path("properties").has("reviewCount")).isTrue();
+        var sentence=schemas.path("Sentence").path("properties");
+        assertThat(sentence.has("closestAiSentence")).isTrue();assertThat(sentence.has("teacherSource")).isTrue();
+        assertThat(sentence.path("source").path("enum").toString()).isEqualTo("[\"DIRECT\",\"AI\"]");
+        var question=schemas.path("PurposeUsageAnalyzer.Question").path("properties");
+        assertThat(question.has("votes")).isTrue();assertThat(question.has("haikuPurpose")).isTrue();assertThat(question.has("needsReview")).isTrue();
+        assertThat(schemas.path("JudgeInfo").path("properties").path("reviewReason").path("enum").toString()).isEqualTo("[\"DISAGREEMENT\",\"INSUFFICIENT_DATA\"]");
+        assertThat(schemas.path("Cell").path("properties").has("adjustedMaxScore")).isTrue();
+        assertThat(schemas.has("Login")).isTrue(); // 겹치지 않는 이름은 그대로
+    }
     @Test void swaggerRedirectAssetsAndConfigurationStayUnderApiProxy() throws Exception {
         var redirect=mvc.perform(request(get("/api/docs"),null)).andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
         assertThat(redirect).startsWith("/api/swagger-ui/");

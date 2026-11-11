@@ -58,7 +58,11 @@ public final class ProcessGradingModels {
      * LLM 루브릭 판정 정보(학생 단위 칸에만). votes: Gemini 회차별 단계(무효 회차 null, "NA"·"HOLD" 가능), haikuLevel: 엇갈렸을 때 Haiku 답,
      * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA), runs: 회차별 원래 답(근거 포함, 보정용).
      */
-    public record JudgeInfo(List<Object> votes,Object haikuLevel,boolean needsReview,String reviewReason,String method,List<RubricJudge.Run> runs,
+    public record JudgeInfo(@io.swagger.v3.oas.annotations.media.Schema(description="Gemini 회차별 단계(1~5 정수, \"NA\", \"HOLD\", 근거 없는 무효 회차는 null)") List<Object> votes,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답(1~5, \"NA\", \"HOLD\"), 아니면 null") Object haikuLevel,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="교사 직접 입력이 필요한지(교사가 확정하면 false)") boolean needsReview,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="needsReview 이유",allowableValues={"DISAGREEMENT","INSUFFICIENT_DATA"},nullable=true) String reviewReason,
+                            @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","SERVER_RULE"}) String method,List<RubricJudge.Run> runs,
                             String promptVersion,String geminiModel,String haikuModel) {
         /** 교사가 확정한 뒤에는 확인 필요를 풉니다(나머지 기록은 보존). */
         public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel);}
@@ -67,8 +71,13 @@ public final class ProcessGradingModels {
      * 채점 한 칸. 문항별 채점은 questionId가 문항 id(투명성은 GLOBAL), LLM 루브릭 판정(학생 단위)은 questionId=null이고 항목마다 한 칸입니다.
      * 학생 단위 칸의 adjustedMaxScore는 NA 재분배 후 배점(정수, NA 칸은 0)이고 score는 그 배점 기준 정수 점수입니다. 문항별 채점은 adjustedMaxScore=null.
      */
-    public record Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,
-                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details,JudgeInfo judge,Integer adjustedMaxScore) {
+    public record Cell(@io.swagger.v3.oas.annotations.media.Schema(description="문항 id. 투명성은 GLOBAL, 학생 단위(LLM 루브릭)는 null",nullable=true) String questionId,Criterion criterion,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="단계 1~5(확정 전·HOLD·NA는 null)",nullable=true) Integer level,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="점수. 학생 단위는 adjustedMaxScore 기준 정수(HOLD·NA는 null)",nullable=true) BigDecimal score,
+                       @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"RECOMMENDED","HOLD","NOT_APPLICABLE","TEACHER_REVIEWED"}) String status,String reason,
+                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="LLM 루브릭 판정 정보(학생 단위 칸에만)",nullable=true) JudgeInfo judge,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="학생 단위: NA 재분배 후 배점(정수, NA 칸은 0). 문항별 채점은 null",nullable=true) Integer adjustedMaxScore) {
         public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null,null,null);}
         public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,null,null);}
         public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details,JudgeInfo judge){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,judge,null);}
@@ -83,7 +92,10 @@ public final class ProcessGradingModels {
      * assessedScore=판정된 칸 점수 합, assessedMaxScore=그 칸들의 배점 합, heldMaxScore=HOLD 칸 배점 합(교사가 채울 때까지 비움),
      * notApplicableMaxScore=NA 칸의 원래 배점 합입니다.
      */
-    public record PartialScore(BigDecimal assessedScore,BigDecimal assessedMaxScore,BigDecimal heldMaxScore,BigDecimal notApplicableMaxScore) {}
+    public record PartialScore(@io.swagger.v3.oas.annotations.media.Schema(description="판정된 칸 점수 합(학생 단위는 정수)") BigDecimal assessedScore,
+                               @io.swagger.v3.oas.annotations.media.Schema(description="판정된 칸의 배점 합(학생 단위는 재분배 배점, 정수)") BigDecimal assessedMaxScore,
+                               @io.swagger.v3.oas.annotations.media.Schema(description="HOLD 칸의 배점 합(교사가 채울 때까지 비움, 재분배하지 않음)") BigDecimal heldMaxScore,
+                               @io.swagger.v3.oas.annotations.media.Schema(description="NA 칸의 원래 배점 합") BigDecimal notApplicableMaxScore) {}
     public record Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations,String summary,PartialScore partialScore) {
         public Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations){this(status,compliance,cells,total,limitations,null,null);}
     }

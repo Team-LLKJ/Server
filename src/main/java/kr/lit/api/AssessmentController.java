@@ -51,6 +51,7 @@ class AssessmentController {
 
     @GetMapping("/participants/{participantId}/rubric-scores")
     Scores scores(@PathVariable String id,@PathVariable String participantId) { return assessment.scores(id,participantId); }
+    @io.swagger.v3.oas.annotations.Operation(summary="규칙 기반 루브릭 점수 저장(level 0~4)",description="기존 rubric-scores 화면용 교사 점수입니다. LLM 루브릭 판정(학생 단위 칸)의 교사 확정은 PUT /api/teacher/evaluations/{id}/process-grading/participants/{pid}/runs/{jobId}/review(overrides[].questionId=null)를 씁니다. 삭제된 PATCH .../criteria/{criterionId}/level의 대체가 아닙니다.")
     @PutMapping("/participants/{participantId}/rubric-scores/{criterionId}")
     Scores score(@PathVariable String id,@PathVariable String participantId,@PathVariable int criterionId,@Valid @RequestBody ScoreInput input) {
         return assessment.saveScore(id,participantId,criterionId,input);

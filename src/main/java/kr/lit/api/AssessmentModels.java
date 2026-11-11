@@ -37,6 +37,8 @@ public final class AssessmentModels {
     public record Segment(String questionId,int start,int end,String type,double similarity,double effectiveSimilarity,boolean estimated,int answerVersion) {}
     public record AnswerText(String questionId,String text,int answerVersion) {}
     public record PasteObservation(long eventId,String questionId,String occurredAt,Integer length,Integer start,Integer end,Integer answerVersion,boolean matchesFinalAnswer,boolean clientReported) {}
+    /** sentences[]와 reviewCount는 같은 응답(Analysis)의 최상위에 있습니다. */
+    @io.swagger.v3.oas.annotations.media.Schema(description="답안 기여도 비율(direct + aiReferenced = 100, aiUsed = 0). 문장별 판정은 Analysis.sentences, 확인 필요 수는 Analysis.reviewCount")
     public record Contribution(int direct,int aiReferenced,int aiUsed,String basis,List<Segment> segments) {
         public Contribution(int direct,int aiReferenced,int aiUsed,String basis){this(direct,aiReferenced,aiUsed,basis,List.of());}
     }
@@ -48,14 +50,17 @@ public final class AssessmentModels {
      * 답안 출처 판정 V2의 문장별 결과. source는 DIRECT 또는 AI_REFERENCED, reason은 SPAN_MATCH(최장 일치 구간)·GRAM_OVERLAP(3-gram 포함률)·null(DIRECT).
      * start/end는 answerTexts[].text 기준 UTF-16 위치(end 미포함)입니다.
      */
-    public record Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
+    public record Sentence(String id,String questionId,String paragraphId,String text,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="문장 출처",allowableValues={"DIRECT","AI"}) String source,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="AI로 본 근거",allowableValues={"SPAN_MATCH","GRAM_MATCH","SEMANTIC","TEACHER"},nullable=true) String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
-                           boolean needsReview,SemanticVerdict semantic,String teacherLabel) {
+                           boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel) {
         /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public String closestAiSentence(){return semantic==null?null:semantic.closestCandidateText();}
         /** 교사가 확정한 출처(AI|DIRECT, 확정 전 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"AI","DIRECT"},nullable=true)
         public String teacherSource(){return teacherLabel;}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public Integer haikuLevel(){return semantic==null?null:semantic.haikuLevel();}
