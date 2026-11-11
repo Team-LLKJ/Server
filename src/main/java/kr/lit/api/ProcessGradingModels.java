@@ -65,19 +65,23 @@ public final class ProcessGradingModels {
     }
     /**
      * 채점 한 칸. 문항별 채점은 questionId가 문항 id(투명성은 GLOBAL), LLM 루브릭 판정(학생 단위)은 questionId=null이고 항목마다 한 칸입니다.
+     * 학생 단위 칸의 adjustedMaxScore는 NA 재분배 후 배점(정수, NA 칸은 0)이고 score는 그 배점 기준 정수 점수입니다. 문항별 채점은 adjustedMaxScore=null.
      */
     public record Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,
-                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details,JudgeInfo judge) {
-        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null,null);}
-        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,null);}
+                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details,JudgeInfo judge,Integer adjustedMaxScore) {
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null,null,null);}
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,null,null);}
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details,JudgeInfo judge){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,judge,null);}
+        Cell withScore(BigDecimal score,Integer adjustedMax){return new Cell(questionId,criterion,level,score,status,reason,unmetNextLevel,conditions,counterEvidence,limitations,details,judge,adjustedMax);}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public int maxScore(){return criterion.maxScore();}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public String criterionName(){return criterion.displayName();}
     }
     /**
-     * 부분 점수. 문항별 채점은 문항 가중치를 곱한 값입니다. 학생 단위(LLM 루브릭)는 NA 항목 배점을 나머지 항목에 비례 재분배해 100점 만점으로 환산한 값이고
-     * (HOLD 항목은 재분배하지 않고 자기 배점을 그대로 heldMaxScore로 남김), notApplicableMaxScore만 원래 배점 합입니다.
+     * 부분 점수. 문항별 채점은 문항 가중치를 곱한 값입니다. 학생 단위(LLM 루브릭)는 모두 정수: NA 재분배 후 배점(adjustedMaxScore) 기준
+     * assessedScore=판정된 칸 점수 합, assessedMaxScore=그 칸들의 배점 합, heldMaxScore=HOLD 칸 배점 합(교사가 채울 때까지 비움),
+     * notApplicableMaxScore=NA 칸의 원래 배점 합입니다.
      */
     public record PartialScore(BigDecimal assessedScore,BigDecimal assessedMaxScore,BigDecimal heldMaxScore,BigDecimal notApplicableMaxScore) {}
     public record Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations,String summary,PartialScore partialScore) {

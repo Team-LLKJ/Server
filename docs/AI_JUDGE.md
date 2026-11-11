@@ -67,18 +67,24 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
 - **인용 검증**: 각 답의 인용을 원문에서 공백·문장부호를 빼고 찾아 `Citation`(sourceId·start·end·location)으로 연결합니다. 원문에 없는 인용은 버리고, 근거가 하나도 남지 않은 단계 답은 그 회차를 무효로 봅니다.
 - **확정**: 3번 모두 같으면 `RECOMMENDED`. 엇갈리면 Haiku 1번 → Gemini 다수결과 같으면 `RECOMMENDED`, 아니면 `HOLD`(level·score null, `judge.needsReview=true`, `judge.reviewReason="DISAGREEMENT"`).
 - **특수 경우(모델 호출 없음)**: AI 질문 0개 → 자기 주도적 사고만 판정, 나머지 `NOT_APPLICABLE`. 학생 질문 2개 이하 → `HOLD`(`INSUFFICIENT_DATA`). 사전 정책의 제외 항목은 `NOT_APPLICABLE`. 사전 정책이 없어도 판정하며, AI 미사용 정책이 `NOT_APPLICABLE`이면 전 항목 NA.
-- **칸 점수**: `배점 × (단계 − 1) ÷ 4`, 소수 첫째 자리(15점 4단계 = 11.3).
-- **총점(NA 재분배)**: NA 항목 배점을 나머지 항목에 비례해 나눠 100점 만점으로 환산합니다. 단계가 있는 칸은 정확한 값으로 합산한 뒤 소수 첫째 자리로 반올림합니다(자기 주도 25점 하나만 남고 4단계면 18.75 × 4 = 75.0).
-  **HOLD 항목은 재분배하지 않습니다**: 자기 몫을 `heldMaxScore`로 남겨 두고 총점은 null, 교사가 채우면 그 몫으로 계산합니다. `partialScore`는 환산값이고 `notApplicableMaxScore`만 원래 배점 합입니다.
+- **점수(모두 정수, 소수 첫째 자리에서 반올림)**
+  - 재분배 배점(`Cell.adjustedMaxScore`): NA 칸을 뺀 원래 배점 합을 100점이 되게 — `원래 배점 × 100 ÷ 판정 대상 배점 합` → 정수. NA가 없으면 원래 배점, NA 칸은 0.
+  - 칸 점수(`Cell.score`): `재분배 배점 × (단계 − 1) ÷ 4` → 정수(15점 4단계 = 11, 25점 4단계 = 19).
+  - 교사 직접 점수: 원래 배점 기준 정수로 반올림한 뒤(13.33 → 13) 재분배 배점 비율로 환산 → 정수(자기 주도 하나만 남으면 13 × 100/25 = 52).
+  - 총점 = 반올림한 칸 점수의 합(재분배 배점의 반올림 때문에 만점 합이 99·101이 될 수 있습니다).
+  - **HOLD 칸은 재분배하지 않습니다**: 자기 재분배 배점을 `heldMaxScore`로 남기고 점수·총점은 교사가 채울 때까지 null.
+  - `partialScore`: `assessedScore`(판정된 칸 점수 합), `assessedMaxScore`(그 칸 배점 합), `heldMaxScore`(HOLD 칸 배점 합), `notApplicableMaxScore`(NA 칸의 **원래** 배점 합).
 - 칸마다 `judge`: `votes`(Gemini 회차별), `haikuLevel`, `needsReview`, `reviewReason`, `method`, `runs`(회차별 원래 답·근거), `promptVersion`, 모델 이름.
 - 같은 기록·프롬프트·모델이면 `rubric_judgments`에 저장된 판정을 다시 씁니다(재분석해도 다시 부르지 않음).
+
+응답 예시(HOLD·NA·확정 칸이 섞인 결과): [examples/process-rubric-run.json](examples/process-rubric-run.json)
 
 교사 검토·확정(기존 API):
 - `PUT .../process-grading/participants/{pid}/runs/{jobId}/review` — `overrides[].questionId`는 **null**, `criterion`, `level`(1~5) 또는 `score`, `reason`. 교사가 채운 칸은 `TEACHER_REVIEWED`이고 `judge.needsReview`가 풀립니다.
 - `POST .../runs/{jobId}/confirm` — HOLD 칸이 남아 있거나 규정 준수 판단이 HOLD면 409 `PROCESS_CONFIRMATION_HELD`.
 - **마지막 제출본만**: 다시 제출하면(종료 후 유예 시간의 마지막 저장으로 자동 제출본이 갱신되면) 시작 전인 이전 작업은 `SUPERSEDED`가 되고, 이전 작업의 검토·확정은 409 `PROCESS_RESULT_STALE`입니다.
 
-학생 PDF·HWP: 학생 단위 결과는 **교사가 확정한 결과만** 씁니다. 확정 전에는 점수·AI 추천 없이 "채점 중", 확정 후 항목 점수와 총점(재분배 100점 만점), NA 항목은 "해당 없음"으로 표시합니다.
+학생 PDF·HWP: 학생 단위 결과는 **교사가 확정한 결과만** 씁니다. 확정 전에는 점수·AI 추천 없이 "채점 중", 확정 후 항목 점수(재분배 배점 기준 정수)와 총점, NA 항목은 "해당 없음"으로 표시합니다.
 
 `rubric-scores` API(규칙 기반 추천)는 LLM 판정을 쓰지 않습니다. 반올림만 같은 규칙(소수 첫째 자리)입니다.
 

@@ -43,7 +43,9 @@ public class ReportGradingService {
             if(cell==null){criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),criterion.maxScore(),null,false,null,null));continue;}
             boolean na=cell.status().equals("NOT_APPLICABLE");
             String feedback=String.join(" ",review.overrides().stream().filter(o->o.criterion()==criterion).map(ProcessGradingModels.LevelOverride::reason).toList());
-            criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),criterion.maxScore(),cell.score()==null?null:cell.score().doubleValue(),true,
+            // 재분배 후 배점(정수)과 그 기준 점수. NA 칸은 원래 배점을 보여 주고 "해당 없음"으로 표시합니다.
+            int max=na||cell.adjustedMaxScore()==null?criterion.maxScore():cell.adjustedMaxScore();
+            criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),max,cell.score()==null?null:cell.score().doubleValue(),true,
                     feedback.isBlank()?null:feedback,na?"해당 없음: 배점은 나머지 항목에 나눠 계산했습니다.":cell.reason(),na));
         }
         return new GradingSnapshot(review==null?"DRAFT":"CONFIRMED",List.copyOf(criteria),job.rubricVersion(),review==null?null:review.result().summary(),

@@ -84,7 +84,8 @@ public class ProcessRubricGrader {
         var citations=citations(input,j.evidence());
         var limitations=new ArrayList<String>();
         if(RubricJudge.STATUS_NA.equals(j.status()))
-            return new Cell(null,criterion,null,null,"NOT_APPLICABLE",blankToDefault(j.met(),"AI 대화 기록이 없어 이 항목은 해당 없음입니다."),"",List.of(),List.of(),List.of(),null,info);
+            return new Cell(null,criterion,null,null,"NOT_APPLICABLE",RubricJudge.METHOD_SERVER.equals(j.method())?"AI 대화 기록이 없어 이 항목은 해당 없음입니다. 배점은 나머지 항목에 나눠 계산합니다."
+                    :"AI 판정에서 이 항목은 해당 없음으로 나왔습니다. 배점은 나머지 항목에 나눠 계산합니다.","",List.of(),List.of(),List.of(),null,info);
         if(j.level()!=null&&!j.needsReview()) {
             var details=new Details(List.of(new BehaviorReason("충족한 핵심 조건",blankToDefault(j.met(),"근거 문장을 확인하세요."),citations)),List.of(),List.of(),
                     j.blocked()==null||j.blocked().isBlank()?List.of():List.of(j.blocked()),List.of());

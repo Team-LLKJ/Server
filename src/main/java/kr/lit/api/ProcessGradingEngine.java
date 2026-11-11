@@ -112,8 +112,9 @@ public class ProcessGradingEngine {
             if((override.level()==null)==(override.score()==null))throw new IllegalArgumentException("INVALID_OVERRIDE");
             if(override.level()!=null&&(override.level()<minimumLevel(input)||override.level()>maximumLevel(input)))throw new IllegalArgumentException("INVALID_OVERRIDE");
             if(override.score()!=null&&(override.score().signum()<0||override.score().compareTo(BigDecimal.valueOf(override.criterion().maxScore()))>0||override.score().stripTrailingZeros().scale()>2))throw new IllegalArgumentException("INVALID_OVERRIDE");
-            BigDecimal teacherScore=override.score()!=null?override.score().setScale(2,RoundingMode.HALF_UP)
-                    :student?RubricJudge.score(override.criterion().maxScore(),override.level()):score(input,override.criterion(),override.level());
+            // 학생 단위는 점수를 calculateStudent가 정수로 다시 계산합니다(직접 입력 점수는 원래 배점 기준 정수로 반올림).
+            BigDecimal teacherScore=override.score()!=null?(student?override.score().setScale(0,RoundingMode.HALF_UP):override.score().setScale(2,RoundingMode.HALF_UP))
+                    :student?null:score(input,override.criterion(),override.level());
             for(int i=0;i<cells.size();i++)if(key(cells.get(i).questionId(),cells.get(i).criterion()).equals(key)) {
                 var old=cells.get(i);cells.set(i,new Cell(old.questionId(),old.criterion(),override.level(),teacherScore,"TEACHER_REVIEWED",override.reason(),old.unmetNextLevel(),old.conditions(),old.counterEvidence(),old.limitations(),old.details(),
                         old.judge()==null?null:old.judge().reviewed()));
@@ -141,27 +142,31 @@ public class ProcessGradingEngine {
         return new Result(status,compliance,List.copyOf(cells),complete&&assessed.signum()>0?total.setScale(2,RoundingMode.HALF_UP):null,limitations,summary,partial);
     }
     /**
-     * 학생 단위 점수: NA(해당 없음) 항목 배점을 나머지 항목에 비례 재분배해 100점 만점으로 환산합니다.
-     * HOLD(판정 보류·교사 확인 필요) 항목은 재분배하지 않고 자기 배점을 그대로 둔 채 점수를 기다립니다(heldMaxScore, 총점 null).
-     * 단계가 있는 칸은 배점 × (단계 − 1) ÷ 4의 정확한 값으로 합산하고, 교사가 점수를 직접 넣은 칸은 그 점수를 씁니다. 총점·부분 점수는 소수 첫째 자리 반올림.
+     * 학생 단위 점수(모두 정수, 소수 첫째 자리에서 반올림).
+     * <ol>
+     *   <li>배점: NA(해당 없음) 칸을 뺀 원래 배점 합을 기준으로 100점 만점이 되게 재분배합니다 — 원래 배점 × 100 ÷ 판정 대상 배점 합 → 정수(adjustedMaxScore).
+     *       NA가 없으면 원래 배점 그대로입니다.</li>
+     *   <li>칸 점수: 재분배 배점 × (단계 − 1) ÷ 4 → 정수. 교사가 점수를 직접 넣은 칸은 원래 배점 기준 정수로 반올림한 뒤 재분배 배점 비율로 환산 → 정수.</li>
+     *   <li>총점 = 반올림한 칸 점수의 합. HOLD(판정 보류·교사 확인 필요) 칸은 재분배하지 않고 자기 배점을 heldMaxScore로 비워 둔 채 총점은 null입니다.</li>
+     * </ol>
      */
     private Result calculateStudent(List<Cell> cells,Compliance compliance,List<String> limitations,String summary) {
-        BigDecimal na=BigDecimal.ZERO,base=BigDecimal.ZERO;
-        for(var c:cells){var max=BigDecimal.valueOf(c.criterion().maxScore());if(c.status().equals("NOT_APPLICABLE"))na=na.add(max);else base=base.add(max);}
-        if(base.signum()==0)return new Result("NOT_APPLICABLE",compliance,List.copyOf(cells),null,limitations,summary,
-                new PartialScore(BigDecimal.ZERO.setScale(1),BigDecimal.ZERO.setScale(1),BigDecimal.ZERO.setScale(1),na.setScale(1)));
-        BigDecimal factor=BigDecimal.valueOf(100).divide(base,12,RoundingMode.HALF_UP);
-        BigDecimal total=BigDecimal.ZERO,assessed=BigDecimal.ZERO,held=BigDecimal.ZERO;boolean complete=true;
+        int na=0,base=0;
+        for(var c:cells){if(c.status().equals("NOT_APPLICABLE"))na+=c.criterion().maxScore();else base+=c.criterion().maxScore();}
+        var out=new ArrayList<Cell>();int total=0,assessed=0,held=0;boolean complete=true;
         for(var c:cells){
-            if(c.status().equals("NOT_APPLICABLE"))continue;
-            var max=BigDecimal.valueOf(c.criterion().maxScore());
-            BigDecimal exact=c.level()!=null?max.multiply(BigDecimal.valueOf(c.level()-1)).divide(BigDecimal.valueOf(4)):c.score();
-            if(exact==null){complete=false;held=held.add(max.multiply(factor));continue;}
-            total=total.add(exact.multiply(factor));assessed=assessed.add(max.multiply(factor));
+            if(c.status().equals("NOT_APPLICABLE")){out.add(c.withScore(null,0));continue;}
+            int max=c.criterion().maxScore(),adjusted=base==100?max:roundInt(BigDecimal.valueOf(max).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(base),12,RoundingMode.HALF_UP));
+            BigDecimal score=c.level()!=null?BigDecimal.valueOf(adjusted).multiply(BigDecimal.valueOf(c.level()-1)).divide(BigDecimal.valueOf(4))
+                    :c.score()==null?null:BigDecimal.valueOf(roundInt(c.score())).multiply(BigDecimal.valueOf(adjusted)).divide(BigDecimal.valueOf(max),12,RoundingMode.HALF_UP);
+            if(score==null){complete=false;held+=adjusted;out.add(c.withScore(null,adjusted));continue;}
+            int value=roundInt(score);total+=value;assessed+=adjusted;out.add(c.withScore(BigDecimal.valueOf(value),adjusted));
         }
-        var partial=new PartialScore(total.setScale(1,RoundingMode.HALF_UP),assessed.setScale(1,RoundingMode.HALF_UP),held.setScale(1,RoundingMode.HALF_UP),na.setScale(1,RoundingMode.HALF_UP));
-        return new Result(complete?"DONE":"HOLD",compliance,List.copyOf(cells),complete?total.setScale(1,RoundingMode.HALF_UP):null,limitations,summary,partial);
+        var partial=new PartialScore(BigDecimal.valueOf(total),BigDecimal.valueOf(assessed),BigDecimal.valueOf(held),BigDecimal.valueOf(na));
+        String status=base==0?"NOT_APPLICABLE":complete?"DONE":"HOLD";
+        return new Result(status,compliance,List.copyOf(out),complete&&base>0?BigDecimal.valueOf(total):null,limitations,summary,partial);
     }
+    private static int roundInt(BigDecimal v){return v.setScale(0,RoundingMode.HALF_UP).intValueExact();}
     private BigDecimal score(Input input,Criterion c,int level){return BigDecimal.valueOf(c.maxScore()).multiply(BigDecimal.valueOf(level-minimumLevel(input))).divide(BigDecimal.valueOf(4));}
     private Set<String> keys(Input input){var keys=new HashSet<String>();for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY&&!excluded(input,c))keys.add(key(q,c));if(!excluded(input,Criterion.TRANSPARENCY))keys.add(key(GLOBAL,Criterion.TRANSPARENCY));return keys;}
     private String key(String q,Criterion c){return Objects.toString(q,"")+":"+c;}
