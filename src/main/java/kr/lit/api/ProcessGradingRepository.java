@@ -71,11 +71,17 @@ public class ProcessGradingRepository {
     public String insertJob(Input input) {
         String data=encode(input),hash=AuthService.hash(data),job=UUID.randomUUID().toString();
         int version=db.queryForObject("SELECT COALESCE(MAX(version),0)+1 FROM process_grading_jobs WHERE participant_id=?",Integer.class,input.participantId());
+        // 다시 제출하면 아직 시작하지 않은 이전 작업은 채점하지 않습니다(마지막 제출본만 채점·확정).
+        db.update("UPDATE process_grading_jobs SET status='SUPERSEDED',error_code='NEWER_SUBMISSION',completed_at=CURRENT_TIMESTAMP WHERE participant_id=? AND status='PENDING'",input.participantId());
         db.update("INSERT INTO process_grading_jobs(id,evaluation_id,participant_id,version,status,input_hash,input_json,rubric_version,created_at) VALUES (?,?,?,?,'PENDING',?,?,?,CURRENT_TIMESTAMP)",job,input.evaluationId(),input.participantId(),version,hash,data,RUBRIC_VERSION);
         return job;
     }
     public Input getInput(String job){return decode(db.queryForObject("SELECT input_json FROM process_grading_jobs WHERE id=?",String.class,job),Input.class);}
     public List<String> getPendingJobs(){return db.queryForList("SELECT id FROM process_grading_jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10",String.class);}
+    public record PendingJob(String id,String participantId,java.time.Instant createdAt) {}
+    /** 제출 순서대로 대기 작업(학생마다 마지막 제출본 하나). */
+    public List<PendingJob> getPendingJobRows(){return db.query("SELECT id,participant_id,created_at FROM process_grading_jobs WHERE status='PENDING' ORDER BY created_at LIMIT 20",
+            (r,n)->new PendingJob(r.getString(1),r.getString(2),r.getTimestamp(3).toInstant()));}
     public boolean claimJob(String id){return db.update("UPDATE process_grading_jobs SET status='RUNNING',started_at=CURRENT_TIMESTAMP,heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'",id)==1;}
     public void recoverJobs(){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND COALESCE(heartbeat_at,started_at)<DATEADD('MINUTE',-5,CURRENT_TIMESTAMP)");}
     public void touchJob(String id){db.update("UPDATE process_grading_jobs SET heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",id);}

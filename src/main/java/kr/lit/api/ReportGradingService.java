@@ -15,6 +15,7 @@ public class ReportGradingService {
         var jobs=process.getJobs(id,pid);
         if(!jobs.isEmpty()&&ProcessGradingModels.RUBRIC_VERSION.equals(jobs.get(0).rubricVersion())){
             var job=jobs.get(0);var input=process.getInput(job.id());
+            if(job.result()!=null&&ProcessGradingEngine.studentLevel(job.result().cells()))return getStudentSnapshot(job,input);
             if(input.policy()!=null)return getProcessSnapshot(job,input);
         }
         var source=repository.getSource(id,pid);if(!source.configured())return null;
@@ -28,6 +29,27 @@ public class ReportGradingService {
             scores.add(new GradingCriterion(c.criterionId(),c.name(),c.maxScore(),score,teacher!=null,teacher==null?null:teacher.feedback(),ai==null?null:ai.reason()));
         }
         return new GradingSnapshot(source.status(),List.copyOf(scores));
+    }
+    /**
+     * 학생 단위 루브릭(LLM 판정) 결과. 학생에게 나가는 PDF·HWP에는 교사가 확정한 결과만 씁니다.
+     * 확정 전에는 점수·AI 추천을 넣지 않고 "채점 중"으로 둡니다. 확정 후 총점은 NA 재분배 100점 만점(partialScore)입니다.
+     */
+    private GradingSnapshot getStudentSnapshot(ProcessGradingModels.Job job,ProcessGradingModels.Input input){
+        var review=process.getReview(job.id()).filter(ProcessGradingModels.Review::confirmed).orElse(null);
+        var criteria=new ArrayList<GradingCriterion>();
+        var cells=review==null?List.<ProcessGradingModels.Cell>of():review.result().cells();
+        for(var criterion:ProcessGradingModels.Criterion.values()){
+            var cell=cells.stream().filter(c->c.criterion()==criterion).findFirst().orElse(null);
+            if(cell==null){criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),criterion.maxScore(),null,false,null,null));continue;}
+            boolean na=cell.status().equals("NOT_APPLICABLE");
+            String feedback=String.join(" ",review.overrides().stream().filter(o->o.criterion()==criterion).map(ProcessGradingModels.LevelOverride::reason).toList());
+            // 재분배 후 배점(정수)과 그 기준 점수. NA 칸은 원래 배점을 보여 주고 "해당 없음"으로 표시합니다.
+            int max=na||cell.adjustedMaxScore()==null?criterion.maxScore():cell.adjustedMaxScore();
+            criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),max,cell.score()==null?null:cell.score().doubleValue(),true,
+                    feedback.isBlank()?null:feedback,na?"해당 없음: 배점은 나머지 항목에 나눠 계산했습니다.":cell.reason(),na));
+        }
+        return new GradingSnapshot(review==null?"DRAFT":"CONFIRMED",List.copyOf(criteria),job.rubricVersion(),review==null?null:review.result().summary(),
+                review==null?null:job.result(),review,input.inputPaths(),input.usageAnalysis(),input.analysisScope());
     }
     private GradingSnapshot getProcessSnapshot(ProcessGradingModels.Job job,ProcessGradingModels.Input input){
         var review=process.getReview(job.id()).orElse(null);var result=review==null?job.result():review.result();

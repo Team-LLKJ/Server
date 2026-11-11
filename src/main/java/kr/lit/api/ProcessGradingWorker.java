@@ -8,16 +8,25 @@ import java.util.List;
 
 @Component
 public class ProcessGradingWorker {
-    private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;
-    public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine){this.repository=repository;this.ai=ai;this.engine=engine;}
+    private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;private final ProcessRubricGrader rubric;
+    public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine,ProcessRubricGrader rubric){this.repository=repository;this.ai=ai;this.engine=engine;this.rubric=rubric;}
+    /**
+     * 대기 작업을 처리합니다. LLM 루브릭 판정(rubric 키)이 켜져 있으면 질문 용도·답안 기여도 분류가 끝난 학생부터(최대 10분 대기) 학생 단위로 판정합니다.
+     * 다시 제출하면 이전 대기 작업은 SUPERSEDED가 되어 마지막 제출본만 채점합니다(ProcessGradingRepository.insertJob).
+     */
     @Scheduled(fixedDelayString="${lit.grading.process-interval-ms:3000}",initialDelayString="${lit.grading.process-interval-ms:3000}")
     public void analyzePending() {
-        repository.recoverJobs();for(String job:repository.getPendingJobs())processJob(job);
+        repository.recoverJobs();
+        for(var pending:repository.getPendingJobRows()) {
+            if(rubric.isActive()&&!rubric.ready(pending.participantId(),pending.createdAt())) continue;
+            processJob(pending.id());
+        }
     }
     public void processJob(String job) {
         if(!repository.claimJob(job))return;
         try {
             var input=repository.getInput(job);Result result;
+            if(rubric.isActive()){repository.completeJob(job,ProcessRubricGrader.MODEL_LABEL,gradeWithJudge(job,input));return;}
             if(input.policy()==null)result=engine.hold(input,"PRE_EVALUATION_POLICY_REQUIRED");
             else if(engine.isV3(input)&&input.policy().excludedCriteria().size()==Criterion.values().length)result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
             else if(input.policy().questionWeights().size()!=input.questionIds().size()
@@ -32,7 +41,20 @@ public class ProcessGradingWorker {
             }
             repository.completeJob(job,ai.getModel(),result);
         }catch(ProcessGradingAiClient.GradingFailure ex){repository.failJob(job,ex.code);}
+        catch(SemanticJudgeClient.JudgeFailure ex){repository.failJob(job,ex.code());}
         catch(Exception ex){repository.failJob(job,"GRADING_VALIDATION_FAILED");}
+    }
+    /**
+     * LLM 루브릭 판정(학생 단위, 문항 가중치 없음). 사전 정책은 없어도 됩니다: 정책의 제외 항목은 NA로 두고,
+     * AI 미사용 학생 정책이 NOT_APPLICABLE이면 전 항목 NA, 그 외에는 문서 규칙(자기 주도적 사고만 판정, 나머지 NA)을 따릅니다.
+     */
+    private Result gradeWithJudge(String job,Input input) {
+        var policy=input.policy();
+        if(policy!=null&&policy.excludedCriteria().size()==Criterion.values().length)return engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
+        boolean observedAi=input.sources().stream().anyMatch(s->s.kind().equals("STUDENT_QUESTION"));
+        if(!observedAi&&policy!=null&&policy.noAiPolicy()==NoAiPolicy.NOT_APPLICABLE)return engine.notApplicable(input,"교사 사전 정책에 따라 평가 대상이 아닙니다. 관측되지 않은 외부 AI 미사용을 단정하지 않습니다.");
+        if(repository.encode(input).getBytes(StandardCharsets.UTF_8).length>524288)return engine.hold(input,"INPUT_TOO_LARGE_NO_TRUNCATION");
+        return rubric.grade(input,()->repository.touchJob(job));
     }
     private AiOutput recommendBatches(String job,Input input) {
         var recommendations=new java.util.ArrayList<Recommendation>();Compliance compliance=null;String summary=null;

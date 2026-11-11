@@ -105,27 +105,12 @@ public final class AssessmentModels {
     // ---- 점수 ----
     public record AiScore(int level,double score,String reason,List<Evidence> evidence,List<Reason> reasons) {}
     public record TeacherScore(int level,double score,String feedback,Instant updatedAt) {}
-    /**
-     * ③ 루브릭 LLM 판정(항목 하나). status: OK | NA(해당 없음, 총점에서 뺌) | HOLD(보류). level·score는 확정됐을 때만 값이 있고,
-     * needsReview=true면 교사 직접 입력이 필요합니다(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA). level은 1~5단계(teacherLevel도 같은 척도).
-     * votes는 Gemini 회차별 답(무효 회차는 null), haikuLevel은 엇갈렸을 때 Haiku 답, runs는 회차별 원래 답(참고·보정용)입니다.
-     */
-    public record RubricJudgmentView(int criterionId,String status,Integer level,java.math.BigDecimal score,List<Object> votes,Object haikuLevel,
-                                     boolean needsReview,String reviewReason,List<RubricJudge.Evidence> evidence,String met,String blocked,
-                                     Integer teacherLevel,String method,List<RubricJudge.Run> runs) {}
-    public record CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted,
-                                 boolean notApplicable,RubricJudgmentView judgment) {
-        public CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted){
-            this(criterionId,name,maxScore,indicator,ai,teacher,adjusted,false,null);
-        }
-    }
+    public record CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted) {}
     public record ComplianceReview(ComplianceResult ai,ComplianceDecision decision,String note) {}
-    /** maxTotal: NA(해당 없음) 항목을 뺀 만점. gradingStatus: QUEUED | GRADING | DONE | FAILED(제출 전 null). reviewCount: 교사 확인이 필요한 항목 수. */
+    /** gradingStatus: 제출 후 채점 진행 QUEUED | GRADING | DONE | FAILED(제출 전 null). LLM 루브릭 판정은 과정 채점(process-grading) 결과에 있습니다. */
     public record Scores(String participantId,List<CriterionScore> criteria,Double totalAi,Double totalTeacher,double totalCurrent,
                          String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria,String summary,
-                         int maxTotal,String gradingStatus,int reviewCount) {}
-    /** 교사의 루브릭 단계 확정(1~5단계). */
-    public record LevelInput(@jakarta.validation.constraints.NotNull @Min(1) @Max(5) Integer level,@Size(max=2000) String feedback) {}
+                         String gradingStatus) {}
     public record ScoreInput(@Min(0) @Max(4) Integer level,@Size(max=2000) String feedback) {}
     public record ConfirmInput(Boolean acceptAiForMissing) {}
     public record ComplianceInput(@NotNull ComplianceDecision decision,@Size(max=1000) String note) {}

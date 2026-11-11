@@ -33,7 +33,7 @@ public class ReportLayout {
         heading(blocks,"2. 평가 기준별 루브릭");
         var scores=new ArrayList<List<String>>();scores.add(List.of("평가 기준","점수","평가 내용"));
         if(c.grading()!=null) {
-            for(var criterion:c.grading().criteria())scores.add(List.of(criterion.name(),criterion.score()==null?"미채점":formatScore(criterion.score())+" / "+criterion.maxScore()+(criterion.teacherScored()?"":" (AI 추천)"),selectFeedback(criterion)));
+            for(var criterion:c.grading().criteria())scores.add(List.of(criterion.name(),criterion.notApplicable()?"해당 없음":criterion.score()==null?"미채점":formatScore(criterion.score())+" / "+criterion.maxScore()+(criterion.teacherScored()?"":" (AI 추천)"),selectFeedback(criterion)));
         }else for(var criterion:Criterion.values()) {
             var rating=review==null?null:review.ratings().stream().filter(r->r.criterion()==criterion).findFirst().orElse(null);
             String evidence=rating==null?"":Objects.toString(rating.evidence(),"");
@@ -102,12 +102,12 @@ public class ReportLayout {
         var result=grading.aiRecommendation();if(result==null)return;
         if(result.partialScore()!=null){var p=grading.teacherReview()==null?result.partialScore():grading.teacherReview().result().partialScore();if(p!=null)blocks.add(new Text("확인된 항목 "+p.assessedScore()+" / "+p.assessedMaxScore()+"점 · 판단 보류 배점 "+p.heldMaxScore()+"점 · 평가 대상 아님 "+p.notApplicableMaxScore()+"점","note"));}
         for(var cell:result.cells()){
-            String questionLabel=ProcessGradingModels.GLOBAL.equals(cell.questionId())?"전체 기록":java.util.stream.StreamSupport.stream(submission.path("answers").spliterator(),false).filter(a->a.path("question").path("id").asText().equals(cell.questionId())).map(a->"문항 "+a.path("question").path("position").asInt()).findFirst().orElse("문항별 평가");
+            String questionLabel=cell.questionId()==null?"학생 전체 기록":ProcessGradingModels.GLOBAL.equals(cell.questionId())?"전체 기록":java.util.stream.StreamSupport.stream(submission.path("answers").spliterator(),false).filter(a->a.path("question").path("id").asText().equals(cell.questionId())).map(a->"문항 "+a.path("question").path("position").asInt()).findFirst().orElse("문항별 평가");
             heading(blocks,cell.criterionName()+" · "+questionLabel);
             var rows=new ArrayList<List<String>>();rows.add(List.of("구분","내용"));
             rows.add(List.of("AI 추천",cell.level()==null?cell.status().equals("NOT_APPLICABLE")?"평가 대상 아님":"판단 보류":cell.level()+"단계 · "+cell.score()+" / "+cell.maxScore()+"점"));
             var teacher=grading.teacherReview();
-            var override=teacher==null?null:teacher.overrides().stream().filter(o->o.criterion()==cell.criterion()&&o.questionId().equals(cell.questionId())).findFirst().orElse(null);
+            var override=teacher==null?null:teacher.overrides().stream().filter(o->o.criterion()==cell.criterion()&&Objects.equals(o.questionId(),cell.questionId())).findFirst().orElse(null);
             rows.add(List.of("교사 검토",teacher==null?"검토 전":(teacher.confirmed()?"최종 확정":"검토 중")+(override==null?"":": "+(override.score()!=null?override.score().stripTrailingZeros().toPlainString()+" / "+cell.maxScore()+"점 (점수 직접 입력)":override.level()+"단계")+" · "+override.reason())));
             rows.add(List.of("평가 이유",cell.reason()));
             if(cell.details()!=null){
