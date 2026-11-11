@@ -36,7 +36,7 @@ public class AccountDeletionRepository {
         db.update("DELETE FROM password_reset_tokens WHERE user_id=?",userId);
         db.update("DELETE FROM signup_email_verifications WHERE email=?",email);
         // 이메일 변경 기능은 별도 브랜치여서 해당 테이블이 추가된 경우에만 정리합니다.
-        if(db.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='PUBLIC' AND TABLE_NAME='EMAIL_CHANGE_VERIFICATIONS'",Integer.class)>0)
+        if(db.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_SCHEMA)='public' AND LOWER(TABLE_NAME)='email_change_verifications'",Integer.class)>0)
             db.update("DELETE FROM email_change_verifications WHERE user_id=?",userId);
         db.update("UPDATE participants SET user_id=NULL WHERE user_id=?",userId);
         db.update("UPDATE teacher_invites SET created_by=NULL WHERE created_by=?",userId);

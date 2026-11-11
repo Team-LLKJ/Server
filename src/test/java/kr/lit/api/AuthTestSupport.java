@@ -41,7 +41,7 @@ abstract class AuthTestSupport {
     String createVerifiedEmail(String email) {
         byte[] bytes=new byte[32];new java.security.SecureRandom().nextBytes(bytes);
         String token=Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        db.update("INSERT INTO signup_email_verifications(email,verified_at,token_hash,token_expires_at) VALUES (?,CURRENT_TIMESTAMP,?,DATEADD('MINUTE',15,CURRENT_TIMESTAMP))",email,AuthService.hash(token));
+        db.update("INSERT INTO signup_email_verifications(email,verified_at,token_hash,token_expires_at) VALUES (?,CURRENT_TIMESTAMP,?,CURRENT_TIMESTAMP + INTERVAL '15' MINUTE)",email,AuthService.hash(token));
         return token;
     }
     void as(Tokens tokens) {var p=auth.authenticate(tokens.accessToken());SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(p,null,List.of()));}

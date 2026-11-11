@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -101,7 +102,7 @@ public class AssessmentService {
             var levels=c.levelDescriptions()==null?List.of("","","","",""):c.levelDescriptions();
             list.add(new Criterion(n++,c.name().strip(),c.maxScore(),c.description()==null?"":c.description().strip(),levels,c.indicator(),"교사 지정"));
         }
-        db.update("MERGE INTO evaluation_rubrics(evaluation_id,criteria_json,updated_at) KEY(evaluation_id) VALUES (?,?,?)",id,encode(list),now());
+        DatabaseUpsert.save(db,"evaluation_rubrics","evaluation_id,criteria_json,updated_at","evaluation_id","?,?,?",id,encode(list),now());
         db.update("UPDATE evaluations SET criteria_json=?,criteria_kind='RUBRIC' WHERE id=? AND criteria_kind<>'TITLES'",encode(input.criteria()),id);
         return rubricView(id);
     }
@@ -196,7 +197,7 @@ public class AssessmentService {
     public AnalysisRun run(String id) {
         teacher(id);
         var pids=db.queryForList("SELECT participant_id FROM submissions WHERE evaluation_id=?",String.class,id);
-        for(String pid:pids) db.update("MERGE INTO grading_analyses(participant_id,evaluation_id,analysis_status,requested_at) KEY(participant_id) VALUES (?,?,'PENDING',?)",pid,id,now());
+        for(String pid:pids) DatabaseUpsert.save(db,"grading_analyses","participant_id,evaluation_id,analysis_status,requested_at","participant_id","?,?,'PENDING',?",pid,id,now());
         return new AnalysisRun(id,pids.size(),"PENDING");
     }
     /** 스케줄러 전용(교사 인증 없음). 한 명씩 별도 트랜잭션으로 처리합니다. */
@@ -319,7 +320,7 @@ public class AssessmentService {
             db.update("UPDATE grading_scores SET feedback=?,teacher_id=?,updated_at=? WHERE participant_id=? AND criterion_id=?",input.feedback(),teacherId,now(),pid,criterionId);after=before;
         } else {
             String feedback=input.feedback()!=null?input.feedback():current==null?"":current.feedback();
-            db.update("MERGE INTO grading_scores(participant_id,criterion_id,evaluation_id,score_level,feedback,teacher_id,updated_at) KEY(participant_id,criterion_id) VALUES (?,?,?,?,?,?,?)",
+            DatabaseUpsert.save(db,"grading_scores","participant_id,criterion_id,evaluation_id,score_level,feedback,teacher_id,updated_at","participant_id,criterion_id","?,?,?,?,?,?,?",
                     pid,criterionId,id,input.level(),feedback,teacherId,now());after=input.level();
         }
         String previousFeedback=current==null?null:current.feedback();
@@ -386,14 +387,14 @@ public class AssessmentService {
         teacher(id);
         if(page<0||size<1||size>200||query==null||query.length()>100) throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는 0 이상, size는 1~200, query는 100자 이하입니다.");
         String q=query.strip();
-        String filter=" FROM participants p WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0";
+        String filter=" FROM participants p WHERE p.evaluation_id=? AND POSITION(LOWER(?) IN LOWER(p.nickname))>0";
         long total=db.queryForObject("SELECT COUNT(*)"+filter,Long.class,id,q);
         String warn="(SELECT COUNT(*) FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ("+WorkModels.ClientEventType.warningSql()+"))";
         long warning=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+">0",Long.class,id,q);
         long submittedCount=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+"=0 AND EXISTS (SELECT 1 FROM submissions s WHERE s.participant_id=p.id)",Long.class,id,q);
         long confirmed=db.queryForObject("SELECT COUNT(*)"+filter+" AND EXISTS (SELECT 1 FROM grading_results g WHERE g.participant_id=p.id AND g.grading_status='CONFIRMED')",Long.class,id,q);
         var rows=db.query("SELECT p.id,p.nickname,p.expelled_at,s.submitted_at,s.submission_mode,"+warn+" warnings,(SELECT MAX(e.created_at) FROM learning_events e WHERE e.participant_id=p.id) last_event_at FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id"
-                        +" WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0 ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",
+                        +" WHERE p.evaluation_id=? AND POSITION(LOWER(?) IN LOWER(p.nickname))>0 ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",
                 (r,n)->new Object[]{r.getString("id"),r.getString("nickname"),instant(r,"submitted_at"),r.getString("submission_mode"),r.getInt("warnings"),instant(r,"last_event_at"),instant(r,"expelled_at")},id,q,size,(long)page*size);
         var items=new ArrayList<SubmissionRow>();
         for(var row:rows) {

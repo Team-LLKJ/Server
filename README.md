@@ -36,6 +36,8 @@ DB·빌드 결과·환경변수 파일은 Git에 포함하지 않습니다.
 | DATABASE_USER | `sa` |
 | DATABASE_PASSWORD | 빈 값 |
 
+PostgreSQL 운영 설정과 기존 H2 데이터 이전은 [PostgreSQL 전환 가이드](docs/POSTGRESQL.md)를 참고하세요.
+
 현재 스키마의 `MERGE`, `DATEADD`, `IF NOT EXISTS` 등은 H2 기준입니다.
 MySQL/PostgreSQL 이전에는 드라이버, DB별 SQL과 버전형 마이그레이션을 맞춰야 합니다.
 기존 DB에는 테이블·nullable 소유자 컬럼을 추가하고 기존 기록을 삭제하지 않습니다.

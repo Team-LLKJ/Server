@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -118,7 +119,7 @@ public class SemanticJudge {
             var results=provider.equals(ANTHROPIC)?client.judgeWithHaiku(request):client.judgeWithGemini(request);
             for(var p:batch) {
                 var j=results.get(p.item().id());
-                db.update("MERGE INTO semantic_judgments(cache_key,provider,model,prompt_version,judge_level,closest_candidate,created_at) KEY(cache_key) VALUES (?,?,?,?,?,?,?)",
+                DatabaseUpsert.save(db,"semantic_judgments","cache_key,provider,model,prompt_version,judge_level,closest_candidate,created_at","cache_key","?,?,?,?,?,?,?",
                         cacheKey(provider,model,p),provider,model,SemanticJudgeConfig.PROMPT_VERSION,j.level(),j.closestCandidate(),OffsetDateTime.now(ZoneOffset.UTC));
                 into.put(p.key(),j);
             }
