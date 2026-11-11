@@ -24,8 +24,11 @@ public class WorkService {
     private final jakarta.validation.Validator validator;
     private final ProcessGradingRepository processGrading;
     private final ParticipantSessionService sessions;
+    private final org.springframework.context.ApplicationEventPublisher events;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions,AutomaticDisclosureService automaticDisclosure) {
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions,AutomaticDisclosureService automaticDisclosure,
+                       org.springframework.context.ApplicationEventPublisher events) {
+        this.events=events;
         this.automaticDisclosure=automaticDisclosure;
         this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;this.sessions=sessions;
     }
@@ -249,11 +252,12 @@ public class WorkService {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8))); }
         catch(NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }
-    /** 제출 직후 분석을 예약합니다. GradingAnalysisJob이 처리하며 조회 시에도 즉시 계산됩니다. */
+    /** 제출과 함께 분석 작업을 저장하고 커밋 후 실행을 요청합니다. */
     void requestAnalysis(String evaluationId,String participantId) {
-        processGrading.queueSubmission(evaluationId,participantId);
+        String jobId=processGrading.queueSubmission(evaluationId,participantId);
         db.update("MERGE INTO grading_analyses(participant_id,evaluation_id,analysis_status,requested_at) KEY(participant_id) VALUES (?,?,'PENDING',?)",
                 participantId,evaluationId,OffsetDateTime.now(ZoneOffset.UTC));
+        events.publishEvent(new SubmissionAnalysisDispatcher.Request(evaluationId,participantId,jobId));
     }
     private String nickname(String participantId) {
         return db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,participantId);
