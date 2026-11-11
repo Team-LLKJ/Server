@@ -85,7 +85,7 @@ class SemanticJudgeTest {
         var config=new SemanticJudgeConfig();config.setEnabled(true);config.setTimeoutSeconds(5);
         config.getGemini().setApiKey("g-key");config.getGemini().setModel("gemini-test");config.getGemini().setEndpoint(url+"{model}");
         config.getAnthropic().setApiKey("a-key");config.getAnthropic().setModel("claude-test");config.getAnthropic().setEndpoint(url+"v1/messages");
-        return new SemanticJudgeClient(json,config);
+        return new SemanticJudgeClient(json,config,new JudgeRateLimiter(config),new JudgeUsage(null));
     }
     static final List<Item> ITEMS=List.of(new Item("q1-p1-s1","지방 인구 감소의 원인을 설명하세요.","젊은 사람들은 일자리가 많은 큰 도시로 떠난다.",CANDIDATES));
 
@@ -111,7 +111,7 @@ class SemanticJudgeTest {
         assertThat(received.get().at("/messages/0/role").asText()).isEqualTo("user");
     }
     @Test void rejectsMissingOutOfRangeOrUnknownResults() {
-        var c=new SemanticJudgeClient(json,new SemanticJudgeConfig());
+        var empty=new SemanticJudgeConfig();var c=new SemanticJudgeClient(json,empty,new JudgeRateLimiter(empty),new JudgeUsage(null));
         assertThatThrownBy(()->c.parse("{\"results\":[]}",ITEMS,"GEMINI")).isInstanceOf(JudgeFailure.class);
         assertThatThrownBy(()->c.parse("{\"results\":[{\"id\":\"q1-p1-s1\",\"level\":4,\"closestCandidate\":\"c7-1\"}]}",ITEMS,"GEMINI")).isInstanceOf(JudgeFailure.class);
         assertThatThrownBy(()->c.parse("{\"results\":[{\"id\":\"other\",\"level\":1,\"closestCandidate\":\"c7-1\"}]}",ITEMS,"GEMINI")).isInstanceOf(JudgeFailure.class);

@@ -12,13 +12,14 @@ import static kr.lit.api.PurposeUsageAnalyzer.Purpose;
 import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
 
 /**
- * 질문 용도 LLM 분류(Haiku 3회 독립 호출 → 불일치만 Gemini).
+ * 질문 용도 LLM 분류(Gemini 3회 독립 호출 → 엇갈린 질문만 Haiku). 테스트에서 이 순서가 더 정확했습니다(97.5% vs 95%).
  * <ul>
- *   <li>백그라운드(PurposeClassificationJob)에서 학생 질문을 분류해 purpose_classifications에 저장합니다. 채점 화면에서는 기다리지 않습니다.</li>
+ *   <li>학생이 AI에게 질문하면 백그라운드(PurposeClassificationJob)에서 분류해 purpose_classifications에 저장합니다. 채점 화면에서는 기다리지 않습니다.</li>
  *   <li>같은 학생의 앞 질문 2개와 직전 AI 답변 앞부분(200자)을 맥락으로 보냅니다. 학생 한 명의 질문을 묶어 보냅니다.</li>
- *   <li>Haiku 세 답이 같으면 확정(needsReview=false). 다르면 그 질문만 Gemini에 보내 임시 용도로(needsReview=true).
- *       Gemini 실패 시 2번 이상 나온 Haiku 답, 세 답이 모두 다르면 UNDECIDED.</li>
- *   <li>Haiku가 실패하면 FAILED로 두고(최대 3회 재시도) 그동안은 키워드 분류로 대체합니다.</li>
+ *   <li>Gemini(analysis 키, Flash-Lite 권장, 기본 temperature) 세 답이 같으면 확정(needsReview=false).
+ *       다르면 그 질문만 Haiku에 보내(Gemini 답은 알려 주지 않음) 임시 용도로(needsReview=true).
+ *       Haiku 실패·미설정 시 2번 이상 나온 Gemini 답, 세 답이 모두 다르면 UNDECIDED.</li>
+ *   <li>Gemini가 실패하면 FAILED로 두고(1분 뒤, 최대 3회 재시도) 그동안은 키워드 분류로 대체합니다.</li>
  *   <li>교사가 확정한 용도(purpose_labels)는 LLM 결과보다 우선하고 보정 기록으로도 남습니다.</li>
  * </ul>
  * annotate()는 스냅샷 대화마다 purposeClassification을 붙여, AssessmentAnalyzer·PurposeUsageAnalyzer가 같은 분류를 쓰게 합니다.
@@ -26,7 +27,7 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
 @Component
 public class PurposeClassifier {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(PurposeClassifier.class);
-    public static final String PROMPT_VERSION="PURPOSE_HAIKU_X3_V1";
+    public static final String PROMPT_VERSION="PURPOSE_GEMINI_X3_V1";
     static final int VOTES=3,BATCH_SIZE=20,MAX_ATTEMPTS=3,CONTEXT_ANSWER_CHARS=200;
     static final String INSTRUCTIONS="""
             [지시]
@@ -68,16 +69,17 @@ public class PurposeClassifier {
 
     public record Item(String id,long conversationId,List<String> previous,String previousAiAnswer,String question) {}
     /** 저장할 분류 결과(질문 하나). */
-    public record Result(String purpose,List<String> votes,String geminiPurpose,boolean needsReview,String method) {}
+    public record Result(String purpose,List<String> votes,String haikuPurpose,boolean needsReview,String method) {}
 
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final SemanticJudgeClient client;
     private final SemanticJudgeConfig config;
-    public PurposeClassifier(JdbcTemplate db,ObjectMapper json,SemanticJudgeClient client,SemanticJudgeConfig config){
-        this.db=db;this.json=json;this.client=client;this.config=config;
+    private final JudgeUsage usage;
+    public PurposeClassifier(JdbcTemplate db,ObjectMapper json,SemanticJudgeClient client,SemanticJudgeConfig config,JudgeUsage usage){
+        this.db=db;this.json=json;this.client=client;this.config=config;this.usage=usage;
     }
-    public boolean isActive(){return config.isActive();}
+    public boolean isActive(){return config.isPurposeActive();}
 
     // ---------- 스냅샷에 분류 붙이기 ----------
     public JsonNode annotate(String participantId,JsonNode snapshot) {
@@ -98,7 +100,7 @@ public class PurposeClassifier {
             c.put("status",status);
             var votes=c.putArray("votes");
             if(row!=null&&row.get("VOTES")!=null) for(String v:((String)row.get("VOTES")).split(",")) if(!v.isBlank()) votes.add(v);
-            c.put("geminiPurpose",row==null?null:(String)row.get("GEMINI_PURPOSE"));
+            c.put("haikuPurpose",row==null?null:(String)row.get("HAIKU_PURPOSE"));
             if(label!=null) {
                 c.put("purpose",label);c.put("teacherPurpose",label);c.put("needsReview",false);c.put("method",PurposeUsageAnalyzer.METHOD_TEACHER);
             } else if(row!=null&&"DONE".equals(status)) {
@@ -136,7 +138,7 @@ public class PurposeClassifier {
         int stored=0;
         for(int from=0;from<items.size();from+=BATCH_SIZE) {
             var batch=items.subList(from,Math.min(items.size(),from+BATCH_SIZE));
-            try {
+            try(var ignored=usage.open(evaluationId,participantId,JudgeUsage.Task.PURPOSE)) {
                 var results=classify(batch);
                 for(var item:batch) { save(evaluationId,participantId,item.conversationId(),"DONE",results.get(item.id()),attempts.get(item.conversationId()),null);stored++; }
             } catch(JudgeFailure ex) {
@@ -146,26 +148,26 @@ public class PurposeClassifier {
         }
         return stored;
     }
-    /** Haiku 3회(독립 호출, 기본 temperature) → 불일치만 Gemini 1회. Haiku 실패는 JudgeFailure로 던집니다. */
+    /** Gemini 3회(독립 호출, 기본 temperature) → 엇갈린 질문만 Haiku 1회. Gemini 실패는 JudgeFailure로 던집니다. */
     Map<String,Result> classify(List<Item> batch) {
         String data=data(batch);
         var votes=new ArrayList<Map<String,String>>();
-        for(int i=0;i<VOTES;i++) votes.add(parse(client.callAnthropic(INSTRUCTIONS,data,null),batch,"ANTHROPIC"));
+        for(int i=0;i<VOTES;i++) votes.add(SemanticJudgeClient.retryFormat(()->parse(client.callGemini(INSTRUCTIONS,data,schema(),null),batch,"GEMINI")));
         var out=new LinkedHashMap<String,Result>();var disagreed=new ArrayList<Item>();
         for(var item:batch) {
             var answers=votes.stream().map(v->v.get(item.id())).toList();
             if(new HashSet<>(answers).size()==1) out.put(item.id(),new Result(answers.get(0),answers,null,false,PurposeUsageAnalyzer.METHOD_LLM));
             else disagreed.add(item);
         }
-        Map<String,String> gemini=Map.of();
-        if(!disagreed.isEmpty()&&client.geminiConfigured()) {
-            try { gemini=parse(client.callGemini(INSTRUCTIONS,data(disagreed),schema(),null),disagreed,"GEMINI"); }
-            catch(JudgeFailure ex) { log.warn("Purpose classification Gemini failed: {}",ex.code); }
+        Map<String,String> haiku=Map.of();
+        if(!disagreed.isEmpty()&&client.anthropicConfigured()) {
+            try { haiku=SemanticJudgeClient.retryFormat(()->parse(client.callAnthropic(INSTRUCTIONS,data(disagreed),null),disagreed,"ANTHROPIC")); }
+            catch(JudgeFailure ex) { log.warn("Purpose classification Haiku failed: {}",ex.code); }
         }
         for(var item:disagreed) {
             var answers=votes.stream().map(v->v.get(item.id())).toList();
-            String g=gemini.get(item.id());
-            if(g!=null) out.put(item.id(),new Result(g,answers,g,true,PurposeUsageAnalyzer.METHOD_LLM_GEMINI));
+            String h=haiku.get(item.id());
+            if(h!=null) out.put(item.id(),new Result(h,answers,h,true,PurposeUsageAnalyzer.METHOD_LLM_HAIKU));
             else out.put(item.id(),new Result(majority(answers),answers,null,true,PurposeUsageAnalyzer.METHOD_LLM));
         }
         return out;
@@ -203,10 +205,10 @@ public class PurposeClassifier {
         return out;
     }
     private void save(String evaluationId,String participantId,long conversationId,String status,Result result,int attempts,String error) {
-        db.update("MERGE INTO purpose_classifications(conversation_id,evaluation_id,participant_id,status,purpose,votes,gemini_purpose,needs_review,method,haiku_model,gemini_model,prompt_version,attempts,error_code,updated_at) "+
+        db.update("MERGE INTO purpose_classifications(conversation_id,evaluation_id,participant_id,status,purpose,votes,haiku_purpose,needs_review,method,haiku_model,gemini_model,prompt_version,attempts,error_code,updated_at) "+
                 "KEY(conversation_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 conversationId,evaluationId,participantId,status,result==null?null:result.purpose(),result==null?null:String.join(",",result.votes()),
-                result==null?null:result.geminiPurpose(),result!=null&&result.needsReview(),result==null?null:result.method(),
+                result==null?null:result.haikuPurpose(),result!=null&&result.needsReview(),result==null?null:result.method(),
                 client.anthropicModel(),client.geminiModel(),PROMPT_VERSION,attempts,error,OffsetDateTime.now(ZoneOffset.UTC));
     }
 
@@ -217,8 +219,8 @@ public class PurposeClassifier {
         if(owner.isEmpty()||!owner.get(0).equals(participantId)) return false;
         var rows=db.queryForList("SELECT * FROM purpose_classifications WHERE conversation_id=?",conversationId);
         var row=rows.isEmpty()?Map.<String,Object>of():rows.get(0);
-        db.update("INSERT INTO purpose_labels(conversation_id,evaluation_id,participant_id,teacher_purpose,llm_status,llm_purpose,votes,gemini_purpose,needs_review,method,prompt_version,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                conversationId,evaluationId,participantId,purpose,row.get("STATUS"),row.get("PURPOSE"),row.get("VOTES"),row.get("GEMINI_PURPOSE"),
+        db.update("INSERT INTO purpose_labels(conversation_id,evaluation_id,participant_id,teacher_purpose,llm_status,llm_purpose,votes,haiku_purpose,needs_review,method,prompt_version,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                conversationId,evaluationId,participantId,purpose,row.get("STATUS"),row.get("PURPOSE"),row.get("VOTES"),row.get("HAIKU_PURPOSE"),
                 Boolean.TRUE.equals(row.get("NEEDS_REVIEW")),row.get("METHOD"),row.getOrDefault("PROMPT_VERSION",PROMPT_VERSION),teacherId,OffsetDateTime.now(ZoneOffset.UTC));
         return true;
     }

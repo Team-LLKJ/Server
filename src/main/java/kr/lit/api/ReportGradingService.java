@@ -24,7 +24,7 @@ public class ReportGradingService {
             var teacher=source.teachers().stream().filter(t->t.criterionId()==c.criterionId()).findFirst().orElse(null);
             var ai=source.analysis()==null||source.analysis().indicators()==null||c.indicator()==AssessmentModels.Indicator.MANUAL?null:source.analysis().indicators().stream().filter(i->i.indicator()==c.indicator()).findFirst().orElse(null);
             Integer level=teacher!=null?Integer.valueOf(teacher.level()):ai==null?null:ai.level();
-            Double score=level==null?null:Math.round(c.maxScore()*level/4.0*100)/100.0;
+            Double score=level==null?null:RubricJudge.score(c.maxScore(),level+1).doubleValue();
             scores.add(new GradingCriterion(c.criterionId(),c.name(),c.maxScore(),score,teacher!=null,teacher==null?null:teacher.feedback(),ai==null?null:ai.reason()));
         }
         return new GradingSnapshot(source.status(),List.copyOf(scores));

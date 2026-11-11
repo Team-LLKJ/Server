@@ -14,7 +14,7 @@ public class AccountDeletionRepository {
     public boolean existsRunningEvaluation(String evaluationId) {return db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE id=? AND state='STARTED' AND COALESCE(ends_at,expires_at)>CURRENT_TIMESTAMP",Integer.class,evaluationId)>0;}
     public void deleteEvaluation(String evaluationId) {
         // 모든 참가자 종속 레코드를 지운 뒤 부모를 지웁니다. 테이블명은 고정 목록입니다.
-        for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures","usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
+        for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","rubric_labels","rubric_judgments","rubric_runs","judge_usage","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures","usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
             db.update("DELETE FROM "+table+" WHERE evaluation_id=?",evaluationId);
         db.update("DELETE FROM answers WHERE participant_id IN (SELECT id FROM participants WHERE evaluation_id=?) OR question_id IN (SELECT id FROM questions WHERE evaluation_id=?)",evaluationId,evaluationId);
         db.update("DELETE FROM questions WHERE evaluation_id=?",evaluationId);

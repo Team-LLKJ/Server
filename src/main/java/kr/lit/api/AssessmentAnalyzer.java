@@ -18,7 +18,7 @@ import static kr.lit.api.AssessmentModels.*;
 public class AssessmentAnalyzer {
     public static final String MODEL="LIT_RULE_BASED_EXPLAINED_V2_1";
     public static final String CONTRIBUTION_BASIS="TEXT_SIMILARITY_ESTIMATE_V2";
-    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP",REASON_SEMANTIC="SEMANTIC",REASON_TEACHER="TEACHER",LABEL_AI="AI",LABEL_DIRECT="DIRECT";
+    public static final String SOURCE_DIRECT="DIRECT",SOURCE_AI="AI_REFERENCED",SENTENCE_AI="AI",REASON_SPAN="SPAN_MATCH",REASON_GRAM="GRAM_OVERLAP",REASON_SEMANTIC="SEMANTIC",REASON_TEACHER="TEACHER",LABEL_AI="AI",LABEL_DIRECT="DIRECT";
     public record DisclosureInput(String tools,String usedParts,String reason) {
         static final DisclosureInput EMPTY=new DisclosureInput("","","");
     }
@@ -206,7 +206,8 @@ public class AssessmentAnalyzer {
                         if(LABEL_DIRECT.equals(teacherLabel)) reason=null;
                         else if(reason==null) { reason=REASON_TEACHER;if(conversation==null&&verdict!=null) conversation=verdict.conversationId(); }
                     }
-                    String src=reason==null?SOURCE_DIRECT:SOURCE_AI;
+                    // 문장 출처는 DIRECT/AI 두 가지(문단·구간 유형은 기존 AI_REFERENCED 이름 유지).
+                    String src=reason==null?SOURCE_DIRECT:SENTENCE_AI;
                     // 문장 사이 공백까지 포함해 답안 텍스트를 빈틈없이 덮는 구간(segments)으로 비중을 계산합니다.
                     int segStart=k==0?0:range.start(),segEnd=k+1<ranges.size()?ranges.get(k+1).start():text.length();
                     int length=segEnd-segStart;totalChars+=length;if(reason!=null) aiChars+=length;
@@ -366,7 +367,7 @@ public class AssessmentAnalyzer {
     }
 
     public Map<String,Object> getDefinition(){return Map.ofEntries(Map.entry("model",MODEL),Map.entry("basis",CONTRIBUTION_BASIS),
-            Map.entry("sources",List.of(SOURCE_DIRECT,SOURCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC,REASON_TEACHER)),
+            Map.entry("sources",List.of(SOURCE_DIRECT,SENTENCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC,REASON_TEACHER)),
             Map.entry("minSpanLength",config.getMinSpanLength()),Map.entry("aiReferencedThreshold",config.getAiReferencedThreshold()),
             Map.entry("excludedText","평가 안내 + 문항 제목·내용"),Map.entry("indexUnit","UTF16_END_EXCLUSIVE"),
             Map.entry("textNormalization","answerTexts.text (문단 사이 LF, HTML 제거·표 셀은 | 구분)"),Map.entry("usageMediumPercentage",20),

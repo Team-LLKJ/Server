@@ -35,14 +35,18 @@ class SentenceLabelApiTest extends AuthTestSupport {
         // 놓친 바꿔 쓴 문장을 교사가 AI로 표시 → 비율 즉시 증가
         var labeled=ok(request(body(patch(root(f)+"/sentences/"+paraphrase.path("id").asText()),Map.of("label","AI")),teacher));
         var p=sentence(labeled,PARAPHRASE);
-        assertThat(p.path("source").asText()).isEqualTo("AI_REFERENCED");assertThat(p.path("reason").asText()).isEqualTo("TEACHER");assertThat(p.path("teacherLabel").asText()).isEqualTo("AI");
+        assertThat(p.path("source").asText()).isEqualTo("AI");assertThat(p.path("reason").asText()).isEqualTo("TEACHER");assertThat(p.path("teacherLabel").asText()).isEqualTo("AI");
         assertThat(labeled.at("/contribution/aiReferenced").asInt()).isEqualTo(100);
         assertThat(ok(request(get(root(f)+"/analysis"),teacher)).at("/contribution/aiReferenced").asInt()).isEqualTo(100);
 
-        // 오탐 정정: 알고리즘이 AI로 본 문장을 DIRECT로
-        var corrected=ok(request(body(patch(root(f)+"/sentences/"+copied.path("id").asText()),Map.of("label","DIRECT")),teacher));
+        assertThat(p.path("teacherSource").asText()).isEqualTo("AI");assertThat(labeled.path("reviewCount").asInt()).isZero();
+        assertThat(p.has("closestAiSentence")).isTrue();
+
+        // 오탐 정정: 알고리즘이 AI로 본 문장을 DIRECT로(문서 경로 .../sentences/{id}/source, 본문 {"source":"DIRECT"})
+        var corrected=ok(request(body(patch(root(f)+"/sentences/"+copied.path("id").asText()+"/source"),Map.of("source","DIRECT")),teacher));
         var c=sentence(corrected,AI);
         assertThat(c.path("source").asText()).isEqualTo("DIRECT");assertThat(c.path("reason").isNull()).isTrue();assertThat(c.path("teacherLabel").asText()).isEqualTo("DIRECT");
+        assertThat(c.path("teacherSource").asText()).isEqualTo("DIRECT");
         assertThat(corrected.at("/contribution/aiReferenced").asInt()).isLessThan(100).isPositive();
         assertThat(aiBefore).isPositive();
 
@@ -51,7 +55,7 @@ class SentenceLabelApiTest extends AuthTestSupport {
         var rows=db.queryForList("SELECT sentence_text,teacher_label,algorithm_source,algorithm_reason,longest_span,config_json FROM sentence_labels WHERE participant_id=? ORDER BY id",f.pid());
         assertThat(rows).hasSize(3);
         assertThat(rows.get(0)).containsEntry("SENTENCE_TEXT",PARAPHRASE).containsEntry("TEACHER_LABEL","AI").containsEntry("ALGORITHM_SOURCE","DIRECT");
-        assertThat(rows.get(1)).containsEntry("TEACHER_LABEL","DIRECT").containsEntry("ALGORITHM_SOURCE","AI_REFERENCED").containsEntry("ALGORITHM_REASON","SPAN_MATCH");
+        assertThat(rows.get(1)).containsEntry("TEACHER_LABEL","DIRECT").containsEntry("ALGORITHM_SOURCE","AI").containsEntry("ALGORITHM_REASON","SPAN_MATCH");
         assertThat((Integer)rows.get(1).get("LONGEST_SPAN")).isGreaterThanOrEqualTo(20);
         assertThat(rows.get(1).get("CONFIG_JSON").toString()).contains("\"minSpanLength\":20","\"promptVersion\"","\"aiReferencedThreshold\":0.4");
         assertThat(ok(request(get(root(f)+"/analysis"),teacher)).at("/contribution/aiReferenced").asInt()).isZero();
@@ -60,6 +64,7 @@ class SentenceLabelApiTest extends AuthTestSupport {
         var f=fixture(true);
         String id=ok(request(get(root(f)+"/analysis"),teacher)).at("/sentences/0/id").asText();
         mvc.perform(request(body(patch(root(f)+"/sentences/"+id),Map.of("label","MAYBE")),teacher)).andExpect(status().isBadRequest());
+        mvc.perform(request(body(patch(root(f)+"/sentences/"+id+"/source"),Map.of()),teacher)).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("SOURCE_REQUIRED"));
         mvc.perform(request(body(patch(root(f)+"/sentences/q9-p9-s9"),Map.of("label","AI")),teacher)).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("SENTENCE_NOT_FOUND"));
         mvc.perform(request(body(patch(root(f)+"/sentences/"+id),Map.of("label","AI")),newTeacher())).andExpect(status().isNotFound());
         var open=fixture(false);

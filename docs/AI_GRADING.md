@@ -237,6 +237,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
   - 분류는 DIRECT / AI_REFERENCED 두 가지뿐입니다. `contribution.direct + aiReferenced = 100`, `aiUsed`는 호환용으로 항상 0입니다. 비중은 문장 글자 수(문장 사이 공백 포함)로 합산합니다.
   - 문단 `source`는 AI 문장이 하나라도 있으면 AI_REFERENCED입니다. 문장별 결과는 `sentences[]`(`questionId, paragraphId, text, source, reason, longestSpan, similarity, conversationId, start, end`)로 내려갑니다. `start/end`와 `contribution.segments`는 `answerTexts[].text` 기준 UTF-16 위치입니다.
   - 단어를 모두 바꿔 쓴 문장은 글자 비교로 잡지 못하며, 아래 2단계 LLM 판정이 켜져 있을 때만 잡습니다.
+- 세 가지 AI 판정(답안 기여도·AI 사용 방법·루브릭 단계), 키·한도·채점 대기열은 [AI_JUDGE.md](AI_JUDGE.md)에 정리했습니다.
 - **답안 출처 판정 2단계 (LLM, Haiku 먼저 → 애매한 것만 Gemini, 11월 10일 백엔드 전달본)** — `lit.grading.judge.enabled=true`이고 Claude Haiku(Anthropic) 키·모델이 있을 때만 동작합니다. 꺼져 있으면 `semanticStatus: DISABLED`이고 1단계 결과만 씁니다.
   1. 후보: 1단계 DIRECT, 정규화 15자 이상, 학생이 AI에게 질문한 문항의 문장만. 후보는 그 문항의 AI 답변 문장(8개 초과 시 문항 문구를 뺀 2글자 조각 포함률 상위 8개).
   2. 제출 1건의 대상 문장을 묶어 Claude Haiku에 1번 호출합니다. 단계 0~3(3: 거의 그대로 따라감, 2: 핵심 주장 같음, 1: 일반 내용·자기 경험 중심, 0: 다름)과 `closestCandidate`를 항상 받습니다. temperature 0, JSON만.
@@ -268,7 +269,7 @@ decision: `CONFIRMED_OK`(문제 없음 확인) / `HOLD`(판단 보류) / `CONFIR
 | min-span-length | 20 | 정규화 후 이 글자 수 이상 그대로 일치하면 AI |
 | judge.enabled | false | 2단계 LLM 판정 사용 (`LIT_GRADING_JUDGE_ENABLED`) |
 | judge.anthropic.api-key / model | `ANTHROPIC_API_KEY` / claude-haiku-5-5 | 1차 판정(Claude Haiku). `LIT_GRADING_JUDGE_ANTHROPIC_*`. Messages API(`anthropic-version: 2023-06-01`) |
-| judge.gemini.api-key / model | `GEMINI_API_KEY` / `GEMINI_MODEL` | 2차 판정(애매한 것만). `LIT_GRADING_JUDGE_GEMINI_*`로 따로 지정 가능 |
+| judge.gemini.analysis-key / rubric-key / model | 없음 / 없음 / gemini-3.1-flash-lite | 답안 기여도 재판정·질문 용도(analysis), 루브릭(rubric). 학생 대화용과 다른 Google 프로젝트의 키. `LIT_GRADING_JUDGE_GEMINI_*` — docs/AI_JUDGE.md |
 | judge.min-sentence-length / max-candidates | 15 / 8 | 보낼 문장 최소 길이, 문장당 후보 수 |
 | judge.timeout-seconds | 60 | LLM 호출 제한 시간 |
 | drafting-penalty | 1.0 | ① 대리 작성 요청 감점 가중치 |

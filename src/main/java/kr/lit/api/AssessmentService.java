@@ -29,9 +29,11 @@ public class AssessmentService {
     private final NotificationService notifications;
     private final SemanticJudge judge;
     private final PurposeClassifier purposes;
+    private final GradingQueue queue;
+    private final JudgeUsage usage;
 
-    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;
+    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes,GradingQueue queue,JudgeUsage usage) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;this.queue=queue;this.usage=usage;
     }
 
     // ===== 공통 =====
@@ -51,7 +53,12 @@ public class AssessmentService {
     private static OffsetDateTime now() { return OffsetDateTime.now(ZoneOffset.UTC); }
     private String encode(Object v) { try { return json.writeValueAsString(v); } catch(Exception e) { throw new IllegalStateException(e); } }
     private <T> T decode(String v,TypeReference<T> type) { try { return json.readValue(v,type); } catch(Exception e) { throw new IllegalStateException(e); } }
-    private static double score(int max,int level) { return Math.round(max*level/4.0*100)/100.0; }
+    /** level 0~4(1~5단계 − 1). 점수 = 배점 × level ÷ 4, 소수 첫째 자리 반올림(예: 15점 항목 4단계 = 11.3). */
+    private static double score(int max,int level) { return RubricJudge.score(max,level+1).doubleValue(); }
+    /** 평가가 끝나기 전에는 채점 결과를 내려 주지 않습니다(lit.grading.results-after-end). */
+    private void requireResultsVisible(String id) {
+        if(!queue.resultsVisible(id)) throw fail(HttpStatus.CONFLICT,"GRADING_RESULTS_NOT_READY","평가가 끝난 뒤 채점 결과를 볼 수 있습니다.");
+    }
 
     // ===== 루브릭 =====
     public static List<Criterion> defaultCriteria() {
@@ -142,6 +149,7 @@ public class AssessmentService {
      */
     public Analysis labelSentence(String id,String pid,String sentenceId,SentenceLabelInput input) {
         String teacherId=teacher(id);person(id,pid);requireSubmitted(pid);
+        if(input.value()==null) throw fail(HttpStatus.BAD_REQUEST,"SOURCE_REQUIRED","source(AI 또는 DIRECT)가 필요합니다.");
         if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty()) throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
         var source=reportsWorkWithoutAuth(id,pid);
         var algorithm=compute(id,pid,source,null,false);
@@ -150,7 +158,7 @@ public class AssessmentService {
         var config=new LinkedHashMap<String,Object>(analyzer.getDefinition());config.putAll(judge.describe());config.put("semanticStatus",algorithm.semanticStatus());
         var semantic=sentence.semantic();
         db.update("INSERT INTO sentence_labels(evaluation_id,participant_id,question_id,sentence_id,sentence_text,teacher_label,algorithm_source,algorithm_reason,longest_span,similarity,haiku_level,gemini_level,needs_review,config_json,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                id,pid,sentence.questionId(),sentence.id(),sentence.text(),input.label(),sentence.source(),sentence.reason(),sentence.longestSpan(),sentence.similarity(),
+                id,pid,sentence.questionId(),sentence.id(),sentence.text(),input.value(),sentence.source(),sentence.reason(),sentence.longestSpan(),sentence.similarity(),
                 semantic==null?null:semantic.haikuLevel(),semantic==null?null:semantic.geminiLevel(),sentence.needsReview(),encode(config),teacherId,now());
         return analyzeAndStore(id,pid);
     }
@@ -179,7 +187,7 @@ public class AssessmentService {
     }
     public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
     public Analysis analysis(String id,String pid) {
-        teacher(id);person(id,pid);
+        teacher(id);person(id,pid);requireResultsVisible(id);
         var result=stored(id,pid,true);
         if(result!=null) return result;
         return new Analysis(pid,"NOT_SUBMITTED",AssessmentAnalyzer.MODEL,null,0,null,null,List.of(),List.of(),List.of(),List.of(),null,
@@ -273,25 +281,74 @@ public class AssessmentService {
         var list=criteria(id);var teacherRows=teacherRows(pid);var result=resultRow(pid);
         var indicators=new EnumMap<Indicator,IndicatorResult>(Indicator.class);
         if(analysis!=null&&analysis.indicators()!=null) for(var i:analysis.indicators()) indicators.put(i.indicator(),i);
-        var out=new ArrayList<CriterionScore>();double ai=0,teacher=0,current=0;boolean allTeacher=true,anyAi=false;int recommendedMax=0;var missingAi=new ArrayList<String>();
+        var judgments=queue.judgments(pid);
+        var out=new ArrayList<CriterionScore>();double ai=0,teacher=0,current=0;boolean allTeacher=true,anyAi=false;int recommendedMax=0,maxTotal=0,review=0;var missingAi=new ArrayList<String>();
         for(var c:list) {
-            var ind=c.indicator()==Indicator.MANUAL?null:indicators.get(c.indicator());
-            AiScore aiScore=ind==null||ind.level()==null?null:new AiScore(ind.level(),score(c.maxScore(),ind.level()),ind.reason(),ind.evidence(),ind.reasons());
             var row=teacherRows.get(c.criterionId());
             TeacherScore t=row==null?null:new TeacherScore(row.level(),score(c.maxScore(),row.level()),row.feedback(),row.updatedAt());
-            if(aiScore!=null) { ai+=aiScore.score();anyAi=true;recommendedMax+=c.maxScore(); } else missingAi.add(c.name());
-            if(t!=null) teacher+=t.score(); else allTeacher=false;
+            var j=c.indicator()==Indicator.MANUAL?null:judgments.get(c.indicator());
+            AiScore aiScore;RubricJudgmentView view=null;boolean na=false;
+            if(j!=null) {
+                // ③ LLM 판정이 있으면 그 결과가 AI 추천입니다. 확인 필요·보류·해당 없음이면 AI 추천 점수는 비웁니다.
+                na=RubricJudge.STATUS_NA.equals(j.status())&&t==null;
+                boolean needsReview=j.needsReview()&&t==null;if(needsReview) review++;
+                boolean confirmed=j.level()!=null&&!j.needsReview();
+                view=new RubricJudgmentView(c.criterionId(),j.status(),confirmed?j.level():null,confirmed?RubricJudge.score(c.maxScore(),j.level()):null,j.votes(),j.haikuLevel(),
+                        needsReview,needsReview?j.reviewReason():null,j.evidence(),j.met(),j.blocked(),t==null?null:t.level()+1,j.method(),j.runs());
+                aiScore=confirmed?new AiScore(j.level()-1,score(c.maxScore(),j.level()-1),j.met(),evidence(j.evidence()),
+                        List.of(new Reason("MET",j.met(),null),new Reason("BLOCKED",j.blocked(),null))):null;
+            } else {
+                var ind=c.indicator()==Indicator.MANUAL?null:indicators.get(c.indicator());
+                aiScore=ind==null||ind.level()==null?null:new AiScore(ind.level(),score(c.maxScore(),ind.level()),ind.reason(),ind.evidence(),ind.reasons());
+            }
+            if(!na) maxTotal+=c.maxScore();
+            if(aiScore!=null) { ai+=aiScore.score();anyAi=true;recommendedMax+=c.maxScore(); } else if(!na) missingAi.add(c.name());
+            if(t!=null) teacher+=t.score(); else if(!na) allTeacher=false;
             current+=t!=null?t.score():aiScore!=null?aiScore.score():0;
-            out.add(new CriterionScore(c.criterionId(),c.name(),c.maxScore(),c.indicator(),aiScore,t,t!=null&&aiScore!=null&&t.level()!=aiScore.level()));
+            out.add(new CriterionScore(c.criterionId(),c.name(),c.maxScore(),c.indicator(),aiScore,t,t!=null&&aiScore!=null&&t.level()!=aiScore.level(),na,view));
         }
         String status=result!=null&&"CONFIRMED".equals(result.status())?"CONFIRMED":!teacherRows.isEmpty()?"DRAFT":"NOT_STARTED";
         var compliance=new ComplianceReview(analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),
                 result==null||result.decision()==null?null:ComplianceDecision.valueOf(result.decision()),result==null?null:result.note());
-        return new Scores(pid,out,anyAi?round2(ai):null,allTeacher&&!list.isEmpty()?round2(teacher):null,round2(current),status,
-                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi,analysis==null?"제출 후 분석할 수 있습니다.":analysis.summary());
+        boolean anyCounted=out.stream().anyMatch(c->!c.notApplicable());
+        return new Scores(pid,out,anyAi?round2(ai):null,allTeacher&&anyCounted?round2(teacher):null,round2(current),status,
+                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi,
+                analysis==null?"제출 후 분석할 수 있습니다.":analysis.summary(),maxTotal,queue.status(pid),review);
+    }
+    /** 루브릭 근거를 기존 Evidence 형식으로도 내려 줍니다(U·A → 대화, ANS → 답안 문단). */
+    private static List<Evidence> evidence(List<RubricJudge.Evidence> list) {
+        var out=new ArrayList<Evidence>();
+        for(var e:list) {
+            String paragraph=e.sentenceId()==null?null:e.sentenceId().replaceAll("-s\\d+$","");
+            String role="U".equals(e.src())?"STUDENT":"A".equals(e.src())?"AI":null;
+            out.add(new Evidence(e.messageId(),paragraph,e.eventId(),e.sentenceId(),e.src(),role,e.quote(),null));
+        }
+        return out;
     }
     private static double round2(double v) { return Math.round(v*100)/100.0; }
-    public Scores scores(String id,String pid) { teacher(id);person(id,pid);return scoresView(id,pid,stored(id,pid,true)); }
+    public Scores scores(String id,String pid) { teacher(id);person(id,pid);requireResultsVisible(id);return scoresView(id,pid,stored(id,pid,true)); }
+    /**
+     * 교사의 루브릭 단계 확정(1~5단계). 기존 점수 저장(level 0~4)과 같은 기록에 남기고, AI 원래 판정과 함께 보정 기록(rubric_labels)으로도 저장합니다.
+     */
+    public Scores saveLevel(String id,String pid,int criterionId,LevelInput input) {
+        String teacherId=teacher(id);person(id,pid);
+        var criterion=criteria(id).stream().filter(c->c.criterionId()==criterionId).findFirst()
+                .orElseThrow(()->fail(HttpStatus.NOT_FOUND,"CRITERION_NOT_FOUND","평가 기준을 찾을 수 없습니다."));
+        var judgment=criterion.indicator()==Indicator.MANUAL?null:queue.judgments(pid).get(criterion.indicator());
+        var view=saveScore(id,pid,criterionId,new ScoreInput(input.level()-1,input.feedback()));
+        if(judgment!=null) queue.label(id,pid,criterion.indicator(),input.level(),teacherId,judgment);
+        return view;
+    }
+    public GradingQueue.Progress gradingProgress(String id) { teacher(id);return queue.progress(id); }
+    public GradingQueue.Progress retryGrading(String id,String pid) { teacher(id);person(id,pid);requireSubmitted(pid);queue.retry(pid);return queue.progress(id); }
+    public JudgeUsage.Summary judgeUsage(String id) { teacher(id);return usage.summary(id); }
+    /** 스케줄러 전용: 루브릭 판정 입력(제출 snapshot, 문장 판정, 평가 기준). */
+    public record RubricSource(JsonNode input,List<Sentence> sentences,List<Criterion> criteria) {}
+    public RubricSource rubricSource(String id,String pid) {
+        var input=withEvaluationContent(id,reportsWorkWithoutAuth(id,pid));
+        var analysis=stored(id,pid,true);
+        return new RubricSource(input,analysis==null||analysis.sentences()==null?List.of():analysis.sentences(),criteria(id));
+    }
     public Scores saveScore(String id,String pid,int criterionId,ScoreInput input) {
         String teacherId=teacher(id);person(id,pid);requireSubmitted(pid);
         var criterion=criteria(id).stream().filter(c->c.criterionId()==criterionId).findFirst()
@@ -341,7 +398,7 @@ public class AssessmentService {
             }
         }
         var view=scoresView(id,pid,analysis);
-        var missing=view.criteria().stream().filter(c->c.teacher()==null).toList();
+        var missing=view.criteria().stream().filter(c->c.teacher()==null&&!c.notApplicable()).toList();
         if(!missing.isEmpty()) throw new ApiError.Failure(HttpStatus.CONFLICT,"GRADING_INCOMPLETE","모든 기준을 채점해야 확정할 수 있습니다. 미입력: "+String.join(", ",missing.stream().map(CriterionScore::name).toList()),Map.of("missingCriteria",missing.stream().map(c->Map.of("criterionId",c.criterionId(),"name",c.name())).toList()));
         boolean alreadyConfirmed="CONFIRMED".equals(view.status());
         setStatus(pid,id,"CONFIRMED");
