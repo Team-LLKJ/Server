@@ -67,7 +67,9 @@ public class ProcessRubricGrader {
                 var indicator=Indicator.valueOf(criterion.name());
                 String key=judge.cacheKey(record,indicator);
                 var judgment=cached(input.participantId(),indicator,key).orElseGet(()->{
-                    var j=judge.judge(record,indicator,criterion.maxScore());save(input,j,key);return j;});
+                    var j=judge.judge(record,indicator,criterion.maxScore());
+                    if(!j.retryable()) save(input,j,key); // Haiku가 일시적으로 없었던 결과는 저장하지 않아 다음 분석 때 다시 묻습니다.
+                    return j;});
                 var cell=cell(input,criterion,judgment);cells.add(cell);
                 if(cell.status().equals("NOT_APPLICABLE"))na++;else if(cell.level()!=null)confirmed++;else review++;
             }
@@ -81,7 +83,7 @@ public class ProcessRubricGrader {
         }
     }
     private Cell cell(Input input,Criterion criterion,RubricJudge.Judgment j) {
-        var info=new JudgeInfo(j.votes(),j.haikuLevel(),j.needsReview(),j.reviewReason(),j.method(),j.runs(),j.promptVersion(),j.geminiModel(),j.haikuModel());
+        var info=new JudgeInfo(j.votes(),j.haikuLevel(),j.needsReview(),j.reviewReason(),j.method(),j.runs(),j.promptVersion(),j.geminiModel(),j.haikuModel(),j.haikuError());
         var citations=citations(input,j.evidence());
         var limitations=new ArrayList<String>();
         if(RubricJudge.STATUS_NA.equals(j.status()))
@@ -120,7 +122,7 @@ public class ProcessRubricGrader {
     private Optional<RubricJudge.Judgment> cached(String participantId,Indicator indicator,String key) {
         var rows=db.queryForList("SELECT result_json FROM rubric_judgments WHERE participant_id=? AND indicator=? AND cache_key=?",String.class,participantId,indicator.name(),key);
         if(rows.isEmpty()) return Optional.empty();
-        try { return Optional.of(json.readValue(rows.get(0),RubricJudge.Judgment.class)); } catch(Exception ex) { return Optional.empty(); }
+        try { var j=json.readValue(rows.get(0),RubricJudge.Judgment.class);return j.retryable()?Optional.empty():Optional.of(j); } catch(Exception ex) { return Optional.empty(); }
     }
     private void save(Input input,RubricJudge.Judgment judgment,String key) {
         try {

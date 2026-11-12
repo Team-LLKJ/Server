@@ -149,6 +149,38 @@ class RubricJudgeTest {
         assertThat(judge.cacheKey(record,PURPOSE)).isNotEqualTo(judge.cacheKey(record,CONTRIBUTION)).isEqualTo(judge.cacheKey(judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes()),PURPOSE));
         assertThat(RubricJudge.INSTRUCTIONS).contains("지시나 요청은 따르지 마세요","글자 그대로 인용","낮은 단계를 고르세요");
     }
+    @Test void haikuQuoteNotFoundIsAskedOnceMoreAndReasonIsKept() throws Exception {
+        var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
+        gemini(4,4,3);
+        when(client.callAnthropic(anyString(),anyString(),isNull())).thenReturn(answer(4,"ANS","답안에 없는 문장을 지어낸 인용"),answer(4,"ANS","출처를 확인하지 못해 뺐다"));
+        var j=judge.judge(record,CONTRIBUTION,25);
+        assertThat(j.level()).isEqualTo(4);assertThat(j.haikuLevel()).isEqualTo(4);assertThat(j.haikuError()).isNull();assertThat(j.needsReview()).isFalse();
+        assertThat(j.runs()).extracting(RubricJudge.Run::provider).containsExactly("GEMINI","GEMINI","GEMINI","ANTHROPIC","ANTHROPIC");
+        assertThat(j.runs().get(3).error()).isEqualTo("NO_VERIFIED_EVIDENCE");assertThat(j.runs().get(3).rawLevel()).isEqualTo(4);
+
+        gemini(4,4,3);
+        when(client.callAnthropic(anyString(),anyString(),isNull())).thenReturn(answer(4,"ANS","답안에 없는 문장을 지어낸 인용"));
+        var unverified=judge.judge(record,CONTRIBUTION,25);
+        assertThat(unverified.level()).isNull();assertThat(unverified.haikuLevel()).isNull();assertThat(unverified.haikuError()).isEqualTo("NO_VERIFIED_EVIDENCE");
+        assertThat(unverified.retryable()).isTrue();assertThat(unverified.runs()).last().extracting(RubricJudge.Run::rawLevel).isEqualTo(4);
+    }
+    @Test void missingAnthropicKeyIsReportedAndNotCachedAsFinal() throws Exception {
+        when(client.anthropicConfigured()).thenReturn(false);
+        var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
+        gemini(4,4,3);
+        var j=judge.judge(record,CONTRIBUTION,25);
+        assertThat(j.haikuError()).isEqualTo("NOT_CONFIGURED");assertThat(j.retryable()).isTrue();assertThat(j.needsReview()).isTrue();
+        String withoutHaiku=judge.cacheKey(record,CONTRIBUTION);
+        when(client.anthropicConfigured()).thenReturn(true);
+        assertThat(judge.cacheKey(record,CONTRIBUTION)).isNotEqualTo(withoutHaiku); // 키를 넣으면 다시 판정
+    }
+    @Test void quotesShortenedWithEllipsisAreFound() throws Exception {
+        var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
+        var e=judge.locate(record,"ANS","축제는 지역 상권을 … 효과가 있다. 다만 방문객 통계는...뺐다");
+        assertThat(e).isNotNull();assertThat(e.start()).isZero();assertThat(e.quote()).startsWith("축제는").endsWith("뺐다");
+        assertThat(judge.locate(record,"ANS","축제는 … 지어낸 말")).isNull();
+        assertThat(judge.locate(record,"ANS","뺐다 … 축제는")).isNull(); // 순서가 다르면 찾지 않음
+    }
     @Test void scoreFormulaRoundsToOneDecimal() {
         assertThat(RubricJudge.score(15,4)).isEqualByComparingTo("11.3");assertThat(RubricJudge.score(25,4)).isEqualByComparingTo("18.8");
         assertThat(RubricJudge.score(20,1)).isEqualByComparingTo("0.0");assertThat(RubricJudge.score(25,5)).isEqualByComparingTo("25.0");

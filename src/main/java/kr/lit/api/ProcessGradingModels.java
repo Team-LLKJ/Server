@@ -63,9 +63,10 @@ public final class ProcessGradingModels {
                             @io.swagger.v3.oas.annotations.media.Schema(description="교사 직접 입력이 필요한지(교사가 확정하면 false)") boolean needsReview,
                             @io.swagger.v3.oas.annotations.media.Schema(description="needsReview 이유",allowableValues={"DISAGREEMENT","INSUFFICIENT_DATA"},nullable=true) String reviewReason,
                             @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","SERVER_RULE"}) String method,List<RubricJudge.Run> runs,
-                            String promptVersion,String geminiModel,String haikuModel) {
+                            String promptVersion,String geminiModel,String haikuModel,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸는데 Haiku 판정이 없는 이유(NOT_CONFIGURED: Anthropic 키 없음, NO_VERIFIED_EVIDENCE: Haiku 인용을 원문에서 2번 모두 못 찾음, 그 외 호출 오류 코드)",nullable=true) String haikuError) {
         /** 교사가 확정한 뒤에는 확인 필요를 풉니다(나머지 기록은 보존). */
-        public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel);}
+        public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel,haikuError);}
     }
     /**
      * 채점 한 칸. 문항별 채점은 questionId가 문항 id(투명성은 GLOBAL), LLM 루브릭 판정(학생 단위)은 questionId=null이고 항목마다 한 칸입니다.

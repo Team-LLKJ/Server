@@ -28,7 +28,7 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
  */
 @Component
 public class RubricJudge {
-    public static final String PROMPT_VERSION="RUBRIC_GEMINI_X3_HAIKU_V1";
+    public static final String PROMPT_VERSION="RUBRIC_GEMINI_X3_HAIKU_V2";
     public static final String STATUS_OK="OK",STATUS_NA="NA",STATUS_HOLD="HOLD";
     public static final String REASON_DISAGREEMENT="DISAGREEMENT",REASON_INSUFFICIENT="INSUFFICIENT_DATA";
     public static final String METHOD_GEMINI="LLM_GEMINI_X3",METHOD_GEMINI_HAIKU="LLM_GEMINI_X3_HAIKU",METHOD_SERVER="SERVER_RULE";
@@ -61,12 +61,25 @@ public class RubricJudge {
     public record StudentRecord(String text,List<Line> lines,int studentQuestions) {}
     /** 원문에서 찾은 근거: sourceId의 text 안 [start,end) 범위. */
     public record Evidence(String src,String sourceId,String quote,int start,int end) {}
-    /** 한 번의 모델 답(보정·참고용). level은 1~5 정수, "NA", "HOLD", 무효면 null. */
-    public record Run(String provider,Object level,String met,String blocked,List<Evidence> evidence,int droppedQuotes,String error) {}
+    /**
+     * 한 번의 모델 답(보정·참고용). level은 검증을 통과한 단계(1~5, "NA", "HOLD", 무효면 null), rawLevel은 모델이 답한 단계 그대로(형식 오류·호출 실패면 null).
+     * error: NO_VERIFIED_EVIDENCE(인용을 원문에서 못 찾음) 또는 호출·형식 오류 코드.
+     */
+    public record Run(String provider,Object level,String met,String blocked,List<Evidence> evidence,int droppedQuotes,String error,Object rawLevel) {
+        public Run(String provider,Object level,String met,String blocked,List<Evidence> evidence,int droppedQuotes,String error){this(provider,level,met,blocked,evidence,droppedQuotes,error,level);}
+    }
     /** 항목 하나의 판정. level·score는 확정됐을 때만 값이 있습니다(NA·HOLD·교사 확인 필요는 null). */
+    /** haikuError: Gemini가 엇갈렸는데 Haiku 판정이 없을 때 그 이유(NOT_CONFIGURED, NO_VERIFIED_EVIDENCE, 호출·형식 오류 코드). */
     public record Judgment(Indicator indicator,String status,Integer level,BigDecimal score,List<Object> votes,Object haikuLevel,boolean needsReview,
                            String reviewReason,List<Evidence> evidence,String met,String blocked,String method,List<Run> runs,
-                           String promptVersion,String geminiModel,String haikuModel) {}
+                           String promptVersion,String geminiModel,String haikuModel,String haikuError) {
+        public Judgment(Indicator indicator,String status,Integer level,BigDecimal score,List<Object> votes,Object haikuLevel,boolean needsReview,
+                        String reviewReason,List<Evidence> evidence,String met,String blocked,String method,List<Run> runs,String promptVersion,String geminiModel,String haikuModel){
+            this(indicator,status,level,score,votes,haikuLevel,needsReview,reviewReason,evidence,met,blocked,method,runs,promptVersion,geminiModel,haikuModel,null);
+        }
+        /** Haiku가 필요했는데 일시적 이유(미설정·호출 실패·인용 검증 실패)로 판정이 없으면 저장된 결과를 다시 쓰지 않습니다. */
+        public boolean retryable(){return haikuError!=null;}
+    }
 
     private final ObjectMapper json;
     private final SemanticJudgeClient client;
@@ -139,7 +152,7 @@ public class RubricJudge {
     /** 같은 입력이면 같은 키 → DB에 저장된 판정을 다시 씁니다. */
     public String cacheKey(StudentRecord record,Indicator indicator) {
         var r=config.getRubric();
-        return sha(String.join("\u0000",PROMPT_VERSION,client.rubricModel(),client.anthropicModel(),String.valueOf(r.getRuns()),String.valueOf(r.isStopWhenTwoAgree()),
+        return sha(String.join("\u0000",PROMPT_VERSION,client.rubricModel(),client.anthropicConfigured()?client.anthropicModel():"NO_HAIKU",String.valueOf(r.getRuns()),String.valueOf(r.isStopWhenTwoAgree()),
                 indicator.name(),bodies.get(indicator),record.text()));
     }
     String userPrompt(StudentRecord record,Indicator indicator) {
@@ -164,19 +177,24 @@ public class RubricJudge {
         if(runs.size()==1) unanimous=runs.get(0).level()!=null;
         if(unanimous) return finish(indicator,maxScore,runs.get(0).level(),votes,null,false,null,METHOD_GEMINI,runs,runs.get(0));
         Object majority=majority(votes);
-        Run haiku=null;
+        Run haiku=null;String haikuError=null;
         if(client.anthropicConfigured()) {
-            try { haiku=run("ANTHROPIC",record,()->client.callAnthropic(INSTRUCTIONS,user,null)); }
-            catch(JudgeFailure ex) { haiku=new Run("ANTHROPIC",null,null,null,List.of(),0,ex.code()); }
-            runs.add(haiku);
-        }
+            // 인용을 원문에서 못 찾아 무효가 되면 1번 더 묻습니다(형식 오류는 run 안에서 1번 다시 요청).
+            for(int attempt=0;attempt<2;attempt++) {
+                try { haiku=run("ANTHROPIC",record,()->client.callAnthropic(INSTRUCTIONS,user,null)); }
+                catch(JudgeFailure ex) { haiku=new Run("ANTHROPIC",null,null,null,List.of(),0,ex.code(),null); }
+                runs.add(haiku);
+                if(!"NO_VERIFIED_EVIDENCE".equals(haiku.error())) break;
+            }
+            if(haiku.level()==null) haikuError=haiku.error();
+        } else haikuError="NOT_CONFIGURED";
         Object haikuLevel=haiku==null?null:haiku.level();
         if(majority!=null&&majority.equals(haikuLevel)) {
             Run source=runs.stream().filter(r->"GEMINI".equals(r.provider())&&majority.equals(r.level())).findFirst().orElse(haiku);
             return finish(indicator,maxScore,majority,votes,haikuLevel,false,null,METHOD_GEMINI_HAIKU,runs,source);
         }
         return new Judgment(indicator,STATUS_OK,null,null,votes,haikuLevel,true,REASON_DISAGREEMENT,List.of(),"","",haiku==null?METHOD_GEMINI:METHOD_GEMINI_HAIKU,
-                List.copyOf(runs),PROMPT_VERSION,client.rubricModel(),client.anthropicModel());
+                List.copyOf(runs),PROMPT_VERSION,client.rubricModel(),client.anthropicModel(),haikuError);
     }
     private Judgment finish(Indicator indicator,int maxScore,Object level,List<Object> votes,Object haikuLevel,boolean review,String reason,String method,List<Run> runs,Run source) {
         String status=level instanceof Integer?STATUS_OK:String.valueOf(level);
@@ -198,14 +216,14 @@ public class RubricJudge {
     private Run run(String provider,StudentRecord record,java.util.function.Supplier<String> call) {
         String text;
         try { text=SemanticJudgeClient.retryFormat(()->{String t=call.get();parseAnswer(t,provider);return t;}); }
-        catch(JudgeFailure ex) { if(ex.isFormatError()) return new Run(provider,null,null,null,List.of(),0,ex.code()); throw ex; }
+        catch(JudgeFailure ex) { if(ex.isFormatError()) return new Run(provider,null,null,null,List.of(),0,ex.code(),null); throw ex; }
         var answer=parseAnswer(text,provider);
         var verified=new ArrayList<Evidence>();int dropped=0;
         for(var e:answer.evidence()) { var found=locate(record,e.src(),e.quote());if(found==null)dropped++;else verified.add(found); }
         Object level=answer.level();
         // 단계를 골랐는데 원문에 있는 근거가 하나도 없으면 그 회차는 무효입니다(NA·HOLD는 근거 없이 둡니다).
-        if(level instanceof Integer&&verified.isEmpty()) return new Run(provider,null,answer.met(),answer.blocked(),List.of(),dropped,"NO_VERIFIED_EVIDENCE");
-        return new Run(provider,level,answer.met(),answer.blocked(),List.copyOf(verified),dropped,null);
+        if(level instanceof Integer&&verified.isEmpty()) return new Run(provider,null,answer.met(),answer.blocked(),List.of(),dropped,"NO_VERIFIED_EVIDENCE",level);
+        return new Run(provider,level,answer.met(),answer.blocked(),List.copyOf(verified),dropped,null,level);
     }
     private record Answer(Object level,String met,String blocked,List<Evidence> evidence) {}
     private Answer parseAnswer(String text,String provider) {
@@ -229,14 +247,21 @@ public class RubricJudge {
     // ---------- 인용 검증 ----------
     /** 인용을 원문(같은 src의 줄)에서 공백·문장부호를 빼고 찾습니다. 못 찾으면 null(비슷한 곳에 연결하지 않음). src가 목록에 없을 때만 모든 줄에서 찾습니다. */
     Evidence locate(StudentRecord record,String src,String quote) {
-        var q=normalize(quote);if(q.text().length()<2) return null;
+        // "…", "..." 로 중간을 줄인 인용은 조각마다 같은 줄에서 순서대로 찾고, 첫 조각 시작부터 마지막 조각 끝까지를 근거로 씁니다.
+        var pieces=new ArrayList<Normalized>();
+        for(String part:quote.split("…|\\.{3,}|⋯")) { var n=normalize(part);if(n.text().length()>=2) pieces.add(n); }
+        if(pieces.isEmpty()) return null;
         boolean known=SOURCES.contains(src);
         for(var line:record.lines()) {
             if(line.sourceId()==null||known&&!line.src().equals(src)) continue;
-            var n=normalize(line.text());int at=n.text().indexOf(q.text());
-            if(at<0) continue;
-            int from=n.index()[at],to=n.index()[at+q.text().length()-1]+1;
-            return new Evidence(line.src(),line.sourceId(),line.text().substring(from,to),from,to);
+            var n=normalize(line.text());int from=-1,to=-1,cursor=0;boolean all=true;
+            for(var piece:pieces) {
+                int at=n.text().indexOf(piece.text(),cursor);
+                if(at<0){all=false;break;}
+                if(from<0) from=n.index()[at];
+                to=n.index()[at+piece.text().length()-1]+1;cursor=at+piece.text().length();
+            }
+            if(all) return new Evidence(line.src(),line.sourceId(),line.text().substring(from,to),from,to);
         }
         return null;
     }

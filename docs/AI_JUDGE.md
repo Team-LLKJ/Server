@@ -65,7 +65,9 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
 - **학생 기록**: 제출 시점에 고정된 `Input.sources`로 만듭니다. `Q`=문항, `U`=질문(질문 용도 표시), `A`=AI 답변(1500자까지), `S`=브라우저 경고(붙여넣기 등), `ANS`=최종 답안 문단, `DIS`=활용 설명란.
 - **프롬프트 순서**: 지시·공통 규칙·답 형식(system) → 학생 기록 → 항목 본문(`grading/rubric-judge-v1.md`, v3 표 + 경계 판정 + 문서의 문구 수정 3곳). 바꾸면 `RubricJudge.PROMPT_VERSION`도 올립니다.
 - **인용 검증**: 각 답의 인용을 원문에서 공백·문장부호를 빼고 찾아 `Citation`(sourceId·start·end·location)으로 연결합니다. 원문에 없는 인용은 버리고, 근거가 하나도 남지 않은 단계 답은 그 회차를 무효로 봅니다.
+  `…`·`...`로 중간을 줄인 인용은 조각마다 같은 줄에서 순서대로 찾습니다. 회차마다 `runs[].rawLevel`에 모델이 답한 단계가 그대로 남습니다.
 - **확정**: 3번 모두 같으면 `RECOMMENDED`. 엇갈리면 Haiku 1번 → Gemini 다수결과 같으면 `RECOMMENDED`, 아니면 `HOLD`(level·score null, `judge.needsReview=true`, `judge.reviewReason="DISAGREEMENT"`).
+  Haiku 답의 인용을 원문에서 못 찾으면 1번 더 묻습니다. 그래도 Haiku 판정이 없으면 `judge.haikuError`에 이유가 남습니다(`NOT_CONFIGURED`: Anthropic 키 없음, `NO_VERIFIED_EVIDENCE`, 호출 오류 코드). 이런 결과는 캐시하지 않아 다음 분석 때 다시 묻습니다.
 - **특수 경우(모델 호출 없음)**: AI 질문 0개 → 자기 주도적 사고만 판정, 나머지 `NOT_APPLICABLE`. 학생 질문 2개 이하 → `HOLD`(`INSUFFICIENT_DATA`). 사전 정책의 제외 항목은 `NOT_APPLICABLE`. 사전 정책이 없어도 판정하며, AI 미사용 정책이 `NOT_APPLICABLE`이면 전 항목 NA.
 - **점수(모두 정수, 소수 첫째 자리에서 반올림)**
   - 재분배 배점(`Cell.adjustedMaxScore`): NA 칸을 뺀 원래 배점 합을 100점이 되게 — `원래 배점 × 100 ÷ 판정 대상 배점 합` → 정수. NA가 없으면 원래 배점, NA 칸은 0.
