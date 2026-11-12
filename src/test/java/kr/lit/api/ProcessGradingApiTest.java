@@ -76,9 +76,15 @@ class ProcessGradingApiTest extends AuthTestSupport {
         assertThat(result.cells().stream().filter(c->c.criterion()==Criterion.TRANSPARENCY).count()).isEqualTo(1);
         verify(ai,times(2)).recommendLevels(any());
     }
-    @Test void missingPolicyIsHeldAndProviderFailureNeverBecomesZero() {
-        var f=fixture(false,true);var job=latest(f);worker.processJob(job.id());
-        var held=latest(f);assertThat(held.result().total()).isNull();assertThat(held.status()).isEqualTo("HOLD");verify(ai,never()).recommendLevels(any());
+    @Test void missingPolicyUsesEvaluationDefaultsAndProviderFailureNeverBecomesZero() {
+        var f=fixture(false,true);var job=latest(f);
+        var input=repository.getInput(job.id());
+        assertThat(input.policy().version()).isZero();
+        assertThat(input.policy().taskGoal()).isEqualTo("근거 기반 평가");
+        assertThat(input.policy().questionWeights()).singleElement().satisfies(weight->assertThat(weight.weight()).isEqualByComparingTo("100"));
+        when(ai.recommendLevels(any())).thenReturn(validOutput(input));
+        worker.processJob(job.id());
+        assertThat(latest(f).status()).isEqualTo("DONE");
         var configured=fixture(true,true);var pending=latest(configured);
         when(ai.recommendLevels(any())).thenThrow(new ProcessGradingAiClient.GradingFailure("GRADING_AI_TIMEOUT"));worker.processJob(pending.id());
         assertThat(latest(configured).status()).isEqualTo("FAILED");assertThat(latest(configured).result()).isNull();

@@ -395,3 +395,5 @@ AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOM
 
 Authorize에서 `TeacherAccessToken`에는 로그인 응답의 `accessToken`만, `ParticipantToken`에는 PIN 참가 응답의 `participantToken`을 넣습니다. 교사 요청에는 Bearer, 학생 요청에는 X-Participant-Token이 붙으며 공개 가입·로그인·PIN 참여에는 인증을 요구하지 않습니다. 인증값은 브라우저 영구 저장을 끈 상태입니다. [상세 사용법](docs/SWAGGER.md)을 참고하세요. 운영 주소는 이 변경을 배포한 후 사용할 수 있습니다.
 
+
+과정 채점 화면의 구조화 요약은 새 PDF·HWP에도 사용합니다. 기본 사전 정책, 학생 단위 교사 검토, 질문·답안 근거 필드는 [과정 채점](docs/PROCESS_GRADING.md) 및 [AI 활용 분석](docs/AI_GRADING.md) 명세를 참고하세요.

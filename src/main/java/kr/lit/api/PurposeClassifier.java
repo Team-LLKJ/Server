@@ -28,7 +28,7 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
 @Component
 public class PurposeClassifier {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(PurposeClassifier.class);
-    public static final String PROMPT_VERSION="PURPOSE_GEMINI_X3_V1";
+    public static final String PROMPT_VERSION="PURPOSE_GEMINI_X3_V2";
     static final int VOTES=3,BATCH_SIZE=20,MAX_ATTEMPTS=3,CONTEXT_ANSWER_CHARS=200;
     static final String INSTRUCTIONS="""
             [지시]
@@ -65,12 +65,13 @@ public class PurposeClassifier {
 
             [답 형식]
             설명 없이 JSON만 출력하세요. 모든 항목을 포함하세요.
-            {"results": [{"id": "t101", "purpose": "UNDERSTAND"}]}""";
+            {"results": [{"id": "t101", "purpose": "UNDERSTAND", "reason": "질문의 어떤 표현을 근거로 이 용도로 판정했는지 한 문장으로 설명", "cues": ["질문 원문에서 그대로 인용한 표현"]}]}""";
     static final List<String> LABELS=List.of("UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER");
 
     public record Item(String id,long conversationId,List<String> previous,String previousAiAnswer,String question) {}
     /** 저장할 분류 결과(질문 하나). */
-    public record Result(String purpose,List<String> votes,String haikuPurpose,boolean needsReview,String method) {}
+    public record Result(String purpose,List<String> votes,String haikuPurpose,boolean needsReview,String method,String reason,List<String> cues) {}
+    private record Decision(String purpose,String reason,List<String> cues) {}
 
     private final JdbcTemplate db;
     private final ObjectMapper json;
@@ -107,6 +108,11 @@ public class PurposeClassifier {
             } else if(row!=null&&"DONE".equals(status)) {
                 c.put("purpose",(String)row.get("PURPOSE"));c.putNull("teacherPurpose");
                 c.put("needsReview",Boolean.TRUE.equals(row.get("NEEDS_REVIEW")));c.put("method",(String)row.get("METHOD"));
+                c.put("reason",(String)row.get("REASON"));
+                if (row.get("CUES_JSON") instanceof String cues) {
+                    try { c.set("cues",json.readTree(cues)); }
+                    catch (com.fasterxml.jackson.core.JsonProcessingException ex) { c.putArray("cues"); }
+                }
             } else { c.putNull("teacherPurpose");c.put("needsReview",false); } // 분류 전·실패: purpose 없음 → 키워드 대체
         }
         return copy;
@@ -152,26 +158,35 @@ public class PurposeClassifier {
     /** Gemini 3회(독립 호출, 기본 temperature) → 엇갈린 질문만 Haiku 1회. Gemini 실패는 JudgeFailure로 던집니다. */
     Map<String,Result> classify(List<Item> batch) {
         String data=data(batch);
-        var votes=new ArrayList<Map<String,String>>();
-        for(int i=0;i<VOTES;i++) votes.add(SemanticJudgeClient.retryFormat(()->parse(client.callGemini(INSTRUCTIONS,data,schema(),null),batch,"GEMINI")));
+        var votes=new ArrayList<Map<String,Decision>>();
+        for(int i=0;i<VOTES;i++) votes.add(SemanticJudgeClient.retryFormat(()->parseDecisions(client.callGemini(INSTRUCTIONS,data,schema(),null),batch,"GEMINI")));
         var out=new LinkedHashMap<String,Result>();var disagreed=new ArrayList<Item>();
         for(var item:batch) {
-            var answers=votes.stream().map(v->v.get(item.id())).toList();
-            if(new HashSet<>(answers).size()==1) out.put(item.id(),new Result(answers.get(0),answers,null,false,PurposeUsageAnalyzer.METHOD_LLM));
+            var decisions=votes.stream().map(v->v.get(item.id())).toList();
+            var answers=decisions.stream().map(Decision::purpose).toList();
+            if(new HashSet<>(answers).size()==1) out.put(item.id(),toResult(answers.get(0),answers,null,false,PurposeUsageAnalyzer.METHOD_LLM,decisions.get(0)));
             else disagreed.add(item);
         }
-        Map<String,String> haiku=Map.of();
+        Map<String,Decision> haiku=Map.of();
         if(!disagreed.isEmpty()&&client.anthropicConfigured()) {
-            try { haiku=SemanticJudgeClient.retryFormat(()->parse(client.callAnthropic(INSTRUCTIONS,data(disagreed),null),disagreed,"ANTHROPIC")); }
+            try { haiku=SemanticJudgeClient.retryFormat(()->parseDecisions(client.callAnthropic(INSTRUCTIONS,data(disagreed),null),disagreed,"ANTHROPIC")); }
             catch(JudgeFailure ex) { log.warn("Purpose classification Haiku failed: {}",ex.code); }
         }
         for(var item:disagreed) {
-            var answers=votes.stream().map(v->v.get(item.id())).toList();
-            String h=haiku.get(item.id());
-            if(h!=null) out.put(item.id(),new Result(h,answers,h,true,PurposeUsageAnalyzer.METHOD_LLM_HAIKU));
-            else out.put(item.id(),new Result(majority(answers),answers,null,true,PurposeUsageAnalyzer.METHOD_LLM));
+            var decisions=votes.stream().map(v->v.get(item.id())).toList();
+            var answers=decisions.stream().map(Decision::purpose).toList();
+            Decision h=haiku.get(item.id());
+            if(h!=null) out.put(item.id(),toResult(h.purpose(),answers,h.purpose(),true,PurposeUsageAnalyzer.METHOD_LLM_HAIKU,h));
+            else {
+                String purpose=majority(answers);
+                Decision evidence=decisions.stream().filter(d->d.purpose().equals(purpose)).findFirst().orElse(null);
+                out.put(item.id(),toResult(purpose,answers,null,true,PurposeUsageAnalyzer.METHOD_LLM,evidence));
+            }
         }
         return out;
+    }
+    private static Result toResult(String purpose,List<String> votes,String haikuPurpose,boolean needsReview,String method,Decision evidence) {
+        return new Result(purpose,votes,haikuPurpose,needsReview,method,evidence==null?null:evidence.reason(),evidence==null?List.of():evidence.cues());
     }
     /** 2번 이상 나온 답, 세 답이 모두 다르면 UNDECIDED. */
     static String majority(List<String> answers) {
@@ -185,13 +200,19 @@ public class PurposeClassifier {
         catch(Exception ex) { throw new JudgeFailure("PURPOSE_REQUEST_ENCODING"); }
     }
     private static Map<String,Object> schema() {
-        var result=Map.of("type","object","properties",Map.of("id",Map.of("type","string"),"purpose",Map.of("type","string","enum",LABELS)),"required",List.of("id","purpose"));
+        var result=Map.of("type","object","properties",Map.of("id",Map.of("type","string"),"purpose",Map.of("type","string","enum",LABELS),"reason",Map.of("type","string"),"cues",Map.of("type","array","items",Map.of("type","string"))),"required",List.of("id","purpose","reason","cues"));
         return Map.of("type","object","properties",Map.of("results",Map.of("type","array","items",result)),"required",List.of("results"));
     }
     /** 요청한 질문마다 정확히 하나의 용도(6개 항목 중 하나)가 있어야 합니다. */
     Map<String,String> parse(String text,List<Item> batch,String provider) {
-        var ids=new HashSet<String>();for(var item:batch)ids.add(item.id());
         var out=new HashMap<String,String>();
+        parseDecisions(text,batch,provider).forEach((id,decision)->out.put(id,decision.purpose()));
+        return out;
+    }
+    private Map<String,Decision> parseDecisions(String text,List<Item> batch,String provider) {
+        var questions=new HashMap<String,String>();
+        for (var item:batch) questions.put(item.id(),item.question());
+        var out=new HashMap<String,Decision>();
         String body=text==null?"":text.strip();int start=body.indexOf('{'),end=body.lastIndexOf('}');
         if(start<0||end<start) throw new JudgeFailure("PURPOSE_"+provider+"_INVALID_JSON");
         JsonNode results;
@@ -199,19 +220,30 @@ public class PurposeClassifier {
         if(!results.isArray()) throw new JudgeFailure("PURPOSE_"+provider+"_INVALID_JSON");
         for(var node:results) {
             String id=node.path("id").asText(""),purpose=node.path("purpose").asText("").strip().toUpperCase(Locale.ROOT);
-            if(!ids.contains(id)||out.containsKey(id)||!LABELS.contains(purpose)) throw new JudgeFailure("PURPOSE_"+provider+"_INVALID_RESULT");
-            out.put(id,purpose);
+            if(!questions.containsKey(id)||out.containsKey(id)||!LABELS.contains(purpose)) throw new JudgeFailure("PURPOSE_"+provider+"_INVALID_RESULT");
+            String reason=node.path("reason").asText("").strip();
+            var cues=new LinkedHashSet<String>();
+            for (var cue:node.path("cues")) {
+                String quote=cue.asText("").strip();
+                if (!quote.isBlank()&&quote.length()<=200&&questions.get(id).contains(quote)&&cues.size()<5) cues.add(quote);
+            }
+            out.put(id,new Decision(purpose,reason.isBlank()||reason.length()>1000?null:reason,List.copyOf(cues)));
         }
-        if(out.size()!=ids.size()) throw new JudgeFailure("PURPOSE_"+provider+"_MISSING_RESULT");
+        if(out.size()!=questions.size()) throw new JudgeFailure("PURPOSE_"+provider+"_MISSING_RESULT");
         return out;
     }
     private void save(String evaluationId,String participantId,long conversationId,String status,Result result,int attempts,String error) {
         DatabaseUpsert.save(db,"purpose_classifications",
-                "conversation_id,evaluation_id,participant_id,status,purpose,votes,haiku_purpose,needs_review,method,haiku_model,gemini_model,prompt_version,attempts,error_code,updated_at",
-                "conversation_id","?,?,?,?,?,?,?,?,?,?,?,?,?,?,?",
+                "conversation_id,evaluation_id,participant_id,status,purpose,votes,haiku_purpose,needs_review,method,haiku_model,gemini_model,prompt_version,attempts,error_code,updated_at,reason,cues_json",
+                "conversation_id","?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?",
                 conversationId,evaluationId,participantId,status,result==null?null:result.purpose(),result==null?null:String.join(",",result.votes()),
                 result==null?null:result.haikuPurpose(),result!=null&&result.needsReview(),result==null?null:result.method(),
-                client.anthropicModel(),client.geminiModel(),PROMPT_VERSION,attempts,error,OffsetDateTime.now(ZoneOffset.UTC));
+                client.anthropicModel(),client.geminiModel(),PROMPT_VERSION,attempts,error,OffsetDateTime.now(ZoneOffset.UTC),result==null?null:result.reason(),result==null?null:encodeCues(result.cues()));
+    }
+
+    private String encodeCues(List<String> cues) {
+        try { return json.writeValueAsString(cues); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException ex) { throw new IllegalStateException(ex); }
     }
 
     // ---------- 교사 확정 ----------

@@ -77,11 +77,11 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
 - 칸마다 `judge`: `votes`(Gemini 회차별), `haikuLevel`, `needsReview`, `reviewReason`, `method`, `runs`(회차별 원래 답·근거), `promptVersion`, 모델 이름.
 - 같은 기록·프롬프트·모델이면 `rubric_judgments`에 저장된 판정을 다시 씁니다(재분석해도 다시 부르지 않음).
 
-응답 예시(HOLD·NA·확정 칸이 섞인 결과): [examples/process-rubric-run.json](examples/process-rubric-run.json)
+학생 단위 판정 통합 테스트에서 캡처한 실제 API 직렬화 예시(모델 응답은 테스트 대역): [examples/process-rubric-run.json](examples/process-rubric-run.json)
 
 교사 검토·확정(기존 API):
-- `PUT .../process-grading/participants/{pid}/runs/{jobId}/review` — `overrides[].questionId`는 **null**, `criterion`, `level`(1~5) 또는 `score`, `reason`. 교사가 채운 칸은 `TEACHER_REVIEWED`이고 `judge.needsReview`가 풀립니다.
-- `POST .../runs/{jobId}/confirm` — HOLD 칸이 남아 있거나 규정 준수 판단이 HOLD면 409 `PROCESS_CONFIRMATION_HELD`.
+- `PUT .../process-grading/participants/{pid}/runs/{jobId}/review` — `overrides[].questionId`는 **null**, `criterion`, `level`(1~5) 또는 `score`, 선택 입력 `reason`. 교사가 채운 칸은 `TEACHER_REVIEWED`이고 `judge.needsReview`가 풀립니다.
+- `POST .../runs/{jobId}/confirm` — HOLD 칸이 남아 있으면 409 `PROCESS_CONFIRMATION_HELD`.
 - **마지막 제출본만**: 다시 제출하면(종료 후 유예 시간의 마지막 저장으로 자동 제출본이 갱신되면) 시작 전인 이전 작업은 `SUPERSEDED`가 되고, 이전 작업의 검토·확정은 409 `PROCESS_RESULT_STALE`입니다.
 
 학생 PDF·HWP: 학생 단위 결과는 **교사가 확정한 결과만** 씁니다. 확정 전에는 점수·AI 추천 없이 "채점 중", 확정 후 항목 점수(재분배 배점 기준 정수)와 총점, NA 항목은 "해당 없음"으로 표시합니다.

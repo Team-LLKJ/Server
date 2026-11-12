@@ -107,7 +107,7 @@ public class ProcessGradingEngine {
         var seen=new HashSet<String>();var cells=new ArrayList<>(original.cells());
         for(var override:overrides) {
             String key=key(override.questionId(),override.criterion());
-            if(!keys.contains(key)||!seen.add(key)||override.reason()==null||override.reason().isBlank())throw new IllegalArgumentException("INVALID_OVERRIDE");
+            if(!keys.contains(key)||!seen.add(key))throw new IllegalArgumentException("INVALID_OVERRIDE");
             // 수준과 점수 중 정확히 하나만 받습니다. 점수는 0 이상 영역 만점 이하, 소수 둘째 자리까지입니다.
             if((override.level()==null)==(override.score()==null))throw new IllegalArgumentException("INVALID_OVERRIDE");
             if(override.level()!=null&&(override.level()<minimumLevel(input)||override.level()>maximumLevel(input)))throw new IllegalArgumentException("INVALID_OVERRIDE");

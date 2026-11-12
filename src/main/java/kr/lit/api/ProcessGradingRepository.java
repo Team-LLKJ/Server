@@ -22,7 +22,7 @@ public class ProcessGradingRepository {
     public void savePolicy(String id,Policy policy){DatabaseUpsert.save(db,"process_grading_policies","evaluation_id,policy_json","evaluation_id","?,?",id,encode(policy));}
     public String queueSubmission(String id,String pid) {
         // 호출자는 평가 행을 잠근 제출 트랜잭션입니다. 제출 시점의 모든 입력을 별도 보존합니다.
-        var rows=db.queryForList("SELECT s.snapshot,s.review_token,e.title FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.evaluation_id=? AND s.participant_id=?",id,pid);
+        var rows=db.queryForList("SELECT s.snapshot,s.review_token,e.title,e.evaluation_content FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.evaluation_id=? AND s.participant_id=?",id,pid);
         if(rows.isEmpty())throw new IllegalArgumentException("SUBMISSION_REQUIRED");
         var row=rows.get(0);JsonNode snapshot;
         try{snapshot=json.readTree((String)row.get("SNAPSHOT"));}catch(Exception ex){throw new IllegalStateException(ex);}
@@ -63,10 +63,28 @@ public class ProcessGradingRepository {
         var paths=new InputPathAnalyzer().analyzePaths(snapshot);
         if(paths.status().equals("PARTIAL"))limitations.add("일부 답안 입력 경로를 확인할 편집 이력이 없습니다.");
         if(sources.stream().noneMatch(s->s.kind().equals("DISCLOSURE")&&!s.text().isBlank()))limitations.add("학생이 작성한 별도 활용 설명이 없습니다. 자동 생성 설명은 학생 설명과 구분합니다.");
-        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights(),old.excludedCriteria())).orElse(null);
+        String snapshotAiPolicy=snapshot.path("aiPolicy").asText();
+        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights(),old.excludedCriteria())).orElseGet(()->getDefaultPolicy(ids,(String)row.get("TITLE"),(String)row.get("EVALUATION_CONTENT"),snapshotAiPolicy));
         var input=new Input(id,pid,(String)row.get("REVIEW_TOKEN"),(String)row.get("TITLE"),snapshot.path("aiPolicy").asText(),policy,ids,List.copyOf(sources),
                 List.copyOf(limitations),new AnalysisScope(List.copyOf(ids),java.util.stream.StreamSupport.stream(snapshot.path("answers").spliterator(),false).map(a->new AnswerVersion(a.path("question").path("id").asText(),a.path("answer").path("version").asInt())).toList(),java.util.stream.StreamSupport.stream(snapshot.path("conversations").spliterator(),false).map(t->t.path("id").asLong()).toList(),List.copyOf(limitations)),paths,new PurposeUsageAnalyzer().analyzeUsage(snapshot));
         return insertJob(input);
+    }
+    private Policy getDefaultPolicy(List<String> questionIds,String title,String guidelines,String aiPolicy) {
+        if (questionIds.isEmpty()) return null;
+        String goal=guidelines==null?"":plain(guidelines).strip();
+        String rules=switch (aiPolicy) {
+            case "DISABLED" -> "AI 질문을 사용할 수 없습니다.";
+            case "HINT_ONLY" -> "개념 설명과 풀이 힌트를 요청할 수 있습니다.";
+            default -> "평가 안내에 따라 AI를 사용하고 제출 답안에 활용한 내용을 검토하세요.";
+        };
+        int units=1_000_000;
+        int base=units/questionIds.size();
+        int remainder=units%questionIds.size();
+        var weights=new ArrayList<QuestionWeight>();
+        for (int i=0;i<questionIds.size();i++) {
+            weights.add(new QuestionWeight(questionIds.get(i),java.math.BigDecimal.valueOf(base+(i<remainder?1:0),4)));
+        }
+        return new Policy(0,RUBRIC_VERSION,goal.isBlank()?title:goal,rules,NoAiPolicy.HOLD,List.copyOf(weights));
     }
     private String plain(String text){return Jsoup.parseBodyFragment(text).wholeText();}
     public String insertJob(Input input) {

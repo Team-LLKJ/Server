@@ -16,7 +16,9 @@ public class ReportGradingService {
         if(!jobs.isEmpty()&&ProcessGradingModels.RUBRIC_VERSION.equals(jobs.get(0).rubricVersion())){
             var job=jobs.get(0);var input=process.getInput(job.id());
             if(job.result()!=null&&ProcessGradingEngine.studentLevel(job.result().cells()))return getStudentSnapshot(job,input);
-            if(input.policy()!=null)return getProcessSnapshot(job,input);
+            if(input.policy()!=null&&(input.policy().version()>0||job.result()!=null)) {
+                if (input.policy().version()>0||repository.getSource(id,pid).teachers().isEmpty()) return getProcessSnapshot(job,input);
+            }
         }
         var source=repository.getSource(id,pid);if(!source.configured())return null;
         var criteria=source.criteria()==null?AssessmentService.defaultCriteria():source.criteria();
@@ -49,7 +51,7 @@ public class ReportGradingService {
                     feedback.isBlank()?null:feedback,na?"해당 없음: 배점은 나머지 항목에 나눠 계산했습니다.":cell.reason(),na));
         }
         return new GradingSnapshot(review==null?"DRAFT":"CONFIRMED",List.copyOf(criteria),job.rubricVersion(),review==null?null:review.result().summary(),
-                review==null?null:job.result(),review,input.inputPaths(),input.usageAnalysis(),input.analysisScope());
+                review==null?null:job.result(),review,input.inputPaths(),input.usageAnalysis(),input.analysisScope(),ProcessGradingSummary.fromResult(review==null?null:review.result()));
     }
     private GradingSnapshot getProcessSnapshot(ProcessGradingModels.Job job,ProcessGradingModels.Input input){
         var review=process.getReview(job.id()).orElse(null);var result=review==null?job.result():review.result();
@@ -67,7 +69,7 @@ public class ReportGradingService {
             boolean teacher=review!=null&&(review.confirmed()||!cells.isEmpty()&&cells.stream().allMatch(c->c.status().equals("TEACHER_REVIEWED")));
             criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),criterion.maxScore(),complete?score.setScale(2,java.math.RoundingMode.HALF_UP).doubleValue():null,teacher,feedback,reason));
         }
-        return new GradingSnapshot(result==null?job.status():review!=null?review.confirmed()?"CONFIRMED":"DRAFT":result.status(),List.copyOf(criteria),job.rubricVersion(),result==null?null:result.summary(),job.result(),review,input.inputPaths(),input.usageAnalysis(),input.analysisScope());
+        return new GradingSnapshot(result==null?job.status():review!=null?review.confirmed()?"CONFIRMED":"DRAFT":result.status(),List.copyOf(criteria),job.rubricVersion(),result==null?null:result.summary(),job.result(),review,input.inputPaths(),input.usageAnalysis(),input.analysisScope(),ProcessGradingSummary.fromResult(result));
     }
 
 }

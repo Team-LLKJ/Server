@@ -47,8 +47,8 @@ public final class ReportModels {
      public GradingCriterion(int criterionId,String name,int maxScore,Double score,boolean teacherScored,String feedback,String aiReason){this(criterionId,name,maxScore,score,teacherScored,feedback,aiReason,false);}
  }
  public record GradingSnapshot(String status,List<GradingCriterion> criteria,String rubricVersion,String summary,
-     ProcessGradingModels.Result aiRecommendation,ProcessGradingModels.Review teacherReview,InputPathAnalyzer.View inputPaths,PurposeUsageAnalyzer.View purposeUsage,ProcessGradingModels.AnalysisScope analysisScope) {
-     public GradingSnapshot(String status,List<GradingCriterion> criteria){this(status,criteria,null,null,null,null,null,null,null);}
+     ProcessGradingModels.Result aiRecommendation,ProcessGradingModels.Review teacherReview,InputPathAnalyzer.View inputPaths,PurposeUsageAnalyzer.View purposeUsage,ProcessGradingModels.AnalysisScope analysisScope,ProcessGradingSummary evaluationSummary) {
+     public GradingSnapshot(String status,List<GradingCriterion> criteria){this(status,criteria,null,null,null,null,null,null,null,null);}
  }
  public record ReportContent(String evaluationId,String title,String participantId,String nickname,Instant submittedAt,
                              String submissionHash,JsonNode submission,Analysis analysis,TeacherReview teacherReview,

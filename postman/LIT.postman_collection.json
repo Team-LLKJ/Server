@@ -2990,7 +2990,7 @@
           }
         },
         {
-          "name": "9 교사 검토 저장 (최초 revision=0)",
+          "name": "9 교사 검토 저장 (최초 revision=0, 학생 단위는 규정 준수 생략 가능)",
           "request": {
             "method": "PUT",
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/runs/{{processRunId}}/review",
@@ -3447,7 +3447,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
-            "description": "V2 행동 루브릭: 1~5단계, 15/25/20/25/15점. criteria·studentContribution은 근거 기반 평가, aiUsage·textSimilarity는 통계. 기존 V1 run 유지. docs/ANALYSIS_RUBRIC_V2.md 참고."
+            "description": "summary는 strengths·weaknesses·checks 객체이며 같은 결과를 PDF·HWP에 사용합니다. 이전 텍스트는 summaryText입니다. docs/PROCESS_GRADING.md 참고."
           }
         }
       ]
@@ -3930,7 +3930,7 @@
           }
         },
         {
-          "name": "교사: 목적별 가중치·대표 질문 조회",
+          "name": "교사: 질문 용도·판정 이유·근거 표현·기준 영향 조회",
           "request": {
             "method": "GET",
             "header": [
