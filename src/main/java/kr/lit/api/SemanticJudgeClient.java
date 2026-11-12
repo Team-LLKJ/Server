@@ -78,7 +78,8 @@ public class SemanticJudgeClient {
 
     // ---------- 답안 출처 판정 ----------
     public Map<String,Judgment> judgeWithHaiku(List<Item> items) {
-        return retryFormat(()->parse(callAnthropic(INSTRUCTIONS,data(items),0.0),items,"ANTHROPIC"));
+        // claude-haiku-5-5는 temperature를 받지 않습니다(보내면 400 "temperature is deprecated for this model").
+        return retryFormat(()->parse(callAnthropic(INSTRUCTIONS,data(items),null),items,"ANTHROPIC"));
     }
     public Map<String,Judgment> judgeWithGemini(List<Item> items) {
         var result=Map.of("type","object","properties",Map.of(
@@ -89,14 +90,14 @@ public class SemanticJudgeClient {
     }
 
     // ---------- 공통 호출 ----------
-    /** Anthropic Messages API. temperature=null이면 모델 기본값을 씁니다. 응답 text 블록을 이어 붙여 돌려줍니다. */
+    /** Anthropic Messages API. temperature는 보내지 않습니다(claude-haiku-5-5가 거부). 응답 text 블록을 이어 붙여 돌려줍니다. */
     public String callAnthropic(String system,String user,Double temperature) {
         var provider=config.getAnthropic();
         if(!provider.isConfigured()) throw new JudgeFailure("JUDGE_ANTHROPIC_NOT_CONFIGURED");
         try {
             var body=new LinkedHashMap<String,Object>();
             body.put("model",provider.getModel());body.put("max_tokens",8192);
-            if(temperature!=null) body.put("temperature",temperature);
+            // 최신 Haiku는 temperature를 거부하므로 보내지 않습니다(모델 기본값). 인자는 이전 호출과의 호환용입니다.
             body.put("system",system);
             body.put("messages",List.of(Map.of("role","user","content",user)));
             var request=HttpRequest.newBuilder(URI.create(provider.getEndpoint())).timeout(Duration.ofSeconds(config.getTimeoutSeconds()))

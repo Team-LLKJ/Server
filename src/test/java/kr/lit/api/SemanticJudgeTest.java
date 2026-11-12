@@ -106,7 +106,7 @@ class SemanticJudgeTest {
         assertThat(result.get("q1-p1-s1")).isEqualTo(new Judgment(2,null)); // 후보에 없는 id는 버립니다.
         assertThat(header.get()).isEqualTo("a-key");assertThat(version.get()).isEqualTo(ANTHROPIC_VERSION);
         assertThat(received.get().path("model").asText()).isEqualTo("claude-test");
-        assertThat(received.get().path("temperature").asInt()).isZero();
+        assertThat(received.get().has("temperature")).isFalse(); // claude-haiku-5-5는 temperature를 거부(400)
         assertThat(received.get().path("system").asText()).isEqualTo(INSTRUCTIONS);
         assertThat(received.get().at("/messages/0/role").asText()).isEqualTo("user");
     }
