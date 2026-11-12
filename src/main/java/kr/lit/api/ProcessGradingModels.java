@@ -56,12 +56,12 @@ public final class ProcessGradingModels {
     }
     /**
      * LLM 루브릭 판정 정보(학생 단위 칸에만). votes: Gemini 회차별 단계(무효 회차 null, "NA"·"HOLD" 가능), haikuLevel: 엇갈렸을 때 Haiku 답,
-     * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA), runs: 회차별 원래 답(근거 포함, 보정용).
+     * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA | NO_AI_USE | SAVE_ERROR), runs: 회차별 원래 답(근거 포함, 보정용).
      */
     public record JudgeInfo(@io.swagger.v3.oas.annotations.media.Schema(description="Gemini 회차별 단계(1~5 정수, \"NA\", \"HOLD\", 근거 없는 무효 회차는 null)") List<Object> votes,
                             @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답(1~5, \"NA\", \"HOLD\"), 아니면 null") Object haikuLevel,
                             @io.swagger.v3.oas.annotations.media.Schema(description="교사 직접 입력이 필요한지(교사가 확정하면 false)") boolean needsReview,
-                            @io.swagger.v3.oas.annotations.media.Schema(description="needsReview 이유",allowableValues={"DISAGREEMENT","INSUFFICIENT_DATA"},nullable=true) String reviewReason,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="needsReview 이유. DISAGREEMENT: Gemini 3번·Haiku로도 엇갈림, INSUFFICIENT_DATA: 대화가 너무 적음(모델 호출 안 함), NO_AI_USE: AI 미사용 학생의 자기 주도적 사고(교사 확인, HOLD), SAVE_ERROR: 활용 설명란 저장 오류(투명성 HOLD)",allowableValues={"DISAGREEMENT","INSUFFICIENT_DATA","NO_AI_USE","SAVE_ERROR"},nullable=true) String reviewReason,
                             @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","SERVER_RULE"}) String method,List<RubricJudge.Run> runs,
                             String promptVersion,String geminiModel,String haikuModel,
                             @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸는데 Haiku 판정이 없는 이유(NOT_CONFIGURED: Anthropic 키 없음, NO_VERIFIED_EVIDENCE: Haiku 인용을 원문에서 2번 모두 못 찾음, 그 외 호출 오류 코드)",nullable=true) String haikuError) {

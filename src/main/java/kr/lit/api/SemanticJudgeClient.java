@@ -134,7 +134,7 @@ public class SemanticJudgeClient {
                     .timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
                     .header("x-goog-api-key",apiKey).header("Content-Type","application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
-            var payload=json.readTree(send(request,"GEMINI",rubric?JudgeRateLimiter.Bucket.RUBRIC:JudgeRateLimiter.Bucket.ANALYSIS));
+            var payload=json.readTree(send(request,"GEMINI",rubric&&!provider.isRubricKeyShared()?JudgeRateLimiter.Bucket.RUBRIC:JudgeRateLimiter.Bucket.ANALYSIS));
             var used=payload.path("usageMetadata");
             usage.record("GEMINI",model,used.path("promptTokenCount").asLong(),used.path("candidatesTokenCount").asLong(),used.path("thoughtsTokenCount").asLong());
             var candidate=payload.path("candidates").path(0);

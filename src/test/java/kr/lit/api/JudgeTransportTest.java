@@ -98,11 +98,16 @@ class JudgeTransportTest {
         assertThatThrownBy(()->SemanticJudgeClient.retryFormat(()->{calls[0]++;throw new JudgeFailure("JUDGE_GEMINI_HTTP_500");})).hasMessage("JUDGE_GEMINI_HTTP_500");
         assertThat(calls[0]).isEqualTo(1); // HTTP 오류는 형식 재요청 대상이 아님(작업 단위로 다시 시도)
     }
-    @Test void rubricKeyIsRequiredForRubricCalls() {
-        var c=new SemanticJudgeConfig();c.setEnabled(true);c.getGemini().setAnalysisKey("a");c.getGemini().setModel("m");c.getGemini().setEndpoint("http://x/{model}");
-        assertThat(c.isPurposeActive()).isTrue();assertThat(c.isRubricActive()).isFalse();
+    @Test void rubricKeyFallsBackToAnalysisKey() {
+        var c=new SemanticJudgeConfig();c.setEnabled(true);c.getGemini().setModel("m");c.getGemini().setEndpoint("http://x/{model}");
+        assertThat(c.isRubricActive()).isFalse();
         var client=client(c,new FakeClock());
         assertThatThrownBy(()->client.callGemini(GeminiKey.RUBRIC,"s","u",null,null)).hasMessage("JUDGE_GEMINI_NOT_CONFIGURED");
-        c.getGemini().setRubricKey("r");assertThat(c.isRubricActive()).isTrue();assertThat(c.getGemini().getRubricModel()).isEqualTo("m");
+        // 운영에 rubric 키가 없어도 analysis 키로 학생 단위 판정이 켜집니다(한도는 analysis 버킷을 같이 씀).
+        c.getGemini().setAnalysisKey("a");
+        assertThat(c.isPurposeActive()).isTrue();assertThat(c.isRubricActive()).isTrue();
+        assertThat(c.getGemini().getRubricKey()).isEqualTo("a");assertThat(c.getGemini().isRubricKeyShared()).isTrue();
+        c.getGemini().setRubricKey("r");assertThat(c.getGemini().getRubricKey()).isEqualTo("r");assertThat(c.getGemini().isRubricKeyShared()).isFalse();
+        assertThat(c.getGemini().getRubricModel()).isEqualTo("m");
     }
 }

@@ -6,7 +6,7 @@
   "status": "DONE",
   "inputHash": "d092c88cc03d5ff9bb59e400314b7d4f66913d54de7c63e0ffb5d293b454174d",
   "rubricVersion": "LIT_PROCESS_RUBRIC_V3",
-  "model": "LLM_RUBRIC_GEMINI_X3_HAIKU",
+  "model": "gemini-3.1-flash-lite×3+claude-haiku-5-5",
   "createdAt": "2026-11-12T11:29:30.341757Z",
   "completedAt": "2026-11-12T11:29:30.380467Z",
   "result": {
@@ -144,7 +144,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -168,7 +169,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -192,10 +194,11 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             }
           ],
-          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V1",
+          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V3",
           "geminiModel": "gemini-test",
           "haikuModel": "claude-test"
         },
@@ -329,7 +332,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -353,7 +357,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -377,10 +382,11 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             }
           ],
-          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V1",
+          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V3",
           "geminiModel": "gemini-test",
           "haikuModel": "claude-test"
         },
@@ -514,7 +520,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -538,7 +545,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -562,10 +570,11 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             }
           ],
-          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V1",
+          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V3",
           "geminiModel": "gemini-test",
           "haikuModel": "claude-test"
         },
@@ -699,7 +708,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -723,7 +733,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -747,10 +758,11 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             }
           ],
-          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V1",
+          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V3",
           "geminiModel": "gemini-test",
           "haikuModel": "claude-test"
         },
@@ -884,7 +896,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -908,7 +921,8 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             },
             {
               "provider": "GEMINI",
@@ -932,10 +946,11 @@
                 }
               ],
               "droppedQuotes": 0,
-              "error": null
+              "error": null,
+              "rejectedQuotes": []
             }
           ],
-          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V1",
+          "promptVersion": "RUBRIC_GEMINI_X3_HAIKU_V3",
           "geminiModel": "gemini-test",
           "haikuModel": "claude-test"
         },

@@ -54,11 +54,13 @@ public class SemanticJudgeConfig {
         private String rubricModel="";
         public String getAnalysisKey(){return getApiKey();}
         public void setAnalysisKey(String v){if(v!=null&&!v.isBlank())setApiKey(v);}
-        public String getRubricKey(){return rubricKey;}
+        /** rubric 키가 없으면 analysis 키를 같이 씁니다(학생 단위 루브릭 판정이 키 하나 빠져 꺼지지 않도록). 한도는 같은 프로젝트를 나눠 씁니다. */
+        public String getRubricKey(){return rubricKey.isBlank()?getApiKey():rubricKey;}
+        public boolean isRubricKeyShared(){return rubricKey.isBlank()||rubricKey.equals(getApiKey());}
         public void setRubricKey(String v){rubricKey=v==null?"":v.strip();}
         public String getRubricModel(){return rubricModel.isBlank()?getModel():rubricModel;}
         public void setRubricModel(String v){rubricModel=v==null?"":v.strip();}
-        public boolean isRubricConfigured(){return !rubricKey.isBlank()&&!getRubricModel().isBlank()&&!getEndpoint().isBlank();}
+        public boolean isRubricConfigured(){return !getRubricKey().isBlank()&&!getRubricModel().isBlank()&&!getEndpoint().isBlank();}
     }
     /** 분당 호출 수(rpm)와 하루 호출 수(rpd). 0이면 제한 없음. 실제 프로젝트·요금제 한도에 맞춰 설정합니다. */
     public static class Limit {

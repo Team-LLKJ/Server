@@ -92,7 +92,7 @@ class ProcessRubricApiTest extends AuthTestSupport {
         assertThat(grader.ready(f.pid(),java.time.Instant.now())).isTrue();
 
         worker.processJob(first.id());first=latest(f);
-        assertThat(first.status()).isEqualTo("DONE");assertThat(first.model()).isEqualTo(ProcessRubricGrader.MODEL_LABEL);
+        assertThat(first.status()).isEqualTo("DONE");assertThat(first.model()).isEqualTo("gemini-test×3+claude-test");
         assertThat(first.result().cells()).hasSize(5).allMatch(c->c.questionId()==null&&c.level()==4&&c.status().equals("RECOMMENDED"));
         assertThat(first.result().total()).isEqualByComparingTo("75"); // 11+19+15+19+11 (항목마다 정수로 반올림한 뒤 합)
         var purpose=cell(first.result(),Criterion.PURPOSE);
@@ -137,20 +137,22 @@ class ProcessRubricApiTest extends AuthTestSupport {
         assertThat(json.treeToValue(analysis.path("summary"),ProcessGradingSummary.class)).isEqualTo(confirmed.evaluationSummary());
     }
     @Test void selfDirectionTeacherInputRedistributesNaAndRounds() throws Exception {
-        gemini.put("자기 주도적 사고",List.of(2,3,4));haiku.put("자기 주도적 사고",5); // 엇갈림 → 교사 직접 입력
+        // AI를 쓰지 않은 학생: 자기 주도적 사고는 모델 없이 교사 확인(HOLD·NO_AI_USE), 나머지 4개는 NA
         var f=endWithAutoSubmission(List.of());
         var job=latest(f);worker.processJob(job.id());job=latest(f);
         var r=job.result();
         assertThat(r.status()).isEqualTo("HOLD");assertThat(r.total()).isNull();
         for(var c:List.of(Criterion.PURPOSE,Criterion.CRITICAL_REVIEW,Criterion.CONTRIBUTION,Criterion.TRANSPARENCY)) assertThat(cell(r,c).status()).isEqualTo("NOT_APPLICABLE");
         var sd=cell(r,Criterion.SELF_DIRECTION);
-        assertThat(sd.status()).isEqualTo("HOLD");assertThat(sd.level()).isNull();assertThat(sd.judge().needsReview()).isTrue();assertThat(sd.judge().reviewReason()).isEqualTo("DISAGREEMENT");
-        assertThat(sd.judge().votes()).containsExactly(2,3,4);assertThat(sd.judge().haikuLevel()).isEqualTo(5);
+        assertThat(sd.status()).isEqualTo("HOLD");assertThat(sd.level()).isNull();assertThat(sd.judge().needsReview()).isTrue();assertThat(sd.judge().reviewReason()).isEqualTo("NO_AI_USE");
+        assertThat(sd.judge().votes()).isEmpty();assertThat(sd.judge().haikuLevel()).isNull();assertThat(sd.judge().method()).isEqualTo("SERVER_RULE");
+        assertThat(ProcessGradingSummary.fromResult(r).checks()).anyMatch(c->c.startsWith("자기 주도적 사고"));
         assertThat(r.partialScore().heldMaxScore()).isEqualByComparingTo("100");assertThat(r.partialScore().notApplicableMaxScore()).isEqualByComparingTo("75");
         assertThat(sd.adjustedMaxScore()).isEqualTo(100);assertThat(sd.score()).isNull(); // HOLD 몫은 교사가 채울 때까지 비움
-        assertThat(rubricCalls.get()).isEqualTo(3); // NA 항목은 모델을 부르지 않음
+        assertThat(rubricCalls.get()).isZero(); // 모델을 부르지 않음
         String path=runs(f)+"/"+job.id();
-        mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),"CONFIRMED_OK","확인"))).andExpect(status().isOk());
+        // 규정 준수 선택(complianceDecision)·사유는 선택 항목입니다.
+        mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),null,null))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isConflict()).andExpect(jsonPath("code").value("PROCESS_CONFIRMATION_HELD"));
 
         // 교사가 자기 주도 4단계 입력: 25점 항목 하나가 재분배 배점 100점 → 100 × 3/4 = 75
@@ -169,7 +171,7 @@ class ProcessRubricApiTest extends AuthTestSupport {
     }
     @Test void holdIsNotRedistributedButNaIs() throws Exception {
         gemini.put("AI 활용 목적의 적절성",List.of("NA"));                       // 모델이 해당 없음 → 배점 재분배
-        gemini.put("AI 답변의 비판적 검토",List.of(4,3,2));haiku.put("AI 답변의 비판적 검토",5); // 엇갈림 → HOLD(재분배 안 함)
+        gemini.put("AI 답변의 비판적 검토",List.of(4,4,3));haiku.put("AI 답변의 비판적 검토",5); // 과반(4)과 Haiku(5)가 다름 → HOLD(재분배 안 함)
         var f=endWithAutoSubmission(QUESTIONS);
         var job=latest(f);worker.processJob(job.id());job=latest(f);
         var r=job.result();
@@ -183,8 +185,10 @@ class ProcessRubricApiTest extends AuthTestSupport {
         assertThat(r.cells()).extracting(Cell::adjustedMaxScore).containsExactly(0,29,24,29,18); // 재분배 배점 합 100
         assertThat(r.total()).isNull();assertThat(r.status()).isEqualTo("HOLD");
         String path=runs(f)+"/"+job.id();
-        var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(level(Criterion.CRITICAL_REVIEW,4)),"CONFIRMED_OK","확인")));
+        // 보정 사유는 비워도 됩니다. 규정 준수 HOLD여도 학생 단위 결과는 확정할 수 있습니다.
+        var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(new LevelOverride(null,Criterion.CRITICAL_REVIEW,4,"")),"HOLD",null)));
         assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("76");     // 58 + 24×3/4=18
+        assertThat(review.at("/result/cells/2/reason").asText()).isEmpty();
         assertThat(review.at("/result/partialScore/heldMaxScore").decimalValue()).isEqualByComparingTo("0");
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isOk());
     }

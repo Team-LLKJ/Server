@@ -24,7 +24,6 @@ import static kr.lit.api.ProcessGradingModels.*;
  */
 @Component
 public class ProcessRubricGrader {
-    public static final String MODEL_LABEL="LLM_RUBRIC_GEMINI_X3_HAIKU";
     /** 질문 용도·답안 기여도 분류를 기다리는 최대 시간. 넘으면 있는 결과로 판정합니다. */
     static final java.time.Duration MAX_WAIT_FOR_OTHER_STAGES=java.time.Duration.ofMinutes(10);
     private final RubricJudge judge;
@@ -38,6 +37,8 @@ public class ProcessRubricGrader {
         this.judge=judge;this.db=db;this.json=json;this.engine=engine;this.usage=usage;this.config=config;
     }
     public boolean isActive(){return judge.isActive();}
+    /** Job.model에 남길 실제 모델 이름(예: gemini-3.1-flash-lite×3+claude-haiku-5-5). */
+    public String modelLabel(){return judge.modelLabel();}
 
     /** ①② 결과가 끝났는지(질문 용도 분류·답안 기여도 2단계). 작업이 만들어진 뒤 10분이 지나면 기다리지 않습니다. */
     public boolean ready(String participantId,Instant jobCreatedAt) {
@@ -95,9 +96,11 @@ public class ProcessRubricGrader {
             return new Cell(null,criterion,j.level(),RubricJudge.score(criterion.maxScore(),j.level()),"RECOMMENDED",blankToDefault(j.met(),""),Objects.toString(j.blocked(),""),
                     citations.isEmpty()?List.of():List.of(new Condition(criterion.name()+"_L"+j.level(),citations)),List.of(),List.copyOf(limitations),details,info);
         }
-        String reason=RubricJudge.STATUS_HOLD.equals(j.status())?"최종 답안이나 활용 설명이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
-                :RubricJudge.REASON_INSUFFICIENT.equals(j.reviewReason())?"판단할 대화가 너무 적어 교사의 직접 입력이 필요합니다."
-                :"AI 판정이 엇갈려 교사의 직접 입력이 필요합니다. 회차별 단계와 근거를 참고하세요.";
+        String reason=RubricJudge.REASON_NO_AI_USE.equals(j.reviewReason())?"AI를 쓰지 않아 자기 주도적 사고는 교사가 직접 확인해야 해요."
+                :RubricJudge.REASON_SAVE_ERROR.equals(j.reviewReason())?"활용 설명란(AI 사용 기록)이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
+                :RubricJudge.STATUS_HOLD.equals(j.status())?"최종 답안이나 활용 설명이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
+                :RubricJudge.REASON_INSUFFICIENT.equals(j.reviewReason())?"판단할 내용이 적어 직접 입력이 필요해요."
+                :"AI 판정이 엇갈려 직접 입력이 필요해요. 회차별 단계와 근거를 참고하세요.";
         limitations.add("교사 확인이 필요합니다.");
         return new Cell(null,criterion,null,null,"HOLD",reason,"",List.of(),List.of(),List.copyOf(limitations),
                 new Details(List.of(),List.of(),List.of(reason),List.of(),List.of()),info);
