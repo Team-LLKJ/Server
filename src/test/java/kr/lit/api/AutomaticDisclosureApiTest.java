@@ -24,7 +24,7 @@ class AutomaticDisclosureApiTest extends AuthTestSupport {
         work.submit(f.id(),f.token(),preview.reviewToken());var result=work.disclosure(f.id(),f.token());
         assertThat(result.status()).isEqualTo("READY");
         String job=db.queryForObject("SELECT id FROM process_grading_jobs WHERE participant_id=?",String.class,f.pid());
-        assertThat(gradingRepository.getInput(job).sources()).noneMatch(source->source.kind().equals("DISCLOSURE"));assertThat(result.tools().lines()).hasSize(2);assertThat(result.evidence()).hasSize(3);assertThat(result.conversationIds()).hasSize(3);assertThat(result.usedParts()).contains("문항 1","개념 확인");
+        assertThat(gradingRepository.getInput(job).sources()).noneMatch(source->source.kind().equals("DISCLOSURE")).anyMatch(source->source.kind().equals(ProcessGradingRepository.KIND_AUTO_DISCLOSURE));assertThat(result.tools().lines()).hasSize(2);assertThat(result.evidence()).hasSize(3);assertThat(result.conversationIds()).hasSize(3);assertThat(result.usedParts()).contains("문항 1","개념 확인");
         work.saveDisclosure(f.id(),f.token(),new Disclosure("fake","fake","fake"));assertThat(work.disclosure(f.id(),f.token())).isEqualTo(result);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM ai_disclosures WHERE participant_id=?",Integer.class,f.pid())).isZero();
         mvc.perform(request(get("/api/teacher/evaluations/"+f.id()+"/students/"+f.pid()+"/ai-disclosure"),teacher)).andExpect(jsonPath("editable").value(false)).andExpect(jsonPath("status").value("READY"));

@@ -26,7 +26,7 @@ public class ProcessGradingWorker {
         if(!repository.claimJob(job))return;
         try {
             var input=repository.getInput(job);Result result;
-            if(rubric.isActive()){repository.completeJob(job,ProcessRubricGrader.MODEL_LABEL,gradeWithJudge(job,input));return;}
+            if(rubric.isActive()){repository.completeJob(job,rubric.modelLabel(),gradeWithJudge(job,input));return;}
             if(input.policy()==null)result=engine.hold(input,"PRE_EVALUATION_POLICY_REQUIRED");
             else if(engine.isV3(input)&&input.policy().excludedCriteria().size()==Criterion.values().length)result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
             else if(input.policy().questionWeights().size()!=input.questionIds().size()
@@ -45,14 +45,12 @@ public class ProcessGradingWorker {
         catch(Exception ex){repository.failJob(job,"GRADING_VALIDATION_FAILED");}
     }
     /**
-     * LLM 루브릭 판정(학생 단위, 문항 가중치 없음). 사전 정책은 없어도 됩니다: 정책의 제외 항목은 NA로 두고,
-     * AI 미사용 학생 정책이 NOT_APPLICABLE이면 전 항목 NA, 그 외에는 문서 규칙(자기 주도적 사고만 판정, 나머지 NA)을 따릅니다.
+     * LLM 루브릭 판정(학생 단위, 문항 가중치 없음). 사전 정책은 없어도 됩니다: 정책의 제외 항목은 NA로 둡니다.
+     * AI 미사용 학생은 문서 규칙(자기 주도적 사고는 모델 없이 교사 확인 HOLD, 나머지 NA)을 따릅니다. 이 규칙이 noAiPolicy=NOT_APPLICABLE에 해당합니다.
      */
     private Result gradeWithJudge(String job,Input input) {
         var policy=input.policy();
         if(policy!=null&&policy.excludedCriteria().size()==Criterion.values().length)return engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
-        boolean observedAi=input.sources().stream().anyMatch(s->s.kind().equals("STUDENT_QUESTION"));
-        if(!observedAi&&policy!=null&&policy.noAiPolicy()==NoAiPolicy.NOT_APPLICABLE)return engine.notApplicable(input,"교사 사전 정책에 따라 평가 대상이 아닙니다. 관측되지 않은 외부 AI 미사용을 단정하지 않습니다.");
         if(repository.encode(input).getBytes(StandardCharsets.UTF_8).length>524288)return engine.hold(input,"INPUT_TOO_LARGE_NO_TRUNCATION");
         return rubric.grade(input,()->repository.touchJob(job));
     }
