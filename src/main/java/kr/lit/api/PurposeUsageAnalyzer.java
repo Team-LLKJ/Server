@@ -43,7 +43,15 @@ public class PurposeUsageAnalyzer {
                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini 3회 답(용도 값)") List<String> votes,
                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답, 아니면 null",allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String haikuPurpose,
                            boolean needsReview,@io.swagger.v3.oas.annotations.media.Schema(allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String teacherPurpose,
-                           @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","TEACHER","KEYWORD_FALLBACK"}) String method,List<Purpose> purposes,double weightPerPurpose) {}
+                           @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","TEACHER","KEYWORD_FALLBACK"}) String method,List<Purpose> purposes,double weightPerPurpose,
+                           String reason,List<String> cues,List<RubricImpact> rubricImpacts) {
+        public Question {
+            cues=cues==null?List.of():List.copyOf(cues);
+            rubricImpacts=rubricImpacts==null?List.of():List.copyOf(rubricImpacts);
+        }
+    }
+    public record RubricImpact(AssessmentModels.Indicator criterion,String effect,String reason) {}
+
     public record Group(Purpose purpose,String name,double percentage,int count,List<Question> representativeQuestions) {}
     /**
      * usage: 5개 항목 비율(확정+임시 용도, OTHER·UNDECIDED 제외). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
@@ -67,7 +75,9 @@ public class PurposeUsageAnalyzer {
             var votes=new ArrayList<String>();for(var v:c.path("votes"))votes.add(v.asText());
             String teacher=c.path("teacherPurpose").isTextual()?c.path("teacherPurpose").asText():null;
             questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("haikuPurpose").isTextual()?c.path("haikuPurpose").asText():null,
-                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0));
+                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0,
+                    teacher==null&&c.path("reason").isTextual()?c.path("reason").asText():getReason(purpose,method,text),
+                    teacher==null&&c.path("cues").isArray()?getStoredCues(c.path("cues"),text):getCues(purpose,text),List.of()));
             methods.add(method);
             if(!"COMPLETED".equals(turn.path("state").asText()))missing++;
         }
@@ -88,6 +98,61 @@ public class PurposeUsageAnalyzer {
         return new View(method,missing>0?"PARTIAL":questions.isEmpty()?"NO_RECORDS":"READY",questions.size(),missing,groups,List.copyOf(questions),
                 List.copyOf(limitations),review,other,undecided,pending);
     }
+    private List<String> getStoredCues(JsonNode cues,String text) {
+        var out=new LinkedHashSet<String>();
+        for (var cue:cues) if (cue.isTextual()&&!cue.asText().isBlank()&&text.contains(cue.asText())) out.add(cue.asText());
+        return List.copyOf(out);
+    }
+
+    private List<String> getCues(Purpose purpose,String text) {
+        return KEYWORDS.stream().filter(rule->rule.getKey()==purpose).findFirst()
+                .map(rule->rule.getValue().matcher(text).results().map(java.util.regex.MatchResult::group).distinct().limit(5).toList())
+                .orElse(List.of());
+    }
+
+    private String getReason(Purpose purpose,String method,String text) {
+        if (METHOD_TEACHER.equals(method)) return "교사가 이 질문의 용도를 "+purpose.label+"으로 확정했습니다.";
+        if (purpose==Purpose.UNDECIDED) return "모델 판정이 엇갈려 질문의 용도를 확인해야 합니다.";
+        var cues=getCues(purpose,text);
+        if (METHOD_KEYWORD.equals(method)&&!cues.isEmpty()) return "질문의 ‘"+cues.get(0)+"’ 표현이 "+purpose.label+" 분류 규칙에 해당합니다.";
+        if (METHOD_KEYWORD.equals(method)) return "기록된 질문에서 다섯 가지 주요 용도에 해당하는 표현을 찾지 못했습니다.";
+        return "앞선 대화와 질문을 검토한 모델이 이 질문을 "+purpose.label+" 용도로 분류했습니다.";
+    }
+
+    public static View addRubricImpacts(View view,AssessmentModels.Analysis analysis) {
+        if (view==null || analysis==null || analysis.indicators()==null) return view;
+        var byConversation=new HashMap<Long,List<RubricImpact>>();
+        for (var indicator:analysis.indicators()) {
+            if (indicator.evidence()==null) continue;
+            for (var evidence:indicator.evidence()) {
+                if (evidence.conversationId()==null || !"USER".equals(evidence.messageRole())
+                        || evidence.type()==null || evidence.reason()==null) continue;
+                byConversation.computeIfAbsent(evidence.conversationId(),id->new ArrayList<>())
+                        .add(new RubricImpact(indicator.indicator(),evidence.type(),evidence.reason()));
+            }
+        }
+        var questions=view.questions().stream().map(q->new Question(q.conversationId(),q.questionId(),q.quote(),q.purpose(),
+                q.votes(),q.haikuPurpose(),q.needsReview(),q.teacherPurpose(),q.method(),q.purposes(),q.weightPerPurpose(),
+                q.reason(),q.cues(),getRubricImpacts(byConversation.getOrDefault(q.conversationId(),List.of())))).toList();
+        var indexed=new HashMap<Long,Question>();
+        questions.forEach(q->indexed.put(q.conversationId(),q));
+        var groups=view.usage().stream().map(g->new Group(g.purpose(),g.name(),g.percentage(),g.count(),
+                g.representativeQuestions().stream().map(q->indexed.getOrDefault(q.conversationId(),q)).toList())).toList();
+        return new View(view.method(),view.status(),view.questionCount(),view.missingRecords(),groups,questions,view.limitations(),
+                view.reviewCount(),view.otherCount(),view.undecidedCount(),view.pendingCount());
+    }
+
+    private static List<RubricImpact> getRubricImpacts(List<RubricImpact> observed) {
+        var impacts=new ArrayList<>(observed);
+        for (var criterion:ProcessGradingModels.Criterion.values()) {
+            var indicator=AssessmentModels.Indicator.valueOf(criterion.name());
+            if (observed.stream().noneMatch(impact->impact.criterion()==indicator)) {
+                impacts.add(new RubricImpact(indicator,"NONE","이 질문이 해당 기준에 개별 반영된 근거를 확인할 수 없습니다."));
+            }
+        }
+        return List.copyOf(impacts);
+    }
+
     /** 소수 첫째 자리 비율(1/10%) — 합이 정확히 100%가 되도록 최대 나머지 방식으로 배분합니다. */
     private static Map<Purpose,Integer> percentTenths(Map<Purpose,Integer> counts,int total) {
         var units=new EnumMap<Purpose,Integer>(Purpose.class);if(total==0)return units;int assigned=0;

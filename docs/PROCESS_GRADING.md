@@ -66,7 +66,7 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 
 고정 항목: 제출 스냅샷 해시, 문항/최종 답안, 대화와 답안 변경 이력, 당시 AI 사용 공개 내용, 교사 정책 버전, 기준 버전, 목표·규칙, 평가 AI 허용 단계. 이후 라이브 DB나 교사 검토가 바뀌어도 과거 버전은 덮어쓰지 않습니다. 대기/진행 중 중복 예약은409 PROCESS_ANALYSIS_PENDING입니다. 명시적 재분석은 새로운 version·runId를 만듭니다. 기존 제출 데이터는 자동 소급 분석하지 않으며 필요하면 POST runs로 예약합니다.
 
-- 정책 없음: 외부 AI를 호출하지 않고 HOLD/PRE_EVALUATION_POLICY_REQUIRED.
+- 사전 정책이 없는 새 작업은 평가 안내(없으면 제목), AI 허용 범위, 제출본 문항의 균등 비율로 기본 정책(version=0)을 만들어 입력에 고정합니다. 관측된 AI 기록이 없는 문항별 채점은 보류합니다. 기존 분석 버전은 그대로 조회됩니다.
 - 문항 비율과 제출 문항 불일치: HOLD/QUESTION_WEIGHTS_OUTDATED.
 - 입력이 UTF-8 512KiB 초과: 기록을 몰래 잘라 평가하지 않고 HOLD/INPUT_TOO_LARGE_NO_TRUNCATION.
 - 외부 호출 실패: FAILED와 errorCode. 점수 결과는 null이며 사용자가 재분석할 수 있습니다.
@@ -126,7 +126,7 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 }
 ```
 
-PUT review의 overrides는 해당 검토의 전체 보정 목록입니다. 생략한 항목은 AI 검증 결과로 계산합니다. reason은 필수이며 누가·언제 수정했는지 저장합니다. 새 검토는 confirmed=false로 돌아가고 이전 검토·확정 이력을 남깁니다. expectedRevision이 다르면409 PROCESS_REVIEW_VERSION_CONFLICT입니다.
+PUT review의 overrides는 해당 검토의 전체 보정 목록입니다. 생략한 항목은 AI 검증 결과로 계산합니다. reason은 선택 입력이며 누가·언제 수정했는지 저장합니다. 새 검토는 confirmed=false로 돌아가고 이전 검토·확정 이력을 남깁니다. expectedRevision이 다르면409 PROCESS_REVIEW_VERSION_CONFLICT입니다.
 
 #### 교사 점수 직접 입력
 
@@ -164,3 +164,21 @@ POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revisi
 ## V2 개정
 
 새 분석의 현재 계약은 [ANALYSIS_RUBRIC_V2.md](ANALYSIS_RUBRIC_V2.md)입니다. 위 V1 0~4단계 설명은 기존 run에만 적용하며 V2는 1~5단계·배점×(단계−1)/4입니다. 새 통합 분석 API로 화면의 5개 기준과 기여도를 조회할 수 있습니다.
+
+## 채점 화면과 보고서 종합 평가
+
+`GET /api/teacher/evaluations/{id}/process-grading/participants/{pid}/analysis`의 `summary`는 검증된 루브릭 근거로 구성한 객체입니다. 기존 텍스트 요약은 `summaryText`에서 조회할 수 있습니다. 구조화할 결과가 없는 경우 `summary`는 null입니다.
+
+```json
+{
+  "summary": {
+    "strengths": [{"text": "먼저 자신의 설명을 제시하고 근거를 비교했습니다.", "conversationId": 2, "quote": "근거를 비교해줘"}],
+    "weaknesses": [],
+    "checks": ["AI 답변의 비판적 검토 항목의 근거와 단계를 확인해 주세요."]
+  }
+}
+```
+
+새 PDF·HWP 보고서는 같은 요약을 출력합니다. 학생 단위 결과는 교사 확정 후 보고서에 포함되며 저장된 이전 보고서 버전은 당시 내용을 유지합니다.
+
+학생 단위 루브릭 검토에서는 `complianceDecision`과 `complianceReason`을 생략할 수 있습니다. 점수 검토가 끝나면 규정 준수 판단이 HOLD인 상태로 확정할 수 있습니다. 문항별 채점은 기존 규정 준수 판단을 요구합니다. `overrides[].reason`은 선택 입력입니다.

@@ -33,7 +33,11 @@ public final class AssessmentModels {
 
     // ---- 분석 ----
     public record Compliance(ComplianceResult result,List<String> reasons) {}
-    public record Reason(String type,String text,@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Double scoreDelta) {}
+    public record ReasonEvidence(Long conversationId,String quote) {}
+    public record Reason(String type,String text,@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Double scoreDelta,List<ReasonEvidence> evidence) {
+        public Reason { evidence=evidence==null?List.of():List.copyOf(evidence); }
+        public Reason(String type,String text,Double scoreDelta) { this(type,text,scoreDelta,List.of()); }
+    }
     public record Segment(String questionId,int start,int end,String type,double similarity,double effectiveSimilarity,boolean estimated,int answerVersion) {}
     public record AnswerText(String questionId,String text,int answerVersion) {}
     public record PasteObservation(long eventId,String questionId,String occurredAt,Integer length,Integer start,Integer end,Integer answerVersion,boolean matchesFinalAnswer,boolean clientReported) {}
@@ -42,7 +46,22 @@ public final class AssessmentModels {
     public record Contribution(int direct,int aiReferenced,int aiUsed,String basis,List<Segment> segments) {
         public Contribution(int direct,int aiReferenced,int aiUsed,String basis){this(direct,aiReferenced,aiUsed,basis,List.of());}
     }
-    public record Usage(QuestionType type,String label,int count,double share,String level) {}
+    public enum UsageType {
+        UNDERSTAND, PLAN, REVIEW, EDIT, DRAFT, OTHER;
+
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public static UsageType fromStoredValue(String value) {
+            return switch (value) {
+                case "CONCEPT_UNDERSTANDING", "RESEARCH" -> UNDERSTAND;
+                case "IDEA_EXPLORATION" -> PLAN;
+                case "VERIFICATION" -> REVIEW;
+                case "ANSWER_DRAFTING" -> DRAFT;
+                default -> valueOf(value);
+            };
+        }
+    }
+    public record Usage(UsageType type,String label,int count,double share,String level) {}
+    public record AiAnswerMatch(int start,int end,String text) {}
     public record ClassifiedQuestion(long conversationId,String requestId,String questionId,QuestionType type,String label,String method) {}
     public record Paragraph(String id,String questionId,int questionPosition,String text,String source,double similarity,
                             double changedRatio,Long conversationId,boolean estimated,String declaredSource) {}
@@ -54,10 +73,10 @@ public final class AssessmentModels {
                            @io.swagger.v3.oas.annotations.media.Schema(description="문장 출처",allowableValues={"DIRECT","AI"}) String source,
                            @io.swagger.v3.oas.annotations.media.Schema(description="AI로 본 근거",allowableValues={"SPAN_MATCH","GRAM_MATCH","SEMANTIC","TEACHER"},nullable=true) String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
-                           boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel) {
+                           boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel,AiAnswerMatch aiAnswerMatch) {
         /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
-        public String closestAiSentence(){return semantic==null?null:semantic.closestCandidateText();}
+        public String closestAiSentence(){return aiAnswerMatch!=null?aiAnswerMatch.text():semantic==null?null:semantic.closestCandidateText();}
         /** 교사가 확정한 출처(AI|DIRECT, 확정 전 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"AI","DIRECT"},nullable=true)
@@ -68,7 +87,7 @@ public final class AssessmentModels {
         public Integer geminiLevel(){return semantic==null?null:semantic.geminiLevel();}
         public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
                         double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated){
-            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null,null);
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null,null,null);
         }
     }
     /** 교사의 문장 판정 수정(3단계 보정 자료). AI 또는 DIRECT. */

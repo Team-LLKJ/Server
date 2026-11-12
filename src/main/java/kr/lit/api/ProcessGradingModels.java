@@ -106,15 +106,16 @@ public final class ProcessGradingModels {
      * score는 그 영역 만점 이하(소수 둘째 자리까지)로, AI 추천 점수를 그대로 덮어씁니다. 이때 칸의 level은 null입니다.
      */
     public record LevelOverride(@Size(max=100) String questionId,@NotNull Criterion criterion,@Min(0) @Max(5) Integer level,
-                           @NotBlank @Size(max=2000) String reason,
+                           @Size(max=2000) String reason,
                            @DecimalMin("0") @DecimalMax("25") @Digits(integer=2,fraction=2) BigDecimal score) {
+        public LevelOverride { reason=reason==null?"":reason.strip(); }
         public LevelOverride(String questionId,Criterion criterion,Integer level,String reason){this(questionId,criterion,level,reason,null);}
         public static LevelOverride ofScore(String questionId,Criterion criterion,BigDecimal score,String reason){return new LevelOverride(questionId,criterion,null,reason,score);}
         @com.fasterxml.jackson.annotation.JsonIgnore public boolean isDirectScore(){return score!=null;}
     }
     public record ReviewRequest(@Min(0) int expectedRevision,@NotNull @Size(max=401) List<@NotNull @Valid LevelOverride> overrides,
-                                @NotBlank @Pattern(regexp="HOLD|CONFIRMED_OK|CONFIRMED_VIOLATION") String complianceDecision,
-                                @NotBlank @Size(max=2000) String complianceReason) {}
+                                @Pattern(regexp="HOLD|CONFIRMED_OK|CONFIRMED_VIOLATION") String complianceDecision,
+                                @Size(max=2000) String complianceReason) {}
     public record ConfirmRequest(@Min(1) int expectedRevision) {}
     public record Review(int revision,String teacherId,Instant reviewedAt,List<LevelOverride> overrides,String complianceDecision,
                          String complianceReason,Result result,boolean confirmed) {}

@@ -38,7 +38,7 @@ class AnalysisTraceContractApiTest extends AuthTestSupport {
     }
     @Test void usageExcludesUnclassifiedAndWarnedAutomaticSubmissionStaysSubmitted()throws Exception {
         var f=fixture();ask(f,"unknown","안녕","안녕");ask(f,"concept","개념을 설명해줘","개념");ask(f,"research","자료를 찾아줘","자료");work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.WINDOW_LEAVE,Instant.now(),null));as(teacher);evaluations.end(f.id());
-        var activity=grading.activity(f.id(),f.pid());assertThat(activity.usage()).noneMatch(u->u.colorKey().equals("neutral"));assertThat(activity.usage().stream().mapToDouble(ReportModels.Usage::percentage).sum()).isCloseTo(100,within(.0001));assertThat(activity.usageAnalysis().usage()).noneMatch(group->group.purpose()==PurposeUsageAnalyzer.Purpose.OTHER);assertThat(activity.usageAnalysis().otherCount()).isEqualTo(1);assertThat(activity.usage()).allMatch(group->group.level()==null);
+        var activity=grading.activity(f.id(),f.pid());assertThat(activity.usage()).noneMatch(u->u.colorKey().equals("neutral"));assertThat(activity.usage().stream().mapToDouble(ReportModels.Usage::percentage).sum()).isCloseTo(100,within(.0001));assertThat(activity.usageAnalysis().usage()).noneMatch(group->group.purpose()==PurposeUsageAnalyzer.Purpose.OTHER);assertThat(activity.usageAnalysis().otherCount()).isEqualTo(1);assertThat(activity.usage()).allMatch(group->"HIGH".equals(group.level()));
         var row=assessment.submissions(f.id(),0,100,"").items().get(0);assertThat(row.status()).isEqualTo("SUBMITTED");assertThat(row.submissionStatus()).isEqualTo("SUBMITTED");assertThat(row.submittedAt()).isNotNull();assertThat(row.lastWarningAt()).isNotNull();
     }
 }

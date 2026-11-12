@@ -311,3 +311,11 @@ level만 전송하면 feedback을 유지합니다. feedback의 서버 제한은2
 ## 구조화 근거·가입 동의 후속 계약
 
 분석 reasons/정확한 quote, 정규화 답안 segments·PASTE 기록, 학생 상태/lastWarningAt, SSE와 비동기 ZIP은 [SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md](SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md)에 정의합니다. 기존 동기 ZIP·대화 ID·feedback 계약은 유지합니다.
+
+## 근거 응답
+
+- 분석의 `usage[].type`은 UNDERSTAND, PLAN, REVIEW, EDIT, DRAFT, OTHER입니다. 예전 분석 레코드의 개념 이해와 자료 탐색은 UNDERSTAND로 읽습니다.
+- `sentences[].aiAnswerMatch`는 글자 일치에서 선택한 원문 AI 응답의 문장과 UTF-16 범위(`start`, `end` 미포함)를 제공합니다. 응답은 기존 `conversationId`로 찾을 수 있습니다.
+- 기존 `rubric-scores`의 `ai.reasons[].evidence`는 이유에 직접 연결된 `conversationId`, `quote` 목록입니다. 개별 인용으로 증명할 수 없는 집계 이유는 빈 목록입니다.
+- `usage-analysis`의 질문에는 `reason`, 원문에서 확인된 `cues`, 그리고 조회 가능한 평가 근거에 연결된 `rubricImpacts`가 포함됩니다. 규칙 분류나 기존 판정의 근거는 서버에 남아 있는 정보로 설명합니다.
+- 자동 생성 AI 활용 설명만 있는 제출은 기존 분석의 도구명·활용 부분 미작성 감점 대상에서 제외합니다.

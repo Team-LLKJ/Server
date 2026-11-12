@@ -116,7 +116,7 @@ class ProcessRubricApiTest extends AuthTestSupport {
 
         // 학생 단위 칸은 questionId=null로 보정합니다.
         String path=runs(f)+"/"+third.id();
-        var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(level(Criterion.CONTRIBUTION,5)),"CONFIRMED_OK","학생 근거를 확인했습니다.")));
+        var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(new LevelOverride(null,Criterion.CONTRIBUTION,5,null)),null,null)));
         assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("81"); // 11+19+15+25+11
         var reviewed=review.path("result").path("cells").get(3);
         assertThat(reviewed.path("questionId").isNull()).isTrue();assertThat(reviewed.path("status").asText()).isEqualTo("TEACHER_REVIEWED");assertThat(reviewed.path("score").decimalValue()).isEqualByComparingTo("25");assertThat(reviewed.path("adjustedMaxScore").asInt()).isEqualTo(25);
@@ -132,6 +132,9 @@ class ProcessRubricApiTest extends AuthTestSupport {
         assertThat(confirmed.status()).isEqualTo("CONFIRMED");
         assertThat(confirmed.criteria()).extracting(ReportModels.GradingCriterion::score).containsExactly(11.0,19.0,15.0,25.0,11.0);
         assertThat(confirmed.teacherReview().result().partialScore().assessedScore()).isEqualByComparingTo("81");
+        assertThat(confirmed.evaluationSummary().strengths()).anyMatch(entry->QUESTIONS.get(1).equals(entry.quote()));
+        var analysis=ok(request(get(runs(f).replace("/runs","/analysis")),teacher));
+        assertThat(json.treeToValue(analysis.path("summary"),ProcessGradingSummary.class)).isEqualTo(confirmed.evaluationSummary());
     }
     @Test void selfDirectionTeacherInputRedistributesNaAndRounds() throws Exception {
         gemini.put("자기 주도적 사고",List.of(2,3,4));haiku.put("자기 주도적 사고",5); // 엇갈림 → 교사 직접 입력

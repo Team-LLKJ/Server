@@ -110,6 +110,11 @@ public class AssessmentAnalyzer {
         return (double)hit/pg.size();
     }
 
+    private static List<ReasonEvidence> getReasonEvidence(List<Evidence> evidence,String type) {
+        return evidence.stream().filter(e->type.equals(e.type())&&e.quote()!=null)
+                .map(e->new ReasonEvidence(e.conversationId(),e.quote())).distinct().toList();
+    }
+
     // ---------- 분석 ----------
     public Analysis analyze(String participantId,JsonNode source,DisclosureInput disclosure,Instant now) {
         return analyze(participantId,source,disclosure,now,SemanticInput.DISABLED);
@@ -183,7 +188,7 @@ public class AssessmentAnalyzer {
                 double paragraphBest=0;Long paragraphConversation=null;boolean paragraphAi=false;int paragraphRank=-1;
                 for(int k=0;k<ranges.size();k++) {
                     var range=ranges.get(k);String sentence=text.substring(range.start(),range.end());
-                    double best=0;int longest=0;Long conversation=null;double rankOverlap=-1;int rankSpan=-1;boolean rankSame=false;
+                    double best=0;int longest=0;Long conversation=null;double rankOverlap=-1;int rankSpan=-1;boolean rankSame=false;String matchedAnswer=null;
                     for(var ref:references) {
                         var match=SentenceSimilarity.compare(sentence,ref.getValue(),exclusion);
                         best=Math.max(best,match.overlap());longest=Math.max(longest,match.longestSpan());
@@ -191,7 +196,7 @@ public class AssessmentAnalyzer {
                         int spanKey=match.longestSpan()>=minSpan?match.longestSpan():0;boolean same=qid.equals(ref.getKey().path("questionId").asText());
                         if(match.overlap()==0&&match.longestSpan()==0) continue;
                         if(spanKey>rankSpan||spanKey==rankSpan&&(match.overlap()>rankOverlap||match.overlap()==rankOverlap&&same&&!rankSame)) {
-                            rankSpan=spanKey;rankOverlap=match.overlap();rankSame=same;conversation=ref.getKey().path("id").asLong();
+                            rankSpan=spanKey;rankOverlap=match.overlap();rankSame=same;conversation=ref.getKey().path("id").asLong();matchedAnswer=ref.getKey().path("answerText").asText("");
                         }
                     }
                     String reason=longest>=minSpan?REASON_SPAN:best>=gramThreshold?REASON_GRAM:null;
@@ -214,7 +219,8 @@ public class AssessmentAnalyzer {
                     double similarity=round(best,3);
                     sentences.add(new Sentence(paragraphId+"-s"+(k+1),qid,paragraphId,sentence,src,reason,longest,similarity,
                             reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true,
-                            needsReview,verdict,teacherLabel));
+                            needsReview,verdict,teacherLabel,
+                            (REASON_SPAN.equals(reason)||REASON_GRAM.equals(reason))?SentenceSimilarity.findAnswerMatch(sentence,matchedAnswer,exclusion,minSpan):null));
                     segments.add(new Segment(qid,offset+segStart,offset+segEnd,reason==null?"STUDENT":SOURCE_AI,similarity,similarity,true,version));
                     paragraphBest=Math.max(paragraphBest,best);
                     if(reason!=null) {
@@ -263,9 +269,10 @@ public class AssessmentAnalyzer {
                 if(c.type()==QuestionType.ANSWER_DRAFTING) ev.add(new Evidence(c.conversationId(),null,null,"답안 대리 작성 요청"));
             }
             var purposeReasons=new ArrayList<Reason>();
-            if(appropriate>0)purposeReasons.add(new Reason("CREDIT","AI 질문 "+totalQuestions+"건 중 "+appropriate+"건이 학습·탐색 목적 분류에 포함됐습니다.",null));
-            if(totalQuestions>appropriate)purposeReasons.add(new Reason("DEDUCTION","학습·탐색 목적 분류 밖의 질문은 "+(totalQuestions-appropriate)+"건입니다.",null));
-            if(drafting>0)purposeReasons.add(new Reason("DEDUCTION","답안 작성 요청 "+drafting+"건이 목적 적절성 산식에 반영됐습니다.",null));
+            var purposeEvidence=AssessmentTrace.getEvidence(Indicator.PURPOSE,turns,sentences,config.getAppropriateTypes(),config.getSpecificQuestionMinLength());
+            if(appropriate>0)purposeReasons.add(new Reason("CREDIT","AI 질문 "+totalQuestions+"건 중 "+appropriate+"건이 학습·탐색 목적 분류에 포함됐습니다.",null,getReasonEvidence(purposeEvidence,"CREDIT")));
+            if(totalQuestions>appropriate)purposeReasons.add(new Reason("DEDUCTION","학습·탐색 목적 분류 밖의 질문은 "+(totalQuestions-appropriate)+"건입니다.",null,getReasonEvidence(purposeEvidence,"DEDUCTION")));
+            if(drafting>0)purposeReasons.add(new Reason("DEDUCTION","답안 작성 요청 "+drafting+"건이 목적 적절성 산식에 반영됐습니다.",null,getReasonEvidence(purposeEvidence.stream().filter(e->e.reason().startsWith("답안 작성 요청")).toList(),"DEDUCTION")));
             explanations.put(Indicator.PURPOSE,purposeReasons);
             double s=clamp((double)appropriate/totalQuestions-config.getDraftingPenalty()*drafting/totalQuestions);
             indicators.add(result(Indicator.PURPOSE,s,"질문 "+totalQuestions+"개 중 "+appropriate+"개가 개념 이해·자료 탐색·아이디어 구체화 목적"
@@ -296,11 +303,13 @@ public class AssessmentAnalyzer {
             double b=followUps==0?0:(double)specific/followUps;
             // (c) 선택 이유 작성 여부
             double c=disclosure.reason().isBlank()?0:1;
-            var selfReasons=new ArrayList<Reason>();long prior=askedQuestions.stream().filter(savedBefore::contains).count();
+            var selfReasons=new ArrayList<Reason>();
+            var selfEvidence=AssessmentTrace.getEvidence(Indicator.SELF_DIRECTION,turns,sentences,config.getAppropriateTypes(),config.getSpecificQuestionMinLength());
+            long prior=askedQuestions.stream().filter(savedBefore::contains).count();
             if(prior>0)selfReasons.add(new Reason("CREDIT","AI 질문 전 답안 저장 "+prior+"/"+askedQuestions.size()+"문항",null));
             if(prior<askedQuestions.size())selfReasons.add(new Reason("DEDUCTION","AI 질문 전 답안 저장 미관측 "+(askedQuestions.size()-prior)+"/"+askedQuestions.size()+"문항",null));
-            if(specific>0)selfReasons.add(new Reason("CREDIT","구체화 규칙 충족 "+specific+"/"+followUps+"건",null));
-            if(specific<followUps)selfReasons.add(new Reason("DEDUCTION","구체화 규칙 미충족 "+(followUps-specific)+"/"+followUps+"건",null));
+            if(specific>0)selfReasons.add(new Reason("CREDIT","구체화 규칙 충족 "+specific+"/"+followUps+"건",null,getReasonEvidence(selfEvidence,"CREDIT")));
+            if(specific<followUps)selfReasons.add(new Reason("DEDUCTION","구체화 규칙 미충족 "+(followUps-specific)+"/"+followUps+"건",null,getReasonEvidence(selfEvidence,"DEDUCTION")));
             selfReasons.add(new Reason(c>0?"CREDIT":"DEDUCTION","AI 선택 이유 "+(c>0?"작성":"미작성"),null));
             explanations.put(Indicator.SELF_DIRECTION,selfReasons);
             double s=(a+b+c)/3;
@@ -324,8 +333,9 @@ public class AssessmentAnalyzer {
                 if(action) { acted++; ev.add(new Evidence(id,null,null,note)); }
             }
             var reviewReasons=new ArrayList<Reason>();
-            if(acted>0)reviewReasons.add(new Reason("CREDIT","완료 응답 "+completed.size()+"건 중 "+acted+"건에서 후속 검증·부분 유사도 수정 신호가 관측됐습니다.",null));
-            if(acted<completed.size())reviewReasons.add(new Reason("DEDUCTION","완료 응답 "+(completed.size()-acted)+"건에서는 검토 신호를 확인하지 못했습니다.",null));
+            var reviewEvidence=AssessmentTrace.getEvidence(Indicator.CRITICAL_REVIEW,turns,sentences,config.getAppropriateTypes(),config.getSpecificQuestionMinLength());
+            if(acted>0)reviewReasons.add(new Reason("CREDIT","완료 응답 "+completed.size()+"건 중 "+acted+"건에서 후속 검증·부분 유사도 수정 신호가 관측됐습니다.",null,getReasonEvidence(reviewEvidence,"CREDIT")));
+            if(acted<completed.size())reviewReasons.add(new Reason("DEDUCTION","완료 응답 "+(completed.size()-acted)+"건에서는 검토 신호를 확인하지 못했습니다.",null,getReasonEvidence(reviewEvidence,"DEDUCTION")));
             explanations.put(Indicator.CRITICAL_REVIEW,reviewReasons);
             double s=(double)acted/completed.size();
             indicators.add(result(Indicator.CRITICAL_REVIEW,s,"AI 응답 "+completed.size()+"건 중 "+acted+"건에서 확인·반박·수정 행동이 있었습니다",ev));
@@ -334,11 +344,21 @@ public class AssessmentAnalyzer {
         indicators.add(unavailable(Indicator.CONTRIBUTION,"텍스트 유사도로 실제 학생 기여도를 계산할 수 없습니다. 교사가 답안과 과정 근거를 확인해 채점해야 합니다.",List.of()));
         // ⑤ 투명성
         if(!aiUsed) indicators.add(unavailable(Indicator.TRANSPARENCY,"AI 사용 기록이 없어 기록할 대상이 없습니다 (교사 확인 필요).",List.of()));
-        else {
+        else if ("SYSTEM_GENERATED".equals(source.path("aiDisclosure").path("source").asText())
+                && !source.path("studentAiDisclosure").isObject()) {
+            if (totalQuestions==0) {
+                indicators.add(unavailable(Indicator.TRANSPARENCY,"확인 가능한 AI 대화 기록이 없습니다.",List.of()));
+            } else {
+                var evidence=AssessmentTrace.getEvidence(Indicator.TRANSPARENCY,turns,sentences,config.getAppropriateTypes(),config.getSpecificQuestionMinLength());
+                String reason="서버에 저장된 AI 질문 기록을 확인했습니다. 자동 생성된 활용 설명에는 미작성 감점을 적용하지 않습니다.";
+                explanations.put(Indicator.TRANSPARENCY,List.of(new Reason("CREDIT",reason,null,getReasonEvidence(evidence,"CREDIT"))));
+                indicators.add(result(Indicator.TRANSPARENCY,1.0,reason,evidence));
+            }
+        } else {
             int recorded=(signals.disclosedTools()?1:0)+(totalQuestions>0?1:0)+(signals.disclosedUsedParts()?1:0);
             var transparencyReasons=new ArrayList<Reason>();
             transparencyReasons.add(new Reason(signals.disclosedTools()?"CREDIT":"DEDUCTION","AI 도구명 "+(signals.disclosedTools()?"작성":"미작성"),null));
-            transparencyReasons.add(new Reason(totalQuestions>0?"CREDIT":"DEDUCTION","서버 질문 기록 "+totalQuestions+"건",null));
+            transparencyReasons.add(new Reason(totalQuestions>0?"CREDIT":"DEDUCTION","서버 질문 기록 "+totalQuestions+"건",null,getReasonEvidence(AssessmentTrace.getEvidence(Indicator.TRANSPARENCY,turns,sentences,config.getAppropriateTypes(),config.getSpecificQuestionMinLength()),"CREDIT")));
             transparencyReasons.add(new Reason(signals.disclosedUsedParts()?"CREDIT":"DEDUCTION","답안 활용 부분 "+(signals.disclosedUsedParts()?"작성":"미작성"),null));
             explanations.put(Indicator.TRANSPARENCY,transparencyReasons);
             indicators.add(result(Indicator.TRANSPARENCY,recorded/3.0,"필수 기록 3개 중 "+recorded+"개 (사용 AI 도구 "+(signals.disclosedTools()?"O":"X")
@@ -346,9 +366,11 @@ public class AssessmentAnalyzer {
         }
 
         var usage=new ArrayList<Usage>();
-        for(var entry:counts.entrySet()) {
+        var usageCounts=new EnumMap<UsageType,Integer>(UsageType.class);
+        counts.forEach((type,count)->usageCounts.merge(UsageType.fromStoredValue(type.name()),count,Integer::sum));
+        for(var entry:usageCounts.entrySet()) {
             double share=(double)entry.getValue()/totalQuestions;
-            usage.add(new Usage(entry.getKey(),entry.getKey().label(),entry.getValue(),round(share,3),
+            usage.add(new Usage(entry.getKey(),PurposeUsageAnalyzer.Purpose.valueOf(entry.getKey().name()).label,entry.getValue(),round(share,3),
                     share>=config.getUsageHighShare()?"HIGH":share>=config.getUsageMediumShare()?"MEDIUM":"LOW"));
         }
         usage.sort(Comparator.comparingInt(Usage::count).reversed().thenComparing(u->u.type().ordinal()));

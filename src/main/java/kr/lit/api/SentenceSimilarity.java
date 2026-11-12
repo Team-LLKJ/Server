@@ -88,6 +88,22 @@ final class SentenceSimilarity {
         return new Match(overlap, longest);
     }
 
+    /** Returns the strongest matching sentence in the selected original AI response. */
+    static AssessmentModels.AiAnswerMatch findAnswerMatch(String student,String answer,Exclusion excluded,int minSpan) {
+        if (answer==null) return null;
+        Span best=null;
+        Match bestMatch=Match.NONE;
+        for (Span candidate : sentences(answer)) {
+            Match match=compare(student,new Reference(answer.substring(candidate.start(),candidate.end()),minSpan),excluded);
+            if (match.longestSpan()>bestMatch.longestSpan()
+                    || (match.longestSpan()==bestMatch.longestSpan()&&match.overlap()>bestMatch.overlap())) {
+                best=candidate;
+                bestMatch=match;
+            }
+        }
+        return best==null?null:new AssessmentModels.AiAnswerMatch(best.start(),best.end(),answer.substring(best.start(),best.end()));
+    }
+
     /** 2단계 후보 고르기용: 문항 문구를 뺀 학생 문장 2글자 조각 중 후보 문장에도 있는 비율. */
     static double bigramContainment(String student, String candidate, String excluded) {
         Set<String> grams = windows(AssessmentAnalyzer.normalize(student), 2);

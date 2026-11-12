@@ -9,6 +9,15 @@ import static kr.lit.api.ReportModels.*;
 /** PDF/HWP 공통 표현 모델. 저장된 리포트만 사용하며 DB·시계에 접근하지 않습니다. */
 @Component
 public class ReportLayout {
+    private void addSummaryEntries(List<Block> blocks,String label,List<ProcessGradingSummary.Entry> entries) {
+        if (entries.isEmpty()) return;
+        blocks.add(new Text(label,"subtitle"));
+        for (var entry : entries) {
+            text(blocks,entry.text());
+            if (entry.quote()!=null) text(blocks,"“"+entry.quote()+"”");
+        }
+    }
+
     public sealed interface Block permits Text,Table,PageBreak {}
     public record Text(String value,String style) implements Block {}
     public record Table(List<List<String>> rows,int[] widths,boolean header) implements Block {}
@@ -27,7 +36,17 @@ public class ReportLayout {
         overview.add(List.of("답안 저장",saves+"회"));overview.add(List.of("AI 질문",c.submission().path("conversations").size()+"건 (완료 "+completed+"건·실패 "+failed+"건)"));overview.add(List.of("경고 신고",warnings+"건"));
         overview.add(List.of("교사 검토",c.grading()!=null?labelCode(c.grading().status()):review==null?"검토 전":labelCode(review.compliance().name())));
         if(review!=null&&!review.comment().isBlank())overview.add(List.of("교사 의견",review.comment()));
-        if(c.grading()!=null&&c.grading().summary()!=null)blocks.add(new Text(c.grading().summary(),"body"));
+        if (c.grading()!=null) {
+            var summary=c.grading().evaluationSummary();
+            if (summary!=null) {
+                addSummaryEntries(blocks,"잘한 점",summary.strengths());
+                addSummaryEntries(blocks,"아쉬운 점",summary.weaknesses());
+                if (!summary.checks().isEmpty()) {
+                    blocks.add(new Text("선생님 확인 필요","subtitle"));
+                    summary.checks().forEach(check -> text(blocks,check));
+                }
+            } else if (c.grading().summary()!=null) text(blocks,c.grading().summary());
+        }
         blocks.add(new Table(overview,new int[]{14520,28000},false));
         blocks.add(new Text("신고 기록만으로 부정행위를 판단하지 않습니다.","note"));
         heading(blocks,"2. 평가 기준별 루브릭");

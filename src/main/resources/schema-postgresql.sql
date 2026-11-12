@@ -373,3 +373,6 @@ CREATE TABLE IF NOT EXISTS rubric_labels (
  created_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rubric_labels_participant ON rubric_labels(participant_id,id);
+
+ALTER TABLE purpose_classifications ADD COLUMN IF NOT EXISTS reason VARCHAR(1000);
+ALTER TABLE purpose_classifications ADD COLUMN IF NOT EXISTS cues_json TEXT;

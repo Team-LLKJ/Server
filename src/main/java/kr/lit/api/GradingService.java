@@ -17,7 +17,8 @@ public class GradingService {
     private final PurposeClassifier purposes;
     private final AssessmentService assessment;
     private final GradingQueue queue;
-    public GradingService(ReportService reports,JdbcTemplate db,PurposeClassifier purposes,AssessmentService assessment,GradingQueue queue) {this.reports=reports;this.db=db;this.purposes=purposes;this.assessment=assessment;this.queue=queue;}
+    private final GradingConfig config;
+    public GradingService(ReportService reports,JdbcTemplate db,PurposeClassifier purposes,AssessmentService assessment,GradingQueue queue,GradingConfig config) {this.reports=reports;this.db=db;this.purposes=purposes;this.assessment=assessment;this.queue=queue;this.config=config;}
     /** 교사가 질문 용도를 확정합니다. LLM 결과보다 우선하며 보정 기록으로 저장되고, AI 활용 분석도 같은 분류로 다시 계산합니다. */
     public PurposeUsageAnalyzer.View setPurpose(String id,String pid,long conversationId,PurposeInput input) {
         reports.detail(id,pid);
@@ -68,7 +69,8 @@ public class GradingService {
             }
         }
         var purposeAnalysis=new PurposeUsageAnalyzer().analyzeUsage(detail.work());
-        var usage=purposeAnalysis.usage().stream().map(group->new Usage(group.name(),group.percentage(),null,"blue")).toList();
+        if (queue.resultsVisible(id)) purposeAnalysis=PurposeUsageAnalyzer.addRubricImpacts(purposeAnalysis,assessment.analysis(id,pid));
+        var usage=purposeAnalysis.usage().stream().map(group->new Usage(group.name(),group.percentage(),usageLevel(group.percentage()),"blue")).toList();
         long warningCount=warnings.size();
         var recent=warnings.stream().skip(Math.max(0,warnings.size()-200)).toList();
         String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·캡처·복사 시도·전체화면 이탈·개발자 도구 열림 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";
@@ -78,7 +80,7 @@ public class GradingService {
     public PurposeUsageAnalyzer.View getUsageAnalysis(String id,String pid){
         var detail=reports.detail(id,pid);
         if(!queue.resultsVisible(id)) throw new ApiError.Failure(HttpStatus.CONFLICT,"GRADING_RESULTS_NOT_READY","평가가 끝난 뒤 채점 결과를 볼 수 있습니다.");
-        return new PurposeUsageAnalyzer().analyzeUsage(detail.work());
+        return PurposeUsageAnalyzer.addRubricImpacts(new PurposeUsageAnalyzer().analyzeUsage(detail.work()),assessment.analysis(id,pid));
     }
     private String purposeLabel(String purpose) {return switch(purpose) {
         case "IDEATION"->"아이디어 탐색";case "RESEARCH"->"자료 조사";case "STRUCTURING"->"구조화";
@@ -101,5 +103,9 @@ public class GradingService {
         Criterion criterion;
         try {criterion=Criterion.valueOf(criterionId);}catch(IllegalArgumentException ex){throw new ApiError.Failure(HttpStatus.NOT_FOUND,"CRITERION_NOT_FOUND","평가 영역을 찾을 수 없습니다.");}
         reports.saveCriterion(id,pid,criterion,input);return rubric(id,pid);
+    }
+    private String usageLevel(double percentage) {
+        if (percentage>=config.getUsageHighShare()*100) return "HIGH";
+        return percentage>=config.getUsageMediumShare()*100?"MEDIUM":"LOW";
     }
 }
