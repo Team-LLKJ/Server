@@ -67,7 +67,7 @@ USER는 질문 수신 완료(COMPLETED), AI는 PENDING/COMPLETED/FAILED입니다
 ```json
 {
   "studentContribution":null,
-  "usage":[{"name":"아이디어 탐색","percentage":100.0,"level":"높음","colorKey":"blue"}],
+  "usage":[{"name":"이해·조사","percentage":42.9,"level":"MEDIUM","colorKey":"blue"},{"name":"기타","percentage":57.1,"level":"HIGH","colorKey":"neutral"}],
   "warnings":[{"eventId":5,"type":"WINDOW_LEAVE","questionId":null,"occurredAt":"2026-10-31T01:00:00Z","receivedAt":"2026-10-31T01:00:01Z","clientReported":true}],
   "warningsTotal":1,"hasMoreWarnings":false,
   "summary":"저장 1회, AI 질문 1건(완료 1건·실패 0건), 창 이탈·단축키 신고 1건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.",
@@ -76,8 +76,8 @@ USER는 질문 수신 완료(COMPLETED), AI는 PENDING/COMPLETED/FAILED입니다
 ```
 
 - studentContribution은 추정하지 않고 null입니다. DIRECT 신고값으로 실제 저자 기여도를 계산하지 않습니다.
-- usage는 기존 질문 키워드 분류의 **목적별 분류 횟수 비중**입니다. 복수 목적 질문은 목적별로 한 번씩 셉니다. 반올림 때문에 합이100과 약간 다를 수 있습니다. 학생 능력·정답률·전체 AI 의존율이 아닙니다.
-- level은 해당 분류 비중 ≥50% 높음, ≥20% 보통, 그 외 낮음입니다. colorKey는 blue 또는 미분류의 neutral입니다. 근거가 없으면 usage=[]입니다.
+- `usage`는 전체 질문 수(`usageAnalysis.questionCount`)를 분모로 계산합니다. 각 질문은 한 번씩 집계하며 기타와 판단 보류를 포함합니다. 질문이 있으면 비율 합은 100.0%이고, 질문이 없으면 빈 배열입니다.
+- 기본 설정에서 `level`은 비중 50% 이상 `HIGH`, 20% 이상 50% 미만 `MEDIUM`, 20% 미만 `LOW`입니다. 기타와 판단 보류는 `colorKey: "neutral"`, 나머지는 `"blue"`입니다.
 - warnings는 최근200개를 오래된 순으로 반환합니다. warningsTotal/hasMoreWarnings를 확인하고 전체 원문은 기존 learning-events 페이지 API를 사용하세요. occurredAt은 클라이언트 신고, receivedAt은 서버 수신 시각입니다.
 - summary는 저장된 이벤트 건수의 문장 요약입니다. 외부 AI 사용·실제 캡처·부정행위를 추정하지 않습니다. 제출 후에는 확정 snapshot 기준입니다.
 

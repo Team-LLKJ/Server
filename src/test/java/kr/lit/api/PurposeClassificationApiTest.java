@@ -112,7 +112,7 @@ class PurposeClassificationApiTest extends AuthTestSupport {
         var view=ok(request(get(usagePath(f)),teacher));
         assertThat(question(view,Q1).path("purpose").asText()).isEqualTo("PLAN");assertThat(question(view,Q1).path("needsReview").asBoolean()).isTrue();
         assertThat(question(view,Q2).path("purpose").asText()).isEqualTo("UNDECIDED");
-        assertThat(view.path("undecidedCount").asInt()).isEqualTo(1);assertThat(texts(view.path("usage"),"purpose")).doesNotContain("UNDECIDED");
+        assertThat(view.path("undecidedCount").asInt()).isEqualTo(1);assertThat(texts(view.path("usage"),"purpose")).containsExactly("PLAN","EDIT","UNDECIDED");
     }
     @Test void invalidJsonIsRequestedOnceMoreBeforeCountingAsFailure() throws Exception {
         var call=new AtomicInteger();

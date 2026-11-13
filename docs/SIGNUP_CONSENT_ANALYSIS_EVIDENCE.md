@@ -100,7 +100,7 @@ analysis.pasteEvents 및 activity.pasteEvents에 eventId/questionId/occurredAt/l
 
 ## 5. 사용 방법·학생 상태
 
-activity.usage는 UNCLASSIFIED/neutral을 제외하고 남은 분류 건수 기준0.1% 최대 잔여 방식으로 합계100%를 구성합니다. 분류가 전혀 없으면 []이며 unclassifiedCount에 제외된 미분류 수를 표시합니다. 없는 분류를 임의로 만들어100%로 표시하지 않습니다. 50% 이상 높음,20% 이상50% 미만 보통,20% 미만 낮음입니다. 이 비중은 복수 목적 분류 건수 비중이며 실제 작성 비중이 아닙니다. analysis.usage의 단일 우선순위 질문 분류와 activity의 복수 목적 키워드 분류는 기존 계약대로 구분합니다.
+activity.usage는 전체 질문 수를 기준으로 0.1% 단위 최대 잔여 방식으로 합계 100%를 구성합니다. 질문당 용도 하나를 집계하고 기타·판단 보류도 포함합니다. 질문이 없으면 []이며 unclassifiedCount는 호환용 0입니다. 기본 비중 기준은 50% 이상 HIGH, 20% 이상 50% 미만 MEDIUM, 20% 미만 LOW입니다.
 
 activity 복수 목적 키워드는 아래와 같습니다(소문자화 후 각 조건을 독립 검사). 여러 조건에 맞으면 여러 분류에 포함되며 아무 조건에도 맞지 않으면 미분류입니다.
 
