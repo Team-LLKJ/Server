@@ -70,7 +70,11 @@ public class GradingService {
         }
         var purposeAnalysis=new PurposeUsageAnalyzer().analyzeUsage(detail.work());
         if (queue.resultsVisible(id)) purposeAnalysis=PurposeUsageAnalyzer.addRubricImpacts(purposeAnalysis,assessment.analysis(id,pid));
-        var usage=purposeAnalysis.usage().stream().map(group->new Usage(group.name(),group.percentage(),usageLevel(group.percentage()),"blue")).toList();
+        var usage=purposeAnalysis.usage().stream().map(group->new Usage(group.name(),group.percentage(),usageLevel(group.percentage()),
+                switch(group.purpose()) {
+                    case OTHER, UNDECIDED -> "neutral";
+                    default -> "blue";
+                })).toList();
         long warningCount=warnings.size();
         var recent=warnings.stream().skip(Math.max(0,warnings.size()-200)).toList();
         String summary="저장 "+saves+"회, AI 질문 "+asked+"건(완료 "+completed+"건·실패 "+failed+"건), 창 이탈·캡처·복사 시도·전체화면 이탈·개발자 도구 열림 신고 "+warningCount+"건입니다. 신고 기록만으로 부정행위를 판단하지 않습니다.";

@@ -111,12 +111,12 @@ View.shares는 모든 문항 합계입니다(위 예시는 생략). 문항은 CO
 ## AI 사용 방법
 
 - `GET /api/teacher/evaluations/{id}/students/{participantId}/usage-analysis`
-- 기존 activity에 `usageAnalysis` 추가, `usage`는 같은 V3 비율을 name/percentage/level=null/colorKey 형식으로 제공합니다. 기존의 비율 기반 높음/보통/낮음은 제거합니다. `unclassifiedCount`는 호환용0이며 기타를 미분류로 숨기지 마세요.
+- activity의 `usageAnalysis`는 용도별 상세 분석입니다. `usage`는 같은 비율을 name/percentage/level/colorKey 형식으로 제공하며 기타와 판단 보류의 colorKey는 neutral입니다. `unclassifiedCount`는 호환용 0입니다.
 - V3 process-grading 분석의 `purposeUsage`는 분석 입력 당시 결과입니다. 옛 aiUsage/textSimilarity 필드는 과거 호환용이며 입력 경로로 사용하지 마세요. V3 aiUsage는 빈 배열이고 purposeUsage를 사용합니다.
 
 질문 용도는 UNDERSTAND(이해·조사), PLAN(아이디어·구성), REVIEW(비판적 검토), EDIT(표현 수정), DRAFT(답안 생성), OTHER(기타) 중 주된 용도 하나입니다(질문당 1개, 가중치 분할 없음). 분류 방식은 아래 "질문 용도 LLM 분류"를 보세요. 의미 정확성을 보장하지 않으며 점수로 쓰지 않습니다.
 
-비율은 "질문 몇 개 중 몇 개"이며 확정 + 임시 용도로 계산합니다. OTHER는 `usage` 대신 `otherCount`, UNDECIDED(판단 보류)는 비율에서 빼고 `undecidedCount`로 내려 줍니다. `usage[]`에 purpose/name/percentage(0.1%, 합 100)/count/representativeQuestions(최대 3개), `questions[]`에 conversationId/questionId/quote/purpose/votes/geminiPurpose/needsReview/teacherPurpose/method를 제공합니다(purposes·weightPerPurpose는 호환용으로 [purpose]·1.0). `reviewCount`는 교사 확인이 필요한 질문 수, `pendingCount`는 아직 LLM 분류 전이라 키워드로 대체한 질문 수입니다.
+비율은 전체 질문 수(`questionCount`)를 분모로 계산합니다. 확정·임시 용도, OTHER(기타), UNDECIDED(판단 보류)가 모두 `usage`에 포함됩니다. `otherCount`와 `undecidedCount`도 각각 제공합니다. `usage[]`에 purpose/name/percentage(0.1%, 합 100)/count/representativeQuestions(최대 3개), `questions[]`에 conversationId/questionId/quote/purpose/votes/geminiPurpose/needsReview/teacherPurpose/method를 제공합니다(purposes·weightPerPurpose는 호환용으로 [purpose]·1.0). `reviewCount`는 교사 확인이 필요한 질문 수, `pendingCount`는 아직 LLM 분류 전이라 키워드로 대체한 질문 수입니다.
 
 ### 질문 용도 LLM 분류 (Haiku 3회 → 불일치만 Gemini)
 

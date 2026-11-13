@@ -14,8 +14,6 @@ public class PurposeUsageAnalyzer {
         UNDERSTAND("이해·조사"), PLAN("아이디어·구성"), REVIEW("비판적 검토"), EDIT("표현 수정"), DRAFT("답안 생성"), OTHER("기타"), UNDECIDED("판단 보류");
         public final String label;
         Purpose(String label){this.label=label;}
-        /** 비율(usage)에 들어가는 5개 항목. OTHER는 otherCount, UNDECIDED는 비율에서 뺍니다. */
-        public boolean counted(){return this!=OTHER&&this!=UNDECIDED;}
         public static Optional<Purpose> parse(String value) {
             try { return value==null||value.isBlank()?Optional.empty():Optional.of(valueOf(value.strip())); }
             catch(IllegalArgumentException ex) { return Optional.empty(); }
@@ -68,7 +66,7 @@ public class PurposeUsageAnalyzer {
 
     public record Group(Purpose purpose,String name,double percentage,int count,List<Question> representativeQuestions) {}
     /**
-     * usage: 5개 항목 비율(확정+임시 용도, OTHER·UNDECIDED 제외). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
+     * usage: 전체 질문 기준 용도별 비율(OTHER·UNDECIDED 포함). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
      * undecidedCount: Gemini 세 답이 모두 다르고 Haiku도 실패한 질문 수. pendingCount: 아직 LLM 분류 전이라 키워드로 대체한 질문 수.
      */
     public record View(String method,String status,int questionCount,int missingRecords,List<Group> usage,List<Question> questions,List<String> limitations,
@@ -98,19 +96,19 @@ public class PurposeUsageAnalyzer {
             methods.add(method);
             if(!"COMPLETED".equals(turn.path("state").asText()))missing++;
         }
-        var counted=questions.stream().filter(q->q.purpose().counted()).toList();
-        var counts=new EnumMap<Purpose,Integer>(Purpose.class);for(var q:counted)counts.merge(q.purpose(),1,Integer::sum);
-        var tenths=percentTenths(counts,counted.size());
+        var counts=new EnumMap<Purpose,Integer>(Purpose.class);
+        for(var question:questions) counts.merge(question.purpose(),1,Integer::sum);
+        var tenths=percentTenths(counts,questions.size());
         var groups=Arrays.stream(Purpose.values()).filter(counts::containsKey).map(p->new Group(p,p.label,tenths.get(p)/10.0,counts.get(p),
-                counted.stream().filter(q->q.purpose()==p).limit(3).toList())).toList();
+                questions.stream().filter(q->q.purpose()==p).limit(3).toList())).toList();
         int review=(int)questions.stream().filter(Question::needsReview).count();
-        int other=(int)questions.stream().filter(q->q.purpose()==Purpose.OTHER).count();
-        int undecided=(int)questions.stream().filter(q->q.purpose()==Purpose.UNDECIDED).count();
+        int other=counts.getOrDefault(Purpose.OTHER,0);
+        int undecided=counts.getOrDefault(Purpose.UNDECIDED,0);
         String method=methods.isEmpty()?METHOD_KEYWORD:methods.size()==1?methods.iterator().next():"MIXED";
         var limitations=new ArrayList<String>();
         limitations.add("질문 하나에 주된 용도 하나만 매긴 비율입니다(질문 몇 개 중 몇 개). 점수가 아닙니다.");
         if(review>0)limitations.add("Gemini 세 번의 분류가 엇갈린 질문 "+review+"개는 임시 용도로 계산했으며 교사 확인이 필요합니다.");
-        if(undecided>0)limitations.add("용도를 정하지 못한 질문 "+undecided+"개는 비율에서 뺐습니다.");
+        if(undecided>0)limitations.add("용도를 정하지 못한 질문 "+undecided+"개는 판단 보류로 표시합니다.");
         if(methods.contains(METHOD_KEYWORD))limitations.add("LLM 분류 전이거나 실패한 질문은 키워드 규칙으로 대체했습니다(method=KEYWORD_FALLBACK).");
         return new View(method,missing>0?"PARTIAL":questions.isEmpty()?"NO_RECORDS":"READY",questions.size(),missing,groups,List.copyOf(questions),
                 List.copyOf(limitations),review,other,undecided,pending);

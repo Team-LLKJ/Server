@@ -1765,7 +1765,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/activity"
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/activity",
+            "description": "usage는 전체 질문 수를 분모로 계산합니다. 이해·조사 3건과 기타 4건이면 각각 42.9%, 57.1%를 반환합니다. 기타와 판단 보류의 colorKey는 neutral입니다."
           }
         },
         {

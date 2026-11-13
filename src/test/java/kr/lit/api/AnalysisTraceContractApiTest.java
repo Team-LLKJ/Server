@@ -36,9 +36,16 @@ class AnalysisTraceContractApiTest extends AuthTestSupport {
         body.put("answerVersion",1);mvc.perform(body(post(path).header("X-Participant-Token",f.token()),body)).andExpect(status().isCreated());work.save(f.id(),f.token(),f.q(),new SaveAnswer("바뀐 답안",1,AnswerSource.DIRECT,null));submit(f);
         var analysis=assessment.analysis(f.id(),f.pid());assertThat(analysis.pasteEvents()).hasSize(1);assertThat(analysis.pasteEvents().get(0).matchesFinalAnswer()).isFalse();assertThat(grading.activity(f.id(),f.pid()).warningsTotal()).isZero();
     }
-    @Test void usageExcludesUnclassifiedAndWarnedAutomaticSubmissionStaysSubmitted()throws Exception {
-        var f=fixture();ask(f,"unknown","안녕","안녕");ask(f,"concept","개념을 설명해줘","개념");ask(f,"research","자료를 찾아줘","자료");work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.WINDOW_LEAVE,Instant.now(),null));as(teacher);evaluations.end(f.id());
-        var activity=grading.activity(f.id(),f.pid());assertThat(activity.usage()).noneMatch(u->u.colorKey().equals("neutral"));assertThat(activity.usage().stream().mapToDouble(ReportModels.Usage::percentage).sum()).isCloseTo(100,within(.0001));assertThat(activity.usageAnalysis().usage()).noneMatch(group->group.purpose()==PurposeUsageAnalyzer.Purpose.OTHER);assertThat(activity.usageAnalysis().otherCount()).isEqualTo(1);assertThat(activity.usage()).allMatch(group->"HIGH".equals(group.level()));
+    @Test void usageIncludesOtherAndWarnedAutomaticSubmissionStaysSubmitted()throws Exception {
+        var f=fixture();for(int i=0;i<4;i++) ask(f,"other"+i,"안녕","안녕");
+        for(int i=0;i<3;i++) ask(f,"concept"+i,"개념을 설명해줘","개념");
+        work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.WINDOW_LEAVE,Instant.now(),null));as(teacher);evaluations.end(f.id());
+        var activity=grading.activity(f.id(),f.pid());
+        assertThat(activity.usage()).containsExactly(
+                new ReportModels.Usage("이해·조사",42.9,"MEDIUM","blue"),
+                new ReportModels.Usage("기타",57.1,"HIGH","neutral"));
+        assertThat(activity.usageAnalysis().questionCount()).isEqualTo(7);
+        assertThat(activity.usageAnalysis().otherCount()).isEqualTo(4);
         var row=assessment.submissions(f.id(),0,100,"").items().get(0);assertThat(row.status()).isEqualTo("SUBMITTED");assertThat(row.submissionStatus()).isEqualTo("SUBMITTED");assertThat(row.submittedAt()).isNotNull();assertThat(row.lastWarningAt()).isNotNull();
     }
 }

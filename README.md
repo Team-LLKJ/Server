@@ -283,7 +283,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.
 
-교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요.
+교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요. 활동 카드의 `usage`는 전체 질문 수를 기준으로 계산하며 기타·판단 보류를 `colorKey: "neutral"`로 제공합니다.
 
 ## 수행평가 틀과 반별 회차
 

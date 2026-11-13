@@ -53,7 +53,7 @@ AI 판정은 추천이며 최종 결정은 교사입니다. 애매한 것은 `ne
 ## ② AI 사용 방법 — 응답
 
 `GET .../students/{pid}/usage-analysis` 질문마다 `purpose`, `votes`(Gemini 3번), `haikuPurpose`(엇갈렸을 때만), `needsReview`, `teacherPurpose`, `method`(`LLM_GEMINI_X3` | `LLM_GEMINI_X3_HAIKU` | `TEACHER` | `KEYWORD_FALLBACK`).
-`usage`(확정+임시, UNDECIDED 제외), `reviewCount`, `otherCount`, `undecidedCount`. Haiku가 실패하면 2번 이상 나온 Gemini 답, 세 답이 모두 다르면 `UNDECIDED`.
+`usage`(전체 질문 기준, 확정·임시 용도와 OTHER·UNDECIDED 포함), `reviewCount`, `otherCount`, `undecidedCount`. Haiku가 실패하면 2번 이상 나온 Gemini 답, 세 답이 모두 다르면 `UNDECIDED`.
 
 교사 확정: `PATCH .../students/{pid}/conversations/{conversationId}/purpose` `{"purpose":"REVIEW"}`
 

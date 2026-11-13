@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static kr.lit.api.PurposeUsageAnalyzer.Purpose.*;
 import static org.assertj.core.api.Assertions.*;
 
-/** 질문 용도: 질문 하나에 용도 하나, 비율은 확정+임시 용도로 계산하고 OTHER·UNDECIDED는 비율에서 뺍니다. */
+/** 질문 용도: 질문 하나에 용도 하나, OTHER·UNDECIDED를 포함해 전체 질문 기준으로 계산합니다. */
 class PurposeUsageV4Test {
     final ObjectMapper json=new ObjectMapper();
     static String turn(long id,String text,String classification){
@@ -24,10 +24,13 @@ class PurposeUsageV4Test {
                 turn(5,"애매한 질문",llm("UNDECIDED","\"PLAN\",\"REVIEW\",\"DRAFT\"",null,true,"LLM_GEMINI_X3")))+"]}");
         var view=new PurposeUsageAnalyzer().analyzeUsage(source);
         assertThat(view.status()).isEqualTo("READY");assertThat(view.questionCount()).isEqualTo(5);
-        assertThat(view.usage()).extracting(PurposeUsageAnalyzer.Group::purpose).containsExactly(UNDERSTAND,REVIEW,EDIT);
-        assertThat(view.usage()).extracting(PurposeUsageAnalyzer.Group::name).containsExactly("이해·조사","비판적 검토","표현 수정");
+        assertThat(view.usage()).extracting(PurposeUsageAnalyzer.Group::purpose).containsExactly(UNDERSTAND,REVIEW,EDIT,OTHER,UNDECIDED);
+        assertThat(view.usage()).extracting(PurposeUsageAnalyzer.Group::name).containsExactly("이해·조사","비판적 검토","표현 수정","기타","판단 보류");
         assertThat(view.usage().stream().mapToDouble(PurposeUsageAnalyzer.Group::percentage).sum()).isCloseTo(100.0,within(1e-9));
-        assertThat(view.usage().get(0).percentage()).isIn(33.3,33.4);
+        assertThat(view.usage()).allSatisfy(group->{
+            assertThat(group.percentage()).isEqualTo(20.0);
+            assertThat(group.count()).isEqualTo(1);
+        });
         assertThat(view.reviewCount()).isEqualTo(2);assertThat(view.otherCount()).isEqualTo(1);assertThat(view.undecidedCount()).isEqualTo(1);
         var q2=view.questions().get(1);
         assertThat(q2.votes()).containsExactly("REVIEW","REVIEW","UNDERSTAND");assertThat(q2.haikuPurpose()).isEqualTo("REVIEW");assertThat(q2.needsReview()).isTrue();
