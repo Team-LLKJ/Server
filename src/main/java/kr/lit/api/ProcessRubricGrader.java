@@ -59,7 +59,7 @@ public class ProcessRubricGrader {
     /** 학생 한 명의 다섯 항목을 판정해 학생 단위 결과를 만듭니다. Gemini HTTP 실패는 JudgeFailure로 던집니다(작업 FAILED). */
     public Result grade(Input input,Runnable heartbeat) {
         try(var ignored=usage.open(input.evaluationId(),input.participantId(),JudgeUsage.Task.RUBRIC)) {
-            var record=judge.buildRecord(input,purposes(input.participantId()));
+            var record=judge.buildRecord(input,context(input));
             var excluded=input.policy()==null?List.<Criterion>of():input.policy().excludedCriteria();
             var cells=new ArrayList<Cell>();int confirmed=0,review=0,na=0;
             for(var criterion:Criterion.values()) {
@@ -96,7 +96,8 @@ public class ProcessRubricGrader {
             return new Cell(null,criterion,j.level(),RubricJudge.score(criterion.maxScore(),j.level()),"RECOMMENDED",blankToDefault(j.met(),""),Objects.toString(j.blocked(),""),
                     citations.isEmpty()?List.of():List.of(new Condition(criterion.name()+"_L"+j.level(),citations)),List.of(),List.copyOf(limitations),details,info);
         }
-        String reason=RubricJudge.REASON_NO_AI_USE.equals(j.reviewReason())?"AI를 쓰지 않아 자기 주도적 사고는 교사가 직접 확인해야 해요."
+        String reason=RubricJudge.REASON_PROMPT_INJECTION.equals(j.reviewReason())?Objects.toString(j.blocked(),"학생 기록에 채점 지시로 보이는 문장이 있어 직접 확인이 필요해요.")
+                :RubricJudge.REASON_NO_AI_USE.equals(j.reviewReason())?"AI를 쓰지 않아 자기 주도적 사고는 교사가 직접 확인해야 해요."
                 :RubricJudge.REASON_SAVE_ERROR.equals(j.reviewReason())?"활용 설명란(AI 사용 기록)이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
                 :RubricJudge.STATUS_HOLD.equals(j.status())?"최종 답안이나 활용 설명이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
                 :RubricJudge.REASON_INSUFFICIENT.equals(j.reviewReason())?"판단할 내용이 적어 직접 입력이 필요해요."
@@ -116,6 +117,29 @@ public class ProcessRubricGrader {
     }
     private static String blankToDefault(String v,String d){return v==null||v.isBlank()?d:v;}
     /** 대화별 질문 용도: 교사 확정 > LLM 결과. */
+    /**
+     * 학생 기록에 붙일 서버 분석: 질문 용도, 거절된 답안 생성 요청, 최종 답안 문장 판정(AI 문장). 문장 판정은 답안 기여도 분석(grading_analyses)에서 읽습니다.
+     */
+    private RubricJudge.Context context(Input input) {
+        var purposes=purposes(input.participantId());
+        var aiSentences=new HashMap<String,List<String>>();var used=new HashSet<Long>();
+        var rows=db.queryForList("SELECT result_json FROM grading_analyses WHERE participant_id=? AND analysis_status='DONE'",String.class,input.participantId());
+        if(!rows.isEmpty()&&rows.get(0)!=null) {
+            try {
+                for(var s:json.readTree(rows.get(0)).path("sentences")) {
+                    if(!AssessmentAnalyzer.SENTENCE_AI.equals(s.path("source").asText())) continue;
+                    aiSentences.computeIfAbsent(s.path("questionId").asText(),k->new ArrayList<>()).add(s.path("text").asText(""));
+                    if(s.hasNonNull("conversationId")) used.add(s.path("conversationId").asLong());
+                }
+            } catch(Exception ignored) {}
+        }
+        var refused=new HashSet<Long>();
+        for(var x:input.sources()) {
+            if(!"AI_RESPONSE".equals(x.kind())||x.conversationId()==null) continue;
+            if("DRAFT".equals(purposes.get(x.conversationId()))&&PurposeUsageAnalyzer.isRefusal(x.text())&&!used.contains(x.conversationId())) refused.add(x.conversationId());
+        }
+        return new RubricJudge.Context(purposes,Set.copyOf(refused),Map.copyOf(aiSentences));
+    }
     private Map<Long,String> purposes(String participantId) {
         var out=new HashMap<Long,String>();
         db.query("SELECT conversation_id,purpose FROM purpose_classifications WHERE participant_id=? AND status='DONE'",r->{out.put(r.getLong(1),r.getString(2));},participantId);

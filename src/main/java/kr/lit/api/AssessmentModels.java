@@ -73,7 +73,12 @@ public final class AssessmentModels {
                            @io.swagger.v3.oas.annotations.media.Schema(description="문장 출처",allowableValues={"DIRECT","AI"}) String source,
                            @io.swagger.v3.oas.annotations.media.Schema(description="AI로 본 근거",allowableValues={"SPAN_MATCH","GRAM_MATCH","SEMANTIC","TEACHER"},nullable=true) String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
-                           boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel,AiAnswerMatch aiAnswerMatch) {
+                           boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel,AiAnswerMatch aiAnswerMatch,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="긴 붙여넣기 구간과 겹치는 문장. LIT AI 답변과 안 겹쳐도 다른 AI에서 가져왔을 수 있어 교사 확인 대상(needsReview)입니다") boolean pasted) {
+        public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
+                        boolean needsReview,SemanticVerdict semantic,String teacherLabel,AiAnswerMatch aiAnswerMatch){
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,needsReview,semantic,teacherLabel,aiAnswerMatch,false);
+        }
         /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public String closestAiSentence(){return aiAnswerMatch!=null?aiAnswerMatch.text():semantic==null?null:semantic.closestCandidateText();}

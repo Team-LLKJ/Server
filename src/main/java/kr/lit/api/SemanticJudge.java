@@ -61,6 +61,11 @@ public class SemanticJudge {
         var questions=new HashMap<String,JsonNode>();
         for(var entry:source.path("answers")) questions.put(entry.path("question").path("id").asText(),entry.path("question"));
         var aiSentences=new HashMap<String,List<Candidate>>();
+        // 문항별 학생 질문(시간 순): AI가 학생 질문을 되풀이한 부분은 학생 것으로 보게 프롬프트에 함께 넣습니다.
+        var studentQuestions=new HashMap<String,List<String>>();
+        var orderedTurns=new ArrayList<JsonNode>();source.path("conversations").forEach(orderedTurns::add);
+        orderedTurns.sort(Comparator.comparingLong(t->t.path("id").asLong()));
+        for(var turn:orderedTurns) { String text=turn.path("questionText").asText("").strip();if(!text.isEmpty()) studentQuestions.computeIfAbsent(turn.path("questionId").asText(),k->new ArrayList<>()).add(text); }
         for(var turn:source.path("conversations")) {
             if(!"COMPLETED".equals(turn.path("state").asText())||turn.path("answerText").isNull()) continue;
             String qid=turn.path("questionId").asText();long id=turn.path("id").asLong();int index=0;
@@ -90,7 +95,7 @@ public class SemanticJudge {
                 candidates=List.copyOf(ranked.subList(0,config.getMaxCandidates()));
             }
             String questionText=question.path("title").asText("")+"\n"+AssessmentAnalyzer.plainText(question.path("content").asText(""));
-            items.add(new PlanItem(key,sentence.questionId(),excluded,new Item(sentence.id(),questionText.strip(),sentence.text(),candidates)));
+            items.add(new PlanItem(key,sentence.questionId(),excluded,new Item(sentence.id(),questionText.strip(),sentence.text(),candidates,studentQuestions.getOrDefault(sentence.questionId(),List.of()))));
         }
         return new Plan(List.copyOf(items));
     }
@@ -182,7 +187,7 @@ public class SemanticJudge {
     String cacheKey(String provider,String model,PlanItem p) {
         try {
             var material=json.writeValueAsString(List.of(provider,model,SemanticJudgeConfig.PROMPT_VERSION,p.item().question(),p.item().student(),
-                    p.item().candidates().stream().map(c->c.id()+"\u0001"+c.text()).toList()));
+                    p.item().candidates().stream().map(c->c.id()+"\u0001"+c.text()).toList(),p.item().studentQuestions()));
             var digest=MessageDigest.getInstance("SHA-256").digest(material.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch(Exception ex) { throw new IllegalStateException(ex); }

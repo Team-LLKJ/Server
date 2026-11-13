@@ -52,8 +52,71 @@ final class SentenceSimilarity {
             this.grams = windows(normalized, 3);
         }
 
+        private Exclusion(String normalized, Set<String> grams) {
+            this.normalized = normalized;
+            this.grams = grams;
+        }
+
+        /**
+         * 학생이 먼저 말한 표현을 더한 제외 목록. AI가 학생 질문을 되풀이한 3-gram·긴 구간은 학생 것이므로 비교에서 뺍니다.
+         * studentGrams·studentSpans는 {@link StudentOrigin}이 만든 값(앞선 AI 답변에서 옮긴 표현은 이미 빠져 있음).
+         */
+        Exclusion withStudentOrigin(StudentOrigin origin, int spanLength) {
+            if (origin == null || origin.isEmpty()) return this;
+            var grams = new HashSet<>(this.grams);
+            grams.addAll(origin.grams);
+            var out = new Exclusion(normalized, grams);
+            var spans = new HashSet<>(spans(spanLength));
+            spans.addAll(origin.spans);
+            out.spansByLength.put(spanLength, spans);
+            return out;
+        }
+
         private Set<String> spans(int length) {
             return spansByLength.computeIfAbsent(length, n -> windows(normalized, n));
+        }
+    }
+
+    /**
+     * 학생이 대화에서 먼저 말한 표현(질문의 3-gram·spanLength 구간). 출처는 대화에서 처음 나온 사람으로 봅니다:
+     * 학생 질문에 먼저 나오면 학생 것, 그 질문보다 앞선 AI 답변에 이미 있던 표현을 학생이 옮겼으면 AI 것(여기서 빠짐).
+     */
+    static final class StudentOrigin {
+        static final StudentOrigin EMPTY = new StudentOrigin(Set.of(), Set.of());
+        private final Set<String> grams;
+        private final Set<String> spans;
+
+        private StudentOrigin(Set<String> grams, Set<String> spans) {
+            this.grams = grams;
+            this.spans = spans;
+        }
+
+        boolean isEmpty() { return grams.isEmpty() && spans.isEmpty(); }
+        boolean containsGram(String gram) { return grams.contains(gram); }
+
+        /**
+         * 대화를 시간 순서(question, answer)로 받아, 각 대화 시점까지 학생이 먼저 말한 표현을 돌려줍니다(index i = i번째 대화의 답변 시점).
+         * answer가 null이면(응답 없음) AI 표현에 더하지 않습니다.
+         */
+        static List<StudentOrigin> chronological(List<String> questions, List<String> answers, int spanLength) {
+            var out = new ArrayList<StudentOrigin>();
+            var aiGrams = new HashSet<String>();
+            var aiSpans = new HashSet<String>();
+            var grams = new HashSet<String>();
+            var spans = new HashSet<String>();
+            for (int i = 0; i < questions.size(); i++) {
+                String question = AssessmentAnalyzer.normalize(questions.get(i) == null ? "" : questions.get(i));
+                for (String gram : windows(question, 3)) if (!aiGrams.contains(gram)) grams.add(gram);
+                for (String span : windows(question, spanLength)) if (!aiSpans.contains(span)) spans.add(span);
+                out.add(new StudentOrigin(Set.copyOf(grams), Set.copyOf(spans)));
+                String answer = i < answers.size() ? answers.get(i) : null;
+                if (answer != null) {
+                    String normalized = AssessmentAnalyzer.normalize(answer);
+                    aiGrams.addAll(windows(normalized, 3));
+                    aiSpans.addAll(windows(normalized, spanLength));
+                }
+            }
+            return out;
         }
     }
 

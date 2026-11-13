@@ -33,9 +33,10 @@ public class AssessmentService {
     private final GradingQueue queue;
     private final JudgeUsage usage;
 
-    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes,GradingQueue queue,JudgeUsage usage) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;this.queue=queue;this.usage=usage;
+    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes,GradingQueue queue,JudgeUsage usage,AutomaticDisclosureService disclosures) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;this.queue=queue;this.usage=usage;this.disclosures=disclosures;
     }
+    private final AutomaticDisclosureService disclosures;
 
     // ===== 공통 =====
     private ApiError.Failure fail(HttpStatus status,String code,String message) { return new ApiError.Failure(status,code,message); }
@@ -184,6 +185,7 @@ public class AssessmentService {
         int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",encode(result),analyzedAt,result.semanticStatus(),pid);
         if(updated==0) db.update("INSERT INTO grading_analyses(participant_id,evaluation_id,analysis_status,result_json,requested_at,analyzed_at,semantic_status) VALUES (?,?,'DONE',?,?,?,?)",
                 pid,id,encode(result),analyzedAt,analyzedAt,result.semanticStatus());
+        disclosures.refreshUsedParts(id,pid,result); // 교사 문장 수정·재분석 뒤 자동 기록의 '답안에서 AI를 쓴 부분'도 같은 판정으로
         return result;
     }
     public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
@@ -211,6 +213,7 @@ public class AssessmentService {
         var result=compute(id,pid,src);
         db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
+        disclosures.refreshUsedParts(id,pid,result);
     }
     /** 스케줄러 전용: 2단계 판정이 필요한(semantic_status=PENDING) 분석의 LLM 후보를 만듭니다. 대상이 아니면 null. */
     public SemanticJudge.Plan prepareSemantic(String id,String pid) {
@@ -231,6 +234,7 @@ public class AssessmentService {
         boolean failed=SemanticJudge.STATUS_PARTIAL.equals(result.semanticStatus())||SemanticJudge.STATUS_UNAVAILABLE.equals(result.semanticStatus());
         db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=?,semantic_attempts=semantic_attempts+?,semantic_failed_at=? WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),failed?1:0,failed?now():null,pid);
+        disclosures.refreshUsedParts(id,pid,result);
     }
     public void markSemanticUnavailable(String pid) {
         db.update("UPDATE grading_analyses SET semantic_status='UNAVAILABLE',semantic_attempts=semantic_attempts+1,semantic_failed_at=? WHERE participant_id=? AND semantic_status='PENDING'",now(),pid);

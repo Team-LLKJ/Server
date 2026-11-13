@@ -28,7 +28,7 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
 @Component
 public class PurposeClassifier {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(PurposeClassifier.class);
-    public static final String PROMPT_VERSION="PURPOSE_GEMINI_X3_V2";
+    public static final String PROMPT_VERSION="PURPOSE_GEMINI_X3_V3";
     static final int VOTES=3,BATCH_SIZE=20,MAX_ATTEMPTS=3,CONTEXT_ANSWER_CHARS=200;
     static final String INSTRUCTIONS="""
             [지시]
@@ -57,6 +57,12 @@ public class PurposeClassifier {
             5. OTHER vs 나머지: 과제 내용이 아니라 평가 방식·점수·제출 방법·AI 기능에 대한 질문이면 OTHER입니다. 단, 문항이나 루브릭 항목의 뜻을 묻는 것은 UNDERSTAND입니다.
                예) "이 문항 배점 얼마야?" → OTHER
                예) "제출 버튼 어디 있어?" → OTHER
+            6. REVIEW vs EDIT: REVIEW는 학생이 AI의 답이나 주장을 검증하는 것입니다. 학생이 자기 글(답안)을 검토·첨삭해 달라고 하면 EDIT입니다.
+               예) "내 답안 검토해줘: …" → EDIT
+               예) "네가 말한 통계 출처가 어디야?" → REVIEW
+            7. "진짜야?", "그럼 그걸로 써줘"처럼 앞 대화가 있어야 뜻이 정해지는 짧은 질문은 previous와 previousAiAnswer로 무엇을 가리키는지 정한 뒤 분류하세요.
+               예) 직전 AI 답변이 통계를 말한 뒤 "진짜야?" → REVIEW
+               예) 직전 AI 답변이 문단 예시를 보여 준 뒤 "그럼 그걸로 써줘" → DRAFT
 
             [맥락]
             - previous: 같은 학생의 앞 질문(최대 2개), previousAiAnswer: 바로 앞 질문에 대한 AI 답변 앞부분.

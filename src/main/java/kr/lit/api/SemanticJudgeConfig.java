@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 @org.springframework.validation.annotation.Validated
 public class SemanticJudgeConfig {
     /** 프롬프트·판정 규칙 버전. 바뀌면 캐시 키가 달라져 다시 판정합니다. */
-    public static final String PROMPT_VERSION="SEMANTIC_JUDGE_HAIKU_FIRST_V2";
+    public static final String PROMPT_VERSION="SEMANTIC_JUDGE_HAIKU_FIRST_V3";
 
     private boolean enabled=false;
     /** 정규화 후 이 글자 수 미만인 문장은 보내지 않습니다. */
