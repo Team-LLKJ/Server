@@ -226,15 +226,15 @@ public class RubricJudge {
         return null;
     }
     private static final List<Map.Entry<java.util.regex.Pattern,String>> TAGS=List.of(
-            Map.entry(java.util.regex.Pattern.compile("\\[U#\\d+[^\\]]*\\]|\\bU#\\d+"),"학생 질문"),
-            Map.entry(java.util.regex.Pattern.compile("\\[A#\\d+[^\\]]*\\]|\\bA#\\d+"),"AI 답변"),
-            Map.entry(java.util.regex.Pattern.compile("\\[?\\bANS\\b(\\s*[\\w-]+:\\d+)?\\]?"),"최종 답안"),
-            Map.entry(java.util.regex.Pattern.compile("\\[?\\bDIS\\s+사용 도구\\]?"),"활용 설명란의 사용 도구"),
-            Map.entry(java.util.regex.Pattern.compile("\\[?\\bDIS\\s+활용 부분\\]?"),"활용 설명란의 활용 부분"),
-            Map.entry(java.util.regex.Pattern.compile("\\[?\\bDIS\\s+이유\\]?"),"활용 설명란의 이유"),
-            Map.entry(java.util.regex.Pattern.compile("\\[?\\bDIS\\b\\]?"),"활용 설명란"),
+            Map.entry(java.util.regex.Pattern.compile("\\[U#\\d+[^\\]]*\\]|(?<![A-Za-z0-9])U#\\d+"),"학생 질문"),
+            Map.entry(java.util.regex.Pattern.compile("\\[A#\\d+[^\\]]*\\]|(?<![A-Za-z0-9])A#\\d+"),"AI 답변"),
+            Map.entry(java.util.regex.Pattern.compile("\\[?(?<![A-Za-z0-9])ANS(?![A-Za-z0-9])(\\s*[\\w-]+:\\d+)?\\]?"),"최종 답안"),
+            Map.entry(java.util.regex.Pattern.compile("\\[?(?<![A-Za-z0-9])DIS\\s+사용 도구\\]?"),"활용 설명란의 사용 도구"),
+            Map.entry(java.util.regex.Pattern.compile("\\[?(?<![A-Za-z0-9])DIS\\s+활용 부분\\]?"),"활용 설명란의 활용 부분"),
+            Map.entry(java.util.regex.Pattern.compile("\\[?(?<![A-Za-z0-9])DIS\\s+이유\\]?"),"활용 설명란의 이유"),
+            Map.entry(java.util.regex.Pattern.compile("\\[?(?<![A-Za-z0-9])DIS(?![A-Za-z0-9])\\]?"),"활용 설명란"),
             Map.entry(java.util.regex.Pattern.compile("\\[(Q\\d*|U|A|S)\\]"),"기록"));
-    /** 교사에게 보이는 met·blocked 문장에서 내부 표기(DIS, ANS, U#12 등)를 화면 이름으로 바꿉니다. */
+    /** 교사에게 보이는 met·blocked 문장에서 내부 표기(DIS, ANS, U#12 등)를 화면 이름으로 바꿉니다. 단어 경계(\b)는 JDK 17에서 한글 옆을 경계로 보지 않아 영문·숫자 기준 경계를 씁니다. */
     static String plain(String text) {
         if(text==null) return null;
         String out=text;
