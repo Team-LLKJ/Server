@@ -135,6 +135,12 @@ class ProcessRubricApiTest extends AuthTestSupport {
         assertThat(confirmed.evaluationSummary().strengths()).anyMatch(entry->QUESTIONS.get(1).equals(entry.quote()));
         var analysis=ok(request(get(runs(f).replace("/runs","/analysis")),teacher));
         assertThat(json.treeToValue(analysis.path("summary"),ProcessGradingSummary.class)).isEqualTo(confirmed.evaluationSummary());
+        // 재분석해도 교사가 고친 항목(학생 기여 5단계)은 덮어쓰지 않습니다: 새 결과에 같은 보정을 적용한 검토 초안(확정 전)이 생깁니다.
+        as(teacher);var again=service.queueAnalysis(f.id(),f.pid());
+        worker.processJob(again.id());
+        as(teacher);var carried=service.getReview(f.id(),f.pid(),again.id());
+        assertThat(carried.confirmed()).isFalse();assertThat(carried.overrides()).extracting(LevelOverride::level).containsExactly(5);
+        assertThat(cell(carried.result(),Criterion.CONTRIBUTION).level()).isEqualTo(5);assertThat(carried.result().total()).isEqualByComparingTo("81");
     }
     @Test void selfDirectionTeacherInputRedistributesNaAndRounds() throws Exception {
         // AI를 쓰지 않은 학생: 자기 주도적 사고는 모델 없이 교사 확인(HOLD·NO_AI_USE), 나머지 4개는 NA

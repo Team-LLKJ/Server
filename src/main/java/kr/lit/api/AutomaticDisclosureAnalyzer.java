@@ -7,7 +7,12 @@ import static kr.lit.api.WorkModels.*;
 
 /** Recorded requests classify observable use; they do not establish authorship or student intent. */
 public class AutomaticDisclosureAnalyzer {
-    public DisclosureView generateDisclosure(String id,String pid,JsonNode source,Instant now){
+    public DisclosureView generateDisclosure(String id,String pid,JsonNode source,Instant now){return generateDisclosure(id,pid,source,now,null);}
+    /**
+     * aiParagraphs: 대화 id → 그 문항 최종 답안에서 문장 판정(글자 비교·LLM·교사 수정)으로 AI 문장이 나온 문단 번호(1부터).
+     * 주면 "답안에서 AI를 쓴 부분"을 문장 판정으로 만들고, null이면 제출 시점처럼 문단 전체가 AI 답변에 그대로 있는지로 봅니다.
+     */
+    public DisclosureView generateDisclosure(String id,String pid,JsonNode source,Instant now,Map<Long,List<Integer>> aiParagraphs){
         var tools=new TreeSet<String>();var ids=new ArrayList<Long>();var evidence=new ArrayList<DisclosureEvidence>();
         var groups=new LinkedHashMap<String,Integer>();var purposes=new LinkedHashMap<String,Integer>();int completed=0,failed=0;
         var answerTexts=new HashMap<String,List<String>>();var answerVersions=new HashMap<String,Integer>();
@@ -27,14 +32,15 @@ public class AutomaticDisclosureAnalyzer {
             if(usable){completed++;tools.add("LIT 내장 AI ("+turn.path("provider").asText("미기록")+" / "+turn.path("model").asText("미기록")+")");}else failed++;
             String location=positions.containsKey(qid)?"문항 "+positions.get(qid):"문항 "+qid;
             var matching=new ArrayList<Integer>();
-            if(usable){
+            if(usable&&aiParagraphs!=null) matching.addAll(aiParagraphs.getOrDefault(cid,List.of()));
+            else if(usable){
                 String response=turn.path("answerText").asText();var paragraphs=answerTexts.getOrDefault(qid,List.of());
                 for(int i=0;i<paragraphs.size();i++){
                     String paragraph=paragraphs.get(i);
                     if(paragraph.length()>=20&&response.contains(paragraph))matching.add(i+1);
                 }
             }
-            String part=matching.isEmpty()?"":" (최종 답안 문단 "+matching+"에 AI 응답과 동일한 문구 관측)";
+            String part=matching.isEmpty()?"":aiParagraphs!=null?" (최종 답안 문단 "+matching+"에 이 대화의 AI 답변을 쓴 문장)":" (최종 답안 문단 "+matching+"에 AI 응답과 동일한 문구 관측)";
             groups.merge(location+": "+purpose+(usable?part:" (완료 응답 없음)"),1,Integer::sum);
             evidence.add(new DisclosureEvidence(cid,qid,purpose,"USER",prompt,List.copyOf(matching),answerVersions.getOrDefault(qid,0)));
         }

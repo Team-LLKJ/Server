@@ -175,11 +175,19 @@ public class AssessmentAnalyzer {
         int minSpan=config.getMinSpanLength();double gramThreshold=config.getAiReferencedThreshold();
         var references=new ArrayList<Map.Entry<JsonNode,SentenceSimilarity.Reference>>();
         for(var t:completed) references.add(Map.entry(t,new SentenceSimilarity.Reference(t.path("answerText").asText(""),minSpan)));
+        // 출처는 대화에서 처음 나온 사람: 학생 질문에 먼저 나온 표현을 AI가 되풀이했으면 학생 것으로 보고 비교에서 뺍니다(앞선 AI 답변에서 옮긴 표현은 빼지 않음).
+        var origins=studentOrigins(turns,minSpan);
+        // 긴 붙여넣기 구간(문항별, 같은 답안 버전). LIT AI 답변과 겹치지 않는 직접 작성 문장이라도 다른 AI에서 가져왔을 수 있어 교사 확인 대상으로 둡니다.
+        var pastes=new HashMap<String,List<int[]>>();
+        for(var p:AssessmentTrace.getPasteEvents(source))
+            if(p.matchesFinalAnswer()&&p.length()!=null&&p.length()>=config.getLongPasteLength()) pastes.computeIfAbsent(p.questionId()+"@"+p.answerVersion(),k->new ArrayList<>()).add(new int[]{p.start(),p.end()});
         var paragraphs=new ArrayList<Paragraph>();var sentences=new ArrayList<Sentence>();var segments=new ArrayList<Segment>();
         long totalChars=0,aiChars=0;
         for(var entry:source.path("answers")) {
             var q=entry.path("question");String qid=q.path("id").asText();int pos=q.path("position").asInt();int version=entry.path("answer").path("version").asInt();
             var exclusion=new SentenceSimilarity.Exclusion(excludedText(source,q));
+            var exclusions=new HashMap<Long,SentenceSimilarity.Exclusion>();
+            for(var ref:references) { long id=ref.getKey().path("id").asLong();exclusions.put(id,exclusion.withStudentOrigin(origins.get(id),minSpan)); }
             var texts=paragraphs(entry.path("answer").path("content").asText(""));
             int offset=0;
             for(int i=0;i<texts.size();i++) {
@@ -189,14 +197,16 @@ public class AssessmentAnalyzer {
                 for(int k=0;k<ranges.size();k++) {
                     var range=ranges.get(k);String sentence=text.substring(range.start(),range.end());
                     double best=0;int longest=0;Long conversation=null;double rankOverlap=-1;int rankSpan=-1;boolean rankSame=false;String matchedAnswer=null;
+                    SentenceSimilarity.Exclusion matchedExclusion=exclusion;
                     for(var ref:references) {
-                        var match=SentenceSimilarity.compare(sentence,ref.getValue(),exclusion);
+                        var refExclusion=exclusions.get(ref.getKey().path("id").asLong());
+                        var match=SentenceSimilarity.compare(sentence,ref.getValue(),refExclusion);
                         best=Math.max(best,match.overlap());longest=Math.max(longest,match.longestSpan());
                         // 근거 응답: 긴 일치 구간 → 포함률 → 같은 문항 순으로 고릅니다.
                         int spanKey=match.longestSpan()>=minSpan?match.longestSpan():0;boolean same=qid.equals(ref.getKey().path("questionId").asText());
                         if(match.overlap()==0&&match.longestSpan()==0) continue;
                         if(spanKey>rankSpan||spanKey==rankSpan&&(match.overlap()>rankOverlap||match.overlap()==rankOverlap&&same&&!rankSame)) {
-                            rankSpan=spanKey;rankOverlap=match.overlap();rankSame=same;conversation=ref.getKey().path("id").asLong();matchedAnswer=ref.getKey().path("answerText").asText("");
+                            rankSpan=spanKey;rankOverlap=match.overlap();rankSame=same;conversation=ref.getKey().path("id").asLong();matchedAnswer=ref.getKey().path("answerText").asText("");matchedExclusion=refExclusion;
                         }
                     }
                     String reason=longest>=minSpan?REASON_SPAN:best>=gramThreshold?REASON_GRAM:null;
@@ -206,6 +216,9 @@ public class AssessmentAnalyzer {
                     if(verdict!=null&&verdict.ai()) { reason=REASON_SEMANTIC;conversation=verdict.conversationId(); }
                     String teacherLabel=teacherLabels.get(sentenceKey(qid,sentence));
                     boolean needsReview=verdict!=null&&verdict.needsReview();
+                    int sStart=offset+range.start(),sEnd=offset+range.end();
+                    boolean pasted=pastes.getOrDefault(qid+"@"+version,List.of()).stream().anyMatch(r->r[0]<sEnd&&r[1]>sStart);
+                    if(pasted&&reason==null) needsReview=true;
                     if(teacherLabel!=null) {
                         needsReview=false;
                         if(LABEL_DIRECT.equals(teacherLabel)) reason=null;
@@ -220,7 +233,7 @@ public class AssessmentAnalyzer {
                     sentences.add(new Sentence(paragraphId+"-s"+(k+1),qid,paragraphId,sentence,src,reason,longest,similarity,
                             reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true,
                             needsReview,verdict,teacherLabel,
-                            (REASON_SPAN.equals(reason)||REASON_GRAM.equals(reason))?SentenceSimilarity.findAnswerMatch(sentence,matchedAnswer,exclusion,minSpan):null));
+                            (REASON_SPAN.equals(reason)||REASON_GRAM.equals(reason))?SentenceSimilarity.findAnswerMatch(sentence,matchedAnswer,matchedExclusion,minSpan):null,pasted));
                     segments.add(new Segment(qid,offset+segStart,offset+segEnd,reason==null?"STUDENT":SOURCE_AI,similarity,similarity,true,version));
                     paragraphBest=Math.max(paragraphBest,best);
                     if(reason!=null) {
@@ -388,10 +401,20 @@ public class AssessmentAnalyzer {
                         "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다.","구조화 사유는 기존 규칙 산식의 관측 요인이며 개별 점수 증감량을 분리할 수 없어 scoreDelta를 생략합니다."),trace.texts(),AssessmentTrace.getPasteEvents(source),getDefinition(),List.copyOf(sentences),semantic.status());
     }
 
+    /** 대화 id → 그 대화의 답변 시점까지 학생이 먼저 말한 표현(대화 id 순 = 시간 순). */
+    static Map<Long,SentenceSimilarity.StudentOrigin> studentOrigins(List<JsonNode> turns,int minSpan) {
+        var ordered=turns.stream().sorted(Comparator.comparingLong(t->t.path("id").asLong())).toList();
+        var questions=ordered.stream().map(t->t.path("questionText").asText("")).toList();
+        var answers=ordered.stream().map(t->"COMPLETED".equals(t.path("state").asText())&&t.hasNonNull("answerText")?t.path("answerText").asText(""):null).toList();
+        var list=SentenceSimilarity.StudentOrigin.chronological(questions,answers,minSpan);
+        var out=new HashMap<Long,SentenceSimilarity.StudentOrigin>();
+        for(int i=0;i<ordered.size();i++) out.put(ordered.get(i).path("id").asLong(),list.get(i));
+        return out;
+    }
     public Map<String,Object> getDefinition(){return Map.ofEntries(Map.entry("model",MODEL),Map.entry("basis",CONTRIBUTION_BASIS),
             Map.entry("sources",List.of(SOURCE_DIRECT,SENTENCE_AI)),Map.entry("unit","SENTENCE"),Map.entry("reasons",List.of(REASON_SPAN,REASON_GRAM,REASON_SEMANTIC,REASON_TEACHER)),
             Map.entry("minSpanLength",config.getMinSpanLength()),Map.entry("aiReferencedThreshold",config.getAiReferencedThreshold()),
-            Map.entry("excludedText","평가 안내 + 문항 제목·내용"),Map.entry("indexUnit","UTF16_END_EXCLUSIVE"),
+            Map.entry("excludedText","평가 안내 + 문항 제목·내용 + 학생이 먼저 말한 표현(그 AI 답변 시점까지의 학생 질문, 앞선 AI 답변에서 옮긴 표현 제외)"),Map.entry("indexUnit","UTF16_END_EXCLUSIVE"),
             Map.entry("textNormalization","answerTexts.text (문단 사이 LF, HTML 제거·표 셀은 | 구분)"),Map.entry("usageMediumPercentage",20),
             Map.entry("usageHighPercentage",50),Map.entry("studentContribution","실제 작성 비율은 제공하지 않음"));}
     private String summary(int questions,Map<QuestionType,Integer> counts,Contribution c,Compliance compliance,boolean empty) {

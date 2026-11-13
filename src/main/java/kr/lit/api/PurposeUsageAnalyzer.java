@@ -44,11 +44,25 @@ public class PurposeUsageAnalyzer {
                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답, 아니면 null",allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String haikuPurpose,
                            boolean needsReview,@io.swagger.v3.oas.annotations.media.Schema(allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String teacherPurpose,
                            @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","TEACHER","KEYWORD_FALLBACK"}) String method,List<Purpose> purposes,double weightPerPurpose,
-                           String reason,List<String> cues,List<RubricImpact> rubricImpacts) {
+                           String reason,List<String> cues,List<RubricImpact> rubricImpacts,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="답안 생성(DRAFT) 요청에 AI가 실제로 답안을 써 줬는지. 거절했으면 false, DRAFT가 아니면 null",nullable=true) Boolean aiComplied) {
+        public Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String haikuPurpose,boolean needsReview,String teacherPurpose,
+                        String method,List<Purpose> purposes,double weightPerPurpose,String reason,List<String> cues,List<RubricImpact> rubricImpacts) {
+            this(conversationId,questionId,quote,purpose,votes,haikuPurpose,needsReview,teacherPurpose,method,purposes,weightPerPurpose,reason,cues,rubricImpacts,null);
+        }
         public Question {
             cues=cues==null?List.of():List.copyOf(cues);
             rubricImpacts=rubricImpacts==null?List.of():List.copyOf(rubricImpacts);
         }
+    }
+    private static final java.util.regex.Pattern REFUSAL=java.util.regex.Pattern.compile(
+            "(대신|직접|전부|통째로)\\s*(써|작성해|작성하여|만들어)\\s*(줄|드릴|드리기)\\s*(수|는)\\s*(없|어렵)|작성해\\s*드릴\\s*수\\s*없|써\\s*드릴\\s*수\\s*없"
+            +"|(답안|답|글)을?\\s*(대신|직접)\\s*(써|작성)\\s*(줄|드릴)\\s*수\\s*없|힌트(만|를)\\s*(드릴|줄|제공)|스스로\\s*(작성|써\\s*보)");
+    /** AI 답변이 답안 대신 쓰기를 거절했는지(LIT 내장 AI의 힌트만 허용 정책 등). 앞부분 400자로 봅니다. */
+    public static boolean isRefusal(String answer) {
+        if(answer==null||answer.isBlank()) return true;
+        String head=answer.length()>400?answer.substring(0,400):answer;
+        return REFUSAL.matcher(head).find();
     }
     public record RubricImpact(AssessmentModels.Indicator criterion,String effect,String reason) {}
 
@@ -74,10 +88,13 @@ public class PurposeUsageAnalyzer {
             else method=c.path("method").asText(METHOD_LLM);
             var votes=new ArrayList<String>();for(var v:c.path("votes"))votes.add(v.asText());
             String teacher=c.path("teacherPurpose").isTextual()?c.path("teacherPurpose").asText():null;
+            // 답안 생성 요청은 AI가 실제로 답안을 써 줬는지(aiComplied)를 함께 남깁니다. 거절했으면 요약에 "요청했지만 AI가 거절"로 씁니다.
+            Boolean complied=purpose==Purpose.DRAFT?"COMPLETED".equals(turn.path("state").asText())&&!isRefusal(turn.path("answerText").asText("")):null;
+            String reason=teacher==null&&c.path("reason").isTextual()?c.path("reason").asText():getReason(purpose,method,text);
+            if(Boolean.FALSE.equals(complied)) reason="답안 작성을 요청했지만 AI가 거절했습니다. "+reason;
             questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("haikuPurpose").isTextual()?c.path("haikuPurpose").asText():null,
-                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0,
-                    teacher==null&&c.path("reason").isTextual()?c.path("reason").asText():getReason(purpose,method,text),
-                    teacher==null&&c.path("cues").isArray()?getStoredCues(c.path("cues"),text):getCues(purpose,text),List.of()));
+                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0,reason,
+                    teacher==null&&c.path("cues").isArray()?getStoredCues(c.path("cues"),text):getCues(purpose,text),List.of(),complied));
             methods.add(method);
             if(!"COMPLETED".equals(turn.path("state").asText()))missing++;
         }
@@ -131,9 +148,17 @@ public class PurposeUsageAnalyzer {
                         .add(new RubricImpact(indicator.indicator(),evidence.type(),evidence.reason()));
             }
         }
-        var questions=view.questions().stream().map(q->new Question(q.conversationId(),q.questionId(),q.quote(),q.purpose(),
+        // 답안에 이 대화의 AI 답변을 쓴 문장이 있는지(거절된 답안 생성 요청의 감점 여부).
+        var usedConversations=new HashSet<Long>();
+        if(analysis.sentences()!=null) for(var s:analysis.sentences()) if(AssessmentAnalyzer.SENTENCE_AI.equals(s.source())&&s.conversationId()!=null) usedConversations.add(s.conversationId());
+        var questions=view.questions().stream().map(q->{
+            var impacts=getRubricImpacts(byConversation.getOrDefault(q.conversationId(),List.of()));
+            if(Boolean.FALSE.equals(q.aiComplied())&&!usedConversations.contains(q.conversationId()))
+                impacts=impacts.stream().map(i->i.criterion()==AssessmentModels.Indicator.PURPOSE&&"DEDUCTION".equals(i.effect())
+                        ?new RubricImpact(i.criterion(),"NONE","답안 작성을 요청했지만 AI가 거절했고 그 내용이 답안에 없어 활용 목적 감점 근거로 보지 않습니다."):i).toList();
+            return new Question(q.conversationId(),q.questionId(),q.quote(),q.purpose(),
                 q.votes(),q.haikuPurpose(),q.needsReview(),q.teacherPurpose(),q.method(),q.purposes(),q.weightPerPurpose(),
-                q.reason(),q.cues(),getRubricImpacts(byConversation.getOrDefault(q.conversationId(),List.of())))).toList();
+                q.reason(),q.cues(),impacts,q.aiComplied());}).toList();
         var indexed=new HashMap<Long,Question>();
         questions.forEach(q->indexed.put(q.conversationId(),q));
         var groups=view.usage().stream().map(g->new Group(g.purpose(),g.name(),g.percentage(),g.count(),

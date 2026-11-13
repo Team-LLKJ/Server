@@ -22,11 +22,31 @@ public class ProcessGradingWorker {
             processJob(pending.id());
         }
     }
+    /**
+     * 재분석해도 교사가 고친 항목은 덮어쓰지 않습니다. 같은 학생의 바로 앞 분석에 교사 검토가 있으면 그 보정(overrides)을 새 결과에 다시 적용한
+     * 검토 초안(확정 안 됨)을 저장합니다. 문항·항목 구조가 달라 적용할 수 없으면 건너뜁니다. 확정은 교사가 새 결과를 보고 다시 합니다.
+     */
+    void carryOverReview(String job,Input input,Result result) {
+        try {
+            var jobs=repository.getJobs(input.evaluationId(),input.participantId());
+            int index=-1;for(int i=0;i<jobs.size();i++) if(jobs.get(i).id().equals(job)) index=i;
+            if(index<0||repository.getReview(job).isPresent()) return;
+            for(int i=index+1;i<jobs.size();i++) {
+                var previous=repository.getReview(jobs.get(i).id());
+                if(previous.isEmpty()) continue;
+                var old=previous.get();
+                if(old.overrides()==null||old.overrides().isEmpty()) return;
+                var applied=engine.applyReview(input,result,old.overrides());
+                repository.saveReview(job,new Review(1,old.teacherId(),java.time.Instant.now(),old.overrides(),old.complianceDecision(),old.complianceReason(),applied,false));
+                return;
+            }
+        } catch(RuntimeException ignored) {} // 구조가 달라 적용할 수 없는 보정은 옮기지 않습니다.
+    }
     public void processJob(String job) {
         if(!repository.claimJob(job))return;
         try {
             var input=repository.getInput(job);Result result;
-            if(rubric.isActive()){repository.completeJob(job,rubric.modelLabel(),gradeWithJudge(job,input));return;}
+            if(rubric.isActive()){var graded=gradeWithJudge(job,input);repository.completeJob(job,rubric.modelLabel(),graded);carryOverReview(job,input,graded);return;}
             if(input.policy()==null)result=engine.hold(input,"PRE_EVALUATION_POLICY_REQUIRED");
             else if(engine.isV3(input)&&input.policy().excludedCriteria().size()==Criterion.values().length)result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
             else if(input.policy().questionWeights().size()!=input.questionIds().size()
