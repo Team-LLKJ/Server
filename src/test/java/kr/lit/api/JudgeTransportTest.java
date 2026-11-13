@@ -98,6 +98,13 @@ class JudgeTransportTest {
         assertThatThrownBy(()->SemanticJudgeClient.retryFormat(()->{calls[0]++;throw new JudgeFailure("JUDGE_GEMINI_HTTP_500");})).hasMessage("JUDGE_GEMINI_HTTP_500");
         assertThat(calls[0]).isEqualTo(1); // HTTP 오류는 형식 재요청 대상이 아님(작업 단위로 다시 시도)
     }
+    @Test void analysisKeyFallsBackToRubricKey() {
+        // 11/13 운영: rubric 키만 있어 질문 용도 분류(analysis 키)가 꺼져 있었습니다.
+        var c=new SemanticJudgeConfig();c.setEnabled(true);c.getGemini().setModel("m");c.getGemini().setEndpoint("http://x/{model}");
+        c.getGemini().setRubricKey("r");
+        assertThat(c.isPurposeActive()).isTrue();assertThat(c.isRubricActive()).isTrue();
+        assertThat(c.getGemini().getApiKey()).isEqualTo("r");assertThat(c.getGemini().getRubricKey()).isEqualTo("r");assertThat(c.getGemini().isRubricKeyShared()).isTrue();
+    }
     @Test void rubricKeyFallsBackToAnalysisKey() {
         var c=new SemanticJudgeConfig();c.setEnabled(true);c.getGemini().setModel("m");c.getGemini().setEndpoint("http://x/{model}");
         assertThat(c.isRubricActive()).isFalse();

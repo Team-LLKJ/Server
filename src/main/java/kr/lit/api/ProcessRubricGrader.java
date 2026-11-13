@@ -71,7 +71,7 @@ public class ProcessRubricGrader {
                     var j=judge.judge(record,indicator,criterion.maxScore());
                     if(!j.retryable()) save(input,j,key); // Haiku가 일시적으로 없었던 결과는 저장하지 않아 다음 분석 때 다시 묻습니다.
                     return j;});
-                var cell=cell(input,criterion,judgment);cells.add(cell);
+                var cell=cell(input,criterion,judgment,record.injection());cells.add(cell);
                 if(cell.status().equals("NOT_APPLICABLE"))na++;else if(cell.level()!=null)confirmed++;else review++;
             }
             var limitations=new ArrayList<>(input.limitations());
@@ -83,10 +83,12 @@ public class ProcessRubricGrader {
             return engine.studentResult(input,cells,compliance,List.copyOf(limitations),summary);
         }
     }
-    private Cell cell(Input input,Criterion criterion,RubricJudge.Judgment j) {
-        var info=new JudgeInfo(j.votes(),j.haikuLevel(),j.needsReview(),j.reviewReason(),j.method(),j.runs(),j.promptVersion(),j.geminiModel(),j.haikuModel(),j.haikuError());
+    private Cell cell(Input input,Criterion criterion,RubricJudge.Judgment j,String injection) {
+        var info=new JudgeInfo(j.votes(),j.haikuLevel(),j.needsReview(),j.reviewReason(),j.method(),j.runs(),j.promptVersion(),j.geminiModel(),j.haikuModel(),j.haikuError(),
+                RubricJudge.REASON_PROMPT_INJECTION.equals(j.reviewReason())?injection:null);
         var citations=citations(input,j.evidence());
         var limitations=new ArrayList<String>();
+        if(RubricJudge.REASON_HAIKU_DECIDED.equals(j.reviewReason())) limitations.add("판정이 엇갈려 Haiku 기준으로 정함(Gemini 과반 "+majorityText(j.votes())+", Haiku "+j.haikuLevel()+")");
         if(RubricJudge.STATUS_NA.equals(j.status()))
             return new Cell(null,criterion,null,null,"NOT_APPLICABLE",RubricJudge.METHOD_SERVER.equals(j.method())?"AI 대화 기록이 없어 이 항목은 해당 없음입니다. 배점은 나머지 항목에 나눠 계산합니다."
                     :"AI 판정에서 이 항목은 해당 없음으로 나왔습니다. 배점은 나머지 항목에 나눠 계산합니다.","",List.of(),List.of(),List.of(),null,info);
@@ -115,6 +117,7 @@ public class ProcessRubricGrader {
         }
         return List.copyOf(out);
     }
+    private static String majorityText(List<Object> votes){var m=RubricJudge.majority(votes);return m==null?"없음":m+"단계";}
     private static String blankToDefault(String v,String d){return v==null||v.isBlank()?d:v;}
     /** 대화별 질문 용도: 교사 확정 > LLM 결과. */
     /**
