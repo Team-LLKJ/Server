@@ -186,6 +186,7 @@ public class AssessmentAnalyzer {
         for(var entry:source.path("answers")) {
             var q=entry.path("question");String qid=q.path("id").asText();int pos=q.path("position").asInt();int version=entry.path("answer").path("version").asInt();
             var exclusion=new SentenceSimilarity.Exclusion(excludedText(source,q));
+            String excludedNormalized=normalize(excludedText(source,q));
             var exclusions=new HashMap<Long,SentenceSimilarity.Exclusion>();
             for(var ref:references) { long id=ref.getKey().path("id").asLong();exclusions.put(id,exclusion.withStudentOrigin(origins.get(id),minSpan)); }
             var texts=paragraphs(entry.path("answer").path("content").asText(""));
@@ -210,6 +211,8 @@ public class AssessmentAnalyzer {
                         }
                     }
                     String reason=longest>=minSpan?REASON_SPAN:best>=gramThreshold?REASON_GRAM:null;
+                    // 짧은 문장(20자 연속 일치 없이 3-gram 비율로만 AI가 된 문장)은 핵심 어휘가 모두 학생 질문에 먼저 나왔으면 학생 것으로 봅니다.
+                    if(REASON_GRAM.equals(reason)&&conversation!=null&&studentSaidFirst(sentence,turns,conversation,excludedNormalized)) { reason=null;conversation=null;matchedAnswer=null; }
                     // 2단계: 글자 비교로 DIRECT가 된 문장만 저장된 LLM 판정을 적용합니다.
                     var verdict=semantic.verdicts().get(sentenceKey(qid,sentence));
                     if(reason!=null) verdict=null;
@@ -401,6 +404,39 @@ public class AssessmentAnalyzer {
                         "허용 범위 위반 표시만으로 점수를 자동 감점하지 않습니다.","구조화 사유는 기존 규칙 산식의 관측 요인이며 개별 점수 증감량을 분리할 수 없어 scoreDelta를 생략합니다."),trace.texts(),AssessmentTrace.getPasteEvents(source),getDefinition(),List.copyOf(sentences),semantic.status());
     }
 
+    private static final Set<String> STOP_WORDS=Set.of("우리","나는","저는","내가","제가","그리고","그래서","하지만","또한","이것","그것","이는","것이","때문","정말","가장","많이","있다","없다");
+    private static final java.util.regex.Pattern JOSA=java.util.regex.Pattern.compile("(에서는|에서|에게|한테|까지|부터|으로|이라|라고|이다|이고|들이|들은|들을|은|는|이|가|을|를|에|의|로|와|과|도|만)$");
+    /** 문장의 핵심 어휘: 끝 서술어를 뺀 낱말에서 조사를 떼고 두 글자 이상만(흔한 말 제외). */
+    static List<String> coreWords(String sentence) {
+        var tokens=new ArrayList<String>();
+        for(String raw:sentence.split("[\\s,.!?·…\"'“”‘’()\\[\\]]+")) if(!raw.isBlank()) tokens.add(raw);
+        if(tokens.size()>1) tokens.remove(tokens.size()-1);
+        var out=new ArrayList<String>();
+        for(String token:tokens) {
+            String w=normalize(token);
+            for(int i=0;i<2&&w.length()>2;i++) { String next=JOSA.matcher(w).replaceFirst("");if(next.equals(w)||next.length()<2) break;w=next; }
+            if(w.length()>=2&&!STOP_WORDS.contains(w)&&!out.contains(w)) out.add(w);
+        }
+        return out;
+    }
+    /**
+     * 짧은 문장 출처 보정: 문항·안내에 없는 핵심 어휘가 하나 이상 있고, 그 어휘가 모두 (근거 대화까지의) 대화에서 학생 질문에 먼저 나왔으면 true.
+     * 예: 학생 "상권 변화로 써줘" → AI가 "우리 지역은 상권이 변했다"로 답함 → 답안의 같은 문장은 학생 것.
+     */
+    static boolean studentSaidFirst(String sentence,List<JsonNode> turns,long upTo,String excludedNormalized) {
+        var words=coreWords(sentence).stream().filter(w->!excludedNormalized.contains(w)).toList();
+        if(words.isEmpty()) return false;
+        var ordered=turns.stream().filter(t->t.path("id").asLong()<=upTo).sorted(Comparator.comparingLong(t->t.path("id").asLong())).toList();
+        for(String w:words) {
+            Boolean student=null;
+            for(var t:ordered) {
+                if(normalize(t.path("questionText").asText("")).contains(w)) { student=true;break; }
+                if(normalize(t.path("answerText").asText("")).contains(w)) { student=false;break; }
+            }
+            if(!Boolean.TRUE.equals(student)) return false;
+        }
+        return true;
+    }
     /** 대화 id → 그 대화의 답변 시점까지 학생이 먼저 말한 표현(대화 id 순 = 시간 순). */
     static Map<Long,SentenceSimilarity.StudentOrigin> studentOrigins(List<JsonNode> turns,int minSpan) {
         var ordered=turns.stream().sorted(Comparator.comparingLong(t->t.path("id").asLong())).toList();

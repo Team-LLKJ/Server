@@ -56,17 +56,21 @@ public final class ProcessGradingModels {
     }
     /**
      * LLM 루브릭 판정 정보(학생 단위 칸에만). votes: Gemini 회차별 단계(무효 회차 null, "NA"·"HOLD" 가능), haikuLevel: 엇갈렸을 때 Haiku 답,
-     * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA | NO_AI_USE | SAVE_ERROR | PROMPT_INJECTION), runs: 회차별 원래 답(근거 포함, 보정용).
+     * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | INSUFFICIENT_DATA | NO_AI_USE | SAVE_ERROR | PROMPT_INJECTION; 확정됐지만 HAIKU_DECIDED는 Gemini 과반과 1단계 차이로 Haiku 기준 확정), runs: 회차별 원래 답(근거 포함, 보정용).
      */
     public record JudgeInfo(@io.swagger.v3.oas.annotations.media.Schema(description="Gemini 회차별 단계(1~5 정수, \"NA\", \"HOLD\", 근거 없는 무효 회차는 null)") List<Object> votes,
                             @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답(1~5, \"NA\", \"HOLD\"), 아니면 null") Object haikuLevel,
                             @io.swagger.v3.oas.annotations.media.Schema(description="교사 직접 입력이 필요한지(교사가 확정하면 false)") boolean needsReview,
-                            @io.swagger.v3.oas.annotations.media.Schema(description="needsReview 이유. DISAGREEMENT: Gemini 3번·Haiku로도 엇갈림, INSUFFICIENT_DATA: 대화가 너무 적음(모델 호출 안 함), NO_AI_USE: AI 미사용 학생의 자기 주도적 사고(교사 확인, HOLD), SAVE_ERROR: 활용 설명란 저장 오류(투명성 HOLD), PROMPT_INJECTION: 학생 글에 채점 지시로 보이는 문장(모델 호출 안 함, 전 항목 HOLD)",allowableValues={"DISAGREEMENT","INSUFFICIENT_DATA","NO_AI_USE","SAVE_ERROR","PROMPT_INJECTION"},nullable=true) String reviewReason,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="판정 사유. DISAGREEMENT: Gemini 과반과 Haiku가 2단계 이상 다름 등(교사 입력), HAIKU_DECIDED: 판정이 엇갈려 Haiku 기준으로 정함(과반과 1단계 차이, needsReview=false), INSUFFICIENT_DATA: 대화가 너무 적음(모델 호출 안 함), NO_AI_USE: AI 미사용 학생의 자기 주도적 사고(교사 확인, HOLD), SAVE_ERROR: 활용 설명란 저장 오류(투명성 HOLD), PROMPT_INJECTION: 학생 글에 채점 지시로 보이는 문장(모델 호출 안 함, 전 항목 HOLD)",allowableValues={"DISAGREEMENT","HAIKU_DECIDED","INSUFFICIENT_DATA","NO_AI_USE","SAVE_ERROR","PROMPT_INJECTION"},nullable=true) String reviewReason,
                             @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","SERVER_RULE"}) String method,List<RubricJudge.Run> runs,
                             String promptVersion,String geminiModel,String haikuModel,
-                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸는데 Haiku 판정이 없는 이유(NOT_CONFIGURED: Anthropic 키 없음, NO_VERIFIED_EVIDENCE: Haiku 인용을 원문에서 2번 모두 못 찾음, 그 외 호출 오류 코드)",nullable=true) String haikuError) {
+                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸는데 Haiku 판정이 없는 이유(NOT_CONFIGURED: Anthropic 키 없음, NO_VERIFIED_EVIDENCE: Haiku 인용을 원문에서 2번 모두 못 찾음, 그 외 호출 오류 코드)",nullable=true) String haikuError,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="reviewReason=PROMPT_INJECTION일 때 학생 글에서 찾은 채점 지시 문장(최대 120자), 아니면 null",nullable=true) String injectionText) {
+        public JudgeInfo(List<Object> votes,Object haikuLevel,boolean needsReview,String reviewReason,String method,List<RubricJudge.Run> runs,String promptVersion,String geminiModel,String haikuModel,String haikuError){
+            this(votes,haikuLevel,needsReview,reviewReason,method,runs,promptVersion,geminiModel,haikuModel,haikuError,null);
+        }
         /** 교사가 확정한 뒤에는 확인 필요를 풉니다(나머지 기록은 보존). */
-        public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel,haikuError);}
+        public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel,haikuError,injectionText);}
     }
     /**
      * 채점 한 칸. 문항별 채점은 questionId가 문항 id(투명성은 GLOBAL), LLM 루브릭 판정(학생 단위)은 questionId=null이고 항목마다 한 칸입니다.

@@ -52,11 +52,16 @@ public class SemanticJudgeConfig {
     public static class Gemini extends Provider {
         private String rubricKey="";
         private String rubricModel="";
+        /**
+         * analysis 키가 없으면 rubric 키를 같이 씁니다(11/13 운영: rubric 키만 있어 질문 용도 분류·LLM 2단계가 꺼져 있었음).
+         * 반대로 rubric 키가 없으면 analysis 키를 씁니다. 키가 하나뿐이면 한도는 analysis 버킷 하나를 같이 씁니다.
+         */
+        @Override public String getApiKey(){String own=super.getApiKey();return own.isBlank()?rubricKey:own;}
+        @Override public boolean isConfigured(){return !getApiKey().isBlank()&&!getModel().isBlank()&&!getEndpoint().isBlank();}
         public String getAnalysisKey(){return getApiKey();}
         public void setAnalysisKey(String v){if(v!=null&&!v.isBlank())setApiKey(v);}
-        /** rubric 키가 없으면 analysis 키를 같이 씁니다(학생 단위 루브릭 판정이 키 하나 빠져 꺼지지 않도록). 한도는 같은 프로젝트를 나눠 씁니다. */
-        public String getRubricKey(){return rubricKey.isBlank()?getApiKey():rubricKey;}
-        public boolean isRubricKeyShared(){return rubricKey.isBlank()||rubricKey.equals(getApiKey());}
+        public String getRubricKey(){return rubricKey.isBlank()?super.getApiKey():rubricKey;}
+        public boolean isRubricKeyShared(){String own=super.getApiKey();return rubricKey.isBlank()||own.isBlank()||rubricKey.equals(own);}
         public void setRubricKey(String v){rubricKey=v==null?"":v.strip();}
         public String getRubricModel(){return rubricModel.isBlank()?getModel():rubricModel;}
         public void setRubricModel(String v){rubricModel=v==null?"":v.strip();}

@@ -98,4 +98,18 @@ class SourceOrderTest {
         var item = new SemanticJudgeClient.Item("s1", "문항", "학생 문장", List.of(), List.of("내 생각은 이래"));
         assertThat(item.studentQuestions()).containsExactly("내 생각은 이래");
     }
+
+    @Test void shortSentenceIsTheStudentsWhenItsKeyWordsCameFromTheStudentFirst() {
+        // 11/13 운영 사례(박준호): 학생이 "상권 변화로 써줘"라고 먼저 말한 뒤 AI가 같은 말을 답함 → 짧은 답안 문장은 학생 것
+        var s = only(source("우리 지역은 상권이 변했다.",
+                "우리 지역 변화 중에 상권 변화로 써줘",
+                "좋아요. 우리 지역은 상권이 변했다고 쓸 수 있어요."));
+        assertThat(s.source()).isEqualTo("DIRECT");
+        assertThat(AssessmentAnalyzer.coreWords("우리 지역은 상권이 변했다.")).containsExactly("지역", "상권");
+        // 핵심 어휘(유동인구)가 AI 답변에 먼저 나왔으면 그대로 AI입니다.
+        var ai = only(source("우리 지역은 유동인구가 줄었다.",
+                "우리 지역 변화 알려줘",
+                "우리 지역은 유동인구가 줄었다고 볼 수 있어요."));
+        assertThat(ai.source()).isEqualTo("AI");
+    }
 }
