@@ -127,8 +127,8 @@ class CollaborationApiTest extends AuthTestSupport {
         mvc.perform(request(get("/api/notifications/unread-count"),f.editor())).andExpect(status().isOk()).andExpect(jsonPath("unreadCount").value(0));
         assertThat(ok(request(get("/api/notifications"),f.editor())).path("items").size()).isZero();
         mvc.perform(request(get(root+"/students"),teacher)).andExpect(status().isOk());
-        // 학생 참가 자격과 계정 로그인 자체는 공유 해제의 영향을 받지 않습니다.
-        mvc.perform(get("/api/student/evaluations/"+f.classId()+"/workspace").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk());
+        // 학생 참가 자격은 공유 해제의 영향을 받지 않습니다(제출한 학생이라 상태 확인만 됩니다).
+        mvc.perform(get("/api/student/evaluations/"+f.classId()+"/state").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(jsonPath("screen").value("SUBMITTED"));
     }
     @Test void reSharingCreatesNewNoticeAndDeletionCleansMembersAndShareNotices() throws Exception {
         var f=fixture();mvc.perform(request(delete(base(f.id())+"/collaborators/"+f.editor().user().id()),teacher)).andExpect(status().isNoContent());

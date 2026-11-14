@@ -9,7 +9,7 @@
 - evidence: [{conversationId, questionId, purpose, messageRole: "USER", quote, matchingAnswerParagraphs, answerVersion}]. quote는 기록된 학생 질문 원문입니다.
 - errorCode / failureReason: FAILED 시 DISCLOSURE_GENERATION_FAILED와 안전한 설명. 실패도 저장하고 조회 시 자동 재시도하지 않습니다.
 
-GET /api/student/evaluations/{evaluationId}/ai-disclosure
+GET /api/student/evaluations/{evaluationId}/ai-disclosure   (2026-11-14 없앰: 참가자 토큰은 403 TEACHER_ONLY)
 GET /api/teacher/evaluations/{evaluationId}/students/{participantId}/ai-disclosure
 (기존 participants 별칭도 유지)
 

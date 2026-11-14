@@ -26,7 +26,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
         var p=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());
         work.save(e.id(),p.participantToken(),q,new SaveAnswer("학생의 조건과 근거를 반영한 최종 답안입니다.",0,AnswerSource.DIRECT,null));
         if(aiUsed)aiService.ask(e.id(),p.participantToken(),q,new Ask("grading-test","학교의 조건을 반영하는 방법을 비교해줘"));
-        work.saveDisclosure(e.id(),p.participantToken(),new Disclosure("LIT AI","최종 답안의 실행 방안","우리 학교 인력 조건 때문에 선택했습니다."));
+        
         var preview=work.review(e.id(),p.participantToken());work.submit(e.id(),p.participantToken(),preview.reviewToken());
         return new Fixture(e.id(),p.participantId(),p.participantToken(),q);
     }

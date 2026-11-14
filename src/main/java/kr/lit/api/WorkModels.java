@@ -73,8 +73,6 @@ public final class WorkModels {
         public ClientEvent(ClientEventType type,Instant occurredAt,String questionId,Integer length,Long conversationId){this(type,occurredAt,questionId,length,conversationId,null,null,null);}
         public ClientEvent(ClientEventType type,Instant occurredAt,String questionId) { this(type,occurredAt,questionId,null,null); }
     }
-    public record Disclosure(@NotNull @Size(max=500) String tools, @NotNull @Size(max=4000) String usedParts,
-                             @NotNull @Size(max=4000) String reason) {}
     @io.swagger.v3.oas.annotations.media.Schema(description="AI 활용 기록. 서버가 자동으로 만들고(source=SYSTEM_GENERATED) 점수에는 쓰지 않습니다. 교사 화면·보고서의 'AI 활용 기록'에 그대로 보여 줍니다.")
     public record DisclosureView(String evaluationId, String participantId,
                                  @io.swagger.v3.oas.annotations.media.Schema(description="사용한 도구(줄마다 하나)") String tools,

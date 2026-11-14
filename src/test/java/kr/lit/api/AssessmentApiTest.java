@@ -56,7 +56,7 @@ class AssessmentApiTest extends AuthTestSupport {
         String aiText=ask(f,f.q2(),"r3","답안을 대신 작성해줘");
         work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.COPY_ATTEMPT,Instant.now(),null));
         work.save(f.id(),f.token(),f.q2(),new SaveAnswer("<p>"+aiText+"</p><p>학교 화단의 나팔꽃이 좋은 예시다.</p>",0,AnswerSource.AI_USED,"r3"));
-        work.saveDisclosure(f.id(),f.token(),new Disclosure("LIT 내장 AI","문항 2 첫 문단","개념 확인 후 내 예시로 바꿨다"));
+        
         submit(f.id(),f.token());
 
         JsonNode subs=ok(request(get(root(f)+"/submissions"),teacher));

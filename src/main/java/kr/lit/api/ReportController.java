@@ -33,13 +33,7 @@ class ReportController {
  @GetMapping(value={"/teacher/evaluations/{id}/students/{participantId}/report.pdf","/teacher/evaluations/{id}/participants/{participantId}/report.pdf"},produces=MediaType.APPLICATION_PDF_VALUE)
  ResponseEntity<byte[]> gradingPdf(@PathVariable String id,@PathVariable String participantId,@RequestParam(required=false) @Min(1) Integer version,
                            @RequestParam(defaultValue="false") boolean includeConversations){return download(version==null?reports.teacherGenerate(id,participantId):reports.teacherReport(id,participantId,version),includeConversations);}
- @PostMapping("/evaluations/{id}/reports")
- UsageReport studentGenerate(@PathVariable String id,@RequestHeader("X-Participant-Token") String token){return reports.studentGenerate(id,token);}
- @GetMapping("/evaluations/{id}/report")
- UsageReport studentReport(@PathVariable String id,@RequestHeader("X-Participant-Token") String token,@RequestParam(required=false) @Min(1) Integer version){return reports.studentReport(id,token,version);}
- @GetMapping(value="/evaluations/{id}/report/pdf",produces=MediaType.APPLICATION_PDF_VALUE)
- ResponseEntity<byte[]> studentPdf(@PathVariable String id,@RequestHeader("X-Participant-Token") String token,@RequestParam(required=false) @Min(1) Integer version,
-                           @RequestParam(defaultValue="false") boolean includeConversations){return download(reports.studentReport(id,token,version),includeConversations);}
+ // 학생용 보고서 API(/api/evaluations/{id}/reports, /report, /report/pdf)는 없앴습니다(2026-11-14). 보고서는 교사 API로만 만듭니다.
  private ResponseEntity<byte[]> download(UsageReport report,boolean raw){return ResponseEntity.ok()
    .header(HttpHeaders.CONTENT_DISPOSITION,"attachment; filename=\"lit-report-"+report.id()+"-v"+report.version()+".pdf\"")
    .contentType(MediaType.APPLICATION_PDF).body(pdf.render(report,raw));}
