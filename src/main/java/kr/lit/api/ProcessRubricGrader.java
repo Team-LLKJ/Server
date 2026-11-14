@@ -56,7 +56,7 @@ public class ProcessRubricGrader {
         return true;
     }
 
-    /** 학생 한 명의 다섯 항목을 판정해 학생 단위 결과를 만듭니다. Gemini HTTP 실패는 JudgeFailure로 던집니다(작업 FAILED). */
+    /** 학생 한 명의 다섯 항목을 판정해 학생 단위 결과를 만듭니다. 모델 호출 실패는 해당 항목만 HOLD로 둡니다. */
     public Result grade(Input input,Runnable heartbeat) {
         try(var ignored=usage.open(input.evaluationId(),input.participantId(),JudgeUsage.Task.RUBRIC)) {
             var record=judge.buildRecord(input,context(input));
@@ -68,8 +68,8 @@ public class ProcessRubricGrader {
                 var indicator=Indicator.valueOf(criterion.name());
                 String key=judge.cacheKey(record,indicator);
                 var judgment=cached(input.participantId(),indicator,key).orElseGet(()->{
-                    var j=judge.judge(record,indicator,criterion.maxScore());
-                    if(!j.retryable()) save(input,j,key); // Haiku가 일시적으로 없었던 결과는 저장하지 않아 다음 분석 때 다시 묻습니다.
+                    var j=judge.judge(record,indicator,criterion.maxScore(),heartbeat);
+                    if(!j.retryable()) save(input,j,key); // 재시도 가능한 보류는 다음 재채점에서 다시 판정합니다.
                     return j;});
                 var cell=cell(input,criterion,judgment,record.injection());cells.add(cell);
                 if(cell.status().equals("NOT_APPLICABLE"))na++;else if(cell.level()!=null)confirmed++;else review++;
@@ -101,6 +101,8 @@ public class ProcessRubricGrader {
         String reason=RubricJudge.REASON_PROMPT_INJECTION.equals(j.reviewReason())?Objects.toString(j.blocked(),"학생 기록에 채점 지시로 보이는 문장이 있어 직접 확인이 필요해요.")
                 :RubricJudge.REASON_NO_AI_USE.equals(j.reviewReason())?"AI를 쓰지 않아 자기 주도적 사고는 교사가 직접 확인해야 해요."
                 :RubricJudge.REASON_SAVE_ERROR.equals(j.reviewReason())?"활용 설명란(AI 사용 기록)이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
+                :RubricJudge.REASON_NO_VALID_VOTES.equals(j.reviewReason())?"Gemini의 유효한 판정이 없어 교사 확인이 필요합니다."
+                :RubricJudge.REASON_GEMINI_CALL_FAILED.equals(j.reviewReason())?"Gemini 호출을 완료하지 못해 교사 확인이 필요합니다."
                 :RubricJudge.STATUS_HOLD.equals(j.status())?"최종 답안이나 활용 설명이 저장 오류로 남아 있지 않아 판단을 보류했습니다."
                 :RubricJudge.REASON_INSUFFICIENT.equals(j.reviewReason())?"판단할 내용이 적어 직접 입력이 필요해요."
                 :"AI 판정이 엇갈려 직접 입력이 필요해요. 회차별 단계와 근거를 참고하세요.";

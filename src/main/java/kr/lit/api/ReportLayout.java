@@ -77,8 +77,14 @@ public class ReportLayout {
         if(!disclosure.isMissingNode()&&!disclosure.isNull()) {
             usage.add(List.of("생성 상태",labelCode(disclosure.path("status").asText("READY"))));
             usage.add(List.of("AI 활용 기록 · 사용한 도구",disclosure.path("tools").asText().isBlank()?"기록된 완료 응답 없음":disclosure.path("tools").asText()));
-            usage.add(List.of("AI 활용 기록 · 활용 부분",disclosure.path("usedParts").asText().isBlank()?"기록 없음":disclosure.path("usedParts").asText()));
-            usage.add(List.of("AI 활용 기록 · 이유",disclosure.path("reason").asText().isBlank()?"기록 없음":disclosure.path("reason").asText()));
+            String usedParts=disclosure.path("usedParts").asText();
+            String reason=disclosure.path("reason").asText();
+            if(!raw){
+                usedParts=String.join("\n",usedParts.lines().map(line->line.replaceFirst("^((?:문항 [0-9]+) – [^:]+): .*$","$1")).toList());
+                reason=String.join("\n",reason.lines().map(line->line.replaceFirst("( – AI 답변 인용) \".*\": ","$1: ")).toList());
+            }
+            usage.add(List.of("AI 활용 기록 · 활용 부분",usedParts.isBlank()?"기록 없음":usedParts));
+            usage.add(List.of("AI 활용 기록 · 이유",reason.isBlank()?"기록 없음":reason));
         }
         blocks.add(new Table(usage,new int[]{14520,28000},false));
         blocks.add(new Text("키워드 기반 분류(교사 검토 필요). 복수 목적을 허용합니다. 문장 유사도는 실제 작성자 비율이나 기여 점수가 아닙니다.","note"));

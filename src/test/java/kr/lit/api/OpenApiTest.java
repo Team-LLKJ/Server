@@ -35,7 +35,7 @@ class OpenApiTest extends AuthTestSupport {
         assertThat(sentence.path("source").path("enum").toString()).isEqualTo("[\"DIRECT\",\"AI\"]");
         var question=schemas.path("PurposeUsageAnalyzer.Question").path("properties");
         assertThat(question.has("votes")).isTrue();assertThat(question.has("haikuPurpose")).isTrue();assertThat(question.has("needsReview")).isTrue();
-        assertThat(schemas.path("JudgeInfo").path("properties").path("reviewReason").path("enum").toString()).isEqualTo("[\"DISAGREEMENT\",\"HAIKU_DECIDED\",\"INSUFFICIENT_DATA\",\"NO_AI_USE\",\"SAVE_ERROR\",\"PROMPT_INJECTION\"]");
+        assertThat(schemas.path("JudgeInfo").path("properties").path("reviewReason").path("enum").toString()).isEqualTo("[\"DISAGREEMENT\",\"HAIKU_DECIDED\",\"NO_VALID_VOTES\",\"GEMINI_CALL_FAILED\",\"INSUFFICIENT_DATA\",\"NO_AI_USE\",\"SAVE_ERROR\",\"PROMPT_INJECTION\"]");
         assertThat(schemas.path("Cell").path("properties").has("adjustedMaxScore")).isTrue();
         assertThat(schemas.has("Login")).isTrue(); // 겹치지 않는 이름은 그대로
     }
