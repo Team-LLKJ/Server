@@ -55,11 +55,20 @@ class JudgeTransportTest {
         var url=serve(List.of(new Object[]{429,"7","{}"},new Object[]{429,null,"{}"},new Object[]{429,null,"{}"},new Object[]{200,null,OK}));
         var clock=new FakeClock();var c=client(config(url),clock);
         assertThat(c.callGemini(GeminiKey.RUBRIC,"s","u",null,null)).isEqualTo("{}");
-        assertThat(clock.sleeps).containsExactly(Duration.ofSeconds(7),Duration.ofSeconds(10),Duration.ofSeconds(20));
+        assertThat(clock.sleeps).containsExactly(Duration.ofSeconds(7),Duration.ofSeconds(3),Duration.ofSeconds(7));
         assertThat(keys).containsOnly("rubric-key"); // 429가 나도 analysis 키를 빌려 쓰지 않습니다.
         keys.clear();
         assertThat(c.callGemini("s","u",null,null)).isEqualTo("{}");
         assertThat(keys).containsExactly("analysis-key");assertThat(paths).last().isEqualTo("/lite");
+    }
+    @Test void rubricRetriesTransientServerErrorsButDoesNotRetryInvalidCredentials() throws Exception {
+        var url=serve(List.of(new Object[]{503,null,"{}"},new Object[]{502,null,"{}"},new Object[]{429,null,"{}"},
+                new Object[]{200,null,OK},new Object[]{401,null,"{}"}));
+        var clock=new FakeClock();var c=client(config(url),clock);
+        assertThat(c.callGemini(GeminiKey.RUBRIC,"s","u",null,null)).isEqualTo("{}");
+        assertThat(clock.sleeps).containsExactly(Duration.ofSeconds(1),Duration.ofSeconds(3),Duration.ofSeconds(7));
+        assertThatThrownBy(()->c.callGemini(GeminiKey.RUBRIC,"s","u",null,null)).hasMessage("JUDGE_GEMINI_HTTP_401");
+        assertThat(keys).hasSize(5);
     }
     @Test void givesUpAfterThreeRetries() throws Exception {
         var url=serve(List.<Object[]>of(new Object[]{429,null,"{}"}));

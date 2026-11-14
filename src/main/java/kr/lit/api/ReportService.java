@@ -65,7 +65,7 @@ public class ReportService {
    var snapshot=(com.fasterxml.jackson.databind.node.ObjectNode)decode(stored.get(0));boolean frozen=snapshot.hasNonNull("aiDisclosure");
    if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));
    if(!"SYSTEM_GENERATED".equals(snapshot.path("aiDisclosure").path("source").asText()))snapshot.set("studentAiDisclosure",snapshot.path("aiDisclosure"));
-   snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.generateDisclosure(id,pid,snapshot)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
+   snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.getDisclosure(id,pid)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
   }
   var root=json.createObjectNode();root.put("evaluationId",id);root.put("participantId",pid);
   var policy=db.queryForList("SELECT ai_policy FROM evaluation_settings WHERE evaluation_id=?",String.class,id);

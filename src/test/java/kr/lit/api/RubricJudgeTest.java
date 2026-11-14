@@ -53,6 +53,42 @@ class RubricJudgeTest {
             Object a=answers[Math.min(n.getAndIncrement(),answers.length-1)];return a instanceof String s?s:answer(a,"U",Q1.substring(0,20));});
     }
 
+    @Test void retriesOnlyTheCriterionWithNoVerifiedVotes() {
+        var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
+        String invalid=answer(1,"ANS","원문에 없는 인용");
+        gemini(invalid,invalid,invalid,4,4,4);
+        var recovered=judge.judge(record,CONTRIBUTION,25);
+        assertThat(recovered.votes()).containsExactly(4,4,4);
+        assertThat(recovered.runs()).hasSize(6);
+        assertThat(recovered.needsReview()).isFalse();
+
+        gemini(invalid);
+        when(client.callAnthropic(anyString(),anyString(),isNull())).thenReturn(answer(1,"U",Q1.substring(0,20)));
+        var held=judge.judge(record,CONTRIBUTION,25);
+        assertThat(held.status()).isEqualTo("HOLD");
+        assertThat(held.votes()).containsExactly(null,null,null);
+        assertThat(held.runs()).hasSize(7);
+        assertThat(held.reviewReason()).isEqualTo("NO_VALID_VOTES");
+        assertThat(held.haikuLevel()).isEqualTo(1);
+        assertThat(held.level()).isNull();
+        assertThat(held.needsReview()).isTrue();
+    }
+
+    @Test void exhaustedGeminiCallHoldsOnlyThatCriterion() {
+        var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
+        when(client.callGemini(eq(GeminiKey.RUBRIC),anyString(),anyString(),isNull(),isNull()))
+                .thenThrow(new SemanticJudgeClient.JudgeFailure("JUDGE_GEMINI_HTTP_503"))
+                .thenReturn(answer(3,"U",Q1.substring(0,20)));
+        when(client.callAnthropic(anyString(),anyString(),isNull())).thenReturn(answer(1,"U",Q1.substring(0,20)));
+        var held=judge.judge(record,CONTRIBUTION,25);
+        assertThat(held.status()).isEqualTo("HOLD");
+        assertThat(held.reviewReason()).isEqualTo("GEMINI_CALL_FAILED");
+        assertThat(held.runs().get(0).error()).isEqualTo("JUDGE_GEMINI_HTTP_503");
+        assertThat(held.haikuLevel()).isEqualTo(1);
+        assertThat(held.needsReview()).isTrue();
+        assertThat(judge.judge(record,PURPOSE,15).level()).isEqualTo(3);
+    }
+
     @Test void unanimousGeminiIsConfirmedWithVerifiedEvidenceAndRoundedScore() throws Exception {
         var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
         gemini(answer(4,"U","축제 방문객이 40% 늘었다는 통계는  누가 조사한 거야"),4,4);
@@ -106,10 +142,12 @@ class RubricJudgeTest {
         assertThat(j.votes()).containsExactly(null,4,4);assertThat(j.level()).isEqualTo(4);
         verify(client,times(4)).callGemini(eq(GeminiKey.RUBRIC),anyString(),anyString(),isNull(),isNull());
     }
-    @Test void httpFailureOfGeminiFailsTheJobForRetry() throws Exception {
+    @Test void rateLimitExhaustionHoldsCriterion() throws Exception {
         var record=judge.buildRecord(input(List.of(Q1,Q2,Q3)),purposes());
         when(client.callGemini(eq(GeminiKey.RUBRIC),anyString(),anyString(),isNull(),isNull())).thenThrow(new JudgeFailure("JUDGE_GEMINI_RATE_LIMITED"));
-        assertThatThrownBy(()->judge.judge(record,PURPOSE,15)).hasMessage("JUDGE_GEMINI_RATE_LIMITED");
+        var held=judge.judge(record,PURPOSE,15);
+        assertThat(held.reviewReason()).isEqualTo("GEMINI_CALL_FAILED");
+        assertThat(held.runs().get(0).error()).isEqualTo("JUDGE_GEMINI_RATE_LIMITED");
     }
     @Test void noAiConversationMeansNaExceptSelfDirectionWithoutCallingTheModel() throws Exception {
         var record=judge.buildRecord(input(List.of()),purposes());

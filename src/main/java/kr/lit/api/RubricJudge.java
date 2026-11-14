@@ -29,9 +29,10 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
  */
 @Component
 public class RubricJudge {
-    public static final String PROMPT_VERSION="RUBRIC_GEMINI_X3_HAIKU_V6";
+    public static final String PROMPT_VERSION="RUBRIC_GEMINI_X3_HAIKU_V7";
     public static final String STATUS_OK="OK",STATUS_NA="NA",STATUS_HOLD="HOLD";
     public static final String REASON_DISAGREEMENT="DISAGREEMENT",REASON_INSUFFICIENT="INSUFFICIENT_DATA",REASON_NO_AI_USE="NO_AI_USE",REASON_SAVE_ERROR="SAVE_ERROR",REASON_PROMPT_INJECTION="PROMPT_INJECTION",REASON_HAIKU_DECIDED="HAIKU_DECIDED";
+    public static final String REASON_NO_VALID_VOTES="NO_VALID_VOTES", REASON_GEMINI_CALL_FAILED="GEMINI_CALL_FAILED";
     public static final String METHOD_GEMINI="LLM_GEMINI_X3",METHOD_GEMINI_HAIKU="LLM_GEMINI_X3_HAIKU",METHOD_SERVER="SERVER_RULE";
     public static final List<Indicator> JUDGED=List.of(Indicator.PURPOSE,Indicator.SELF_DIRECTION,Indicator.CRITICAL_REVIEW,Indicator.CONTRIBUTION); // 투명성은 판정하지 않음(2026-11-14)
     static final List<String> SOURCES=List.of("Q","U","A","S","ANS","DIS");
@@ -99,7 +100,7 @@ public class RubricJudge {
             this(indicator,status,level,score,votes,haikuLevel,needsReview,reviewReason,evidence,met,blocked,method,runs,promptVersion,geminiModel,haikuModel,null);
         }
         /** Haiku가 필요했는데 일시적 이유(미설정·호출 실패·인용 검증 실패)로 판정이 없으면 저장된 결과를 다시 쓰지 않습니다. */
-        public boolean retryable(){return haikuError!=null;}
+        public boolean retryable(){return haikuError!=null||REASON_NO_VALID_VOTES.equals(reviewReason)||REASON_GEMINI_CALL_FAILED.equals(reviewReason);}
     }
 
     private final ObjectMapper json;
@@ -271,28 +272,28 @@ public class RubricJudge {
         return "[학생 기록]\n"+NOTATION+"\n<<<학생 기록 시작>>>\n"+record.text()+"\n<<<학생 기록 끝>>>\n\n[루브릭 항목: "+name+"]\n"+bodies.get(indicator);
     }
     /**
-     * 항목 하나를 판정합니다. Gemini 호출이 HTTP 오류로 실패하면 JudgeFailure를 던져 작업이 나중에 다시 시도하게 합니다
-     * (형식 오류는 1번 다시 요청한 뒤 그 회차만 무효로 봅니다).
+     * 유효 표가 없으면 해당 항목만 한 차례 다시 판정합니다. 호출 실패나 재판정 실패는 교사 확인으로 넘깁니다.
      */
     public Judgment judge(StudentRecord record,Indicator indicator,int maxScore) {
+        return judge(record,indicator,maxScore,()->{});
+    }
+    Judgment judge(StudentRecord record,Indicator indicator,int maxScore,Runnable heartbeat) {
         var pre=preCheck(record,indicator,maxScore);if(pre!=null) return pre;
         String user=userPrompt(record,indicator);
         var runs=new ArrayList<Run>();
-        int total=config.getRubric().getRuns();
-        for(int i=0;i<total;i++) {
-            runs.add(run("GEMINI",record,()->client.callGemini(SemanticJudgeClient.GeminiKey.RUBRIC,INSTRUCTIONS,user,null,null)));
-            if(config.getRubric().isStopWhenTwoAgree()&&i==1&&runs.get(0).level()!=null&&runs.get(0).level().equals(runs.get(1).level())) break;
-        }
-        var votes=new ArrayList<Object>();for(var r:runs) votes.add(r.level());
-        boolean unanimous=runs.size()>=2&&runs.stream().allMatch(r->r.level()!=null&&r.level().equals(runs.get(0).level()));
-        if(runs.size()==1) unanimous=runs.get(0).level()!=null;
-        if(unanimous) return finish(indicator,maxScore,runs.get(0).level(),votes,null,false,null,METHOD_GEMINI,runs,runs.get(0));
+        var gemini=collectGeminiVotes(record,user,runs,heartbeat);
+        if(gemini.stream().allMatch(r->r.level()==null)&&gemini.stream().noneMatch(RubricJudge::isCallFailure))
+            gemini=collectGeminiVotes(record,user+"\n재판정: 앞 회차에서 검증된 인용이 없습니다. 근거마다 원문 한 줄의 연속된 구절을 정확히 옮기고 그 줄의 src를 사용하세요. 요약, 줄 결합, 출처 판정 표기는 quote에 넣지 마세요.",runs,heartbeat);
+        boolean callFailed=gemini.stream().anyMatch(RubricJudge::isCallFailure);
+        var votes=new ArrayList<Object>();for(var r:gemini) votes.add(r.level());
+        boolean unanimous=!callFailed&&gemini.stream().allMatch(r->r.level()!=null&&r.level().equals(votes.get(0)));
+        if(unanimous) return finish(indicator,maxScore,votes.get(0),votes,null,false,null,METHOD_GEMINI,runs,gemini.get(0));
         Object majority=majority(votes);
         Run haiku=null;String haikuError=null;
         if(client.anthropicConfigured()) {
             // 인용을 원문에서 못 찾아 무효가 되면 1번 더 묻습니다(형식 오류는 run 안에서 1번 다시 요청).
             for(int attempt=0;attempt<2;attempt++) {
-                try { haiku=run("ANTHROPIC",record,()->client.callAnthropic(INSTRUCTIONS,user,null)); }
+                try { haiku=run("ANTHROPIC",record,()->{heartbeat.run();return client.callAnthropic(INSTRUCTIONS,user,null);}); }
                 catch(JudgeFailure ex) { haiku=new Run("ANTHROPIC",null,null,null,List.of(),0,ex.code(),null); }
                 runs.add(haiku);
                 if(!"NO_VERIFIED_EVIDENCE".equals(haiku.error())) break;
@@ -300,8 +301,14 @@ public class RubricJudge {
             if(haiku.level()==null) haikuError=haiku.error();
         } else haikuError="NOT_CONFIGURED";
         Object haikuLevel=haiku==null?null:haiku.level();
+        if(callFailed||votes.stream().allMatch(Objects::isNull))
+            return new Judgment(indicator,STATUS_HOLD,null,null,votes,haikuLevel,true,
+                    callFailed?REASON_GEMINI_CALL_FAILED:REASON_NO_VALID_VOTES,
+                    haiku==null?List.of():haiku.evidence(),haiku==null?"":haiku.met(),haiku==null?"":haiku.blocked(),
+                    haiku==null?METHOD_GEMINI:METHOD_GEMINI_HAIKU,List.copyOf(runs),PROMPT_VERSION,
+                    client.rubricModel(),client.anthropicModel(),haikuError);
         if(majority!=null&&majority.equals(haikuLevel)) {
-            Run source=runs.stream().filter(r->"GEMINI".equals(r.provider())&&majority.equals(r.level())).findFirst().orElse(haiku);
+            Run source=gemini.stream().filter(r->majority.equals(r.level())).findFirst().orElse(haiku);
             return finish(indicator,maxScore,majority,votes,haikuLevel,false,null,METHOD_GEMINI_HAIKU,runs,source);
         }
         // 과반이 없으면(유효한 Gemini 답 1개 이하이거나 모두 다름) Haiku 단계로 확정합니다(2026-11-12 변경).
@@ -311,6 +318,26 @@ public class RubricJudge {
             return finish(indicator,maxScore,h,votes,haikuLevel,false,REASON_HAIKU_DECIDED,METHOD_GEMINI_HAIKU,runs,haiku);
         return new Judgment(indicator,STATUS_OK,null,null,votes,haikuLevel,true,REASON_DISAGREEMENT,List.of(),"","",haiku==null?METHOD_GEMINI:METHOD_GEMINI_HAIKU,
                 List.copyOf(runs),PROMPT_VERSION,client.rubricModel(),client.anthropicModel(),haikuError);
+    }
+    private List<Run> collectGeminiVotes(StudentRecord record,String user,List<Run> history,Runnable heartbeat) {
+        var votes=new ArrayList<Run>();
+        for(int i=0;i<config.getRubric().getRuns();i++) {
+            Run vote;
+            try {
+                vote=run("GEMINI",record,()->{heartbeat.run();return client.callGemini(SemanticJudgeClient.GeminiKey.RUBRIC,INSTRUCTIONS,user,null,null);});
+            } catch(JudgeFailure ex) {
+                if(Thread.currentThread().isInterrupted()) throw ex;
+                vote=new Run("GEMINI",null,null,null,List.of(),0,ex.code(),null);
+            }
+            history.add(vote);
+            votes.add(vote);
+            if(isCallFailure(vote)||config.getRubric().isStopWhenTwoAgree()&&i==1
+                    &&vote.level()!=null&&vote.level().equals(votes.get(0).level())) break;
+        }
+        return votes;
+    }
+    private static boolean isCallFailure(Run run) {
+        return run.error()!=null&&!"NO_VERIFIED_EVIDENCE".equals(run.error())&&!new JudgeFailure(run.error()).isFormatError();
     }
     private Judgment finish(Indicator indicator,int maxScore,Object level,List<Object> votes,Object haikuLevel,boolean review,String reason,String method,List<Run> runs,Run source) {
         String status=level instanceof Integer?STATUS_OK:String.valueOf(level);

@@ -2154,7 +2154,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/ai-disclosure",
-            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
+            "description": "시스템 자동 생성 AI 사용 기록. usedParts는 질문마다, reason은 답안 문장마다 줄바꿈으로 구분. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {
@@ -2176,7 +2176,7 @@
               "mode": "raw",
               "raw": "{\n  \"tools\": \"LIT 내장 AI\",\n  \"usedParts\": \"문항 1 둘째 문단\",\n  \"reason\": \"개념만 확인하고 예시는 직접 찾았습니다.\"\n}"
             },
-            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
+            "description": "시스템 자동 생성 AI 사용 기록. usedParts는 질문마다, reason은 답안 문장마다 줄바꿈으로 구분. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         }
       ]
@@ -3449,7 +3449,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
-            "description": "summary는 strengths·weaknesses·checks 객체이며 같은 결과를 PDF·HWP에 사용합니다. 이전 텍스트는 summaryText입니다. docs/PROCESS_GRADING.md 참고."
+            "description": "summary는 strengths·weaknesses·checks 객체이며 같은 결과를 PDF·HWP에 사용합니다. 이전 텍스트는 summaryText입니다. judge.reviewReason의 NO_VALID_VOTES와 GEMINI_CALL_FAILED는 해당 기준의 교사 확인을 뜻합니다. docs/PROCESS_GRADING.md 참고."
           }
         }
       ]
@@ -3640,7 +3640,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/ai-disclosure",
-            "description": "시스템 자동 생성 AI 사용 기록. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
+            "description": "시스템 자동 생성 AI 사용 기록. usedParts는 질문마다, reason은 답안 문장마다 줄바꿈으로 구분. editable=false. GET은 status/source/conversationIds/evidence를 포함. PUT은 호환용이며 입력을 저장하지 않음. docs/AUTOMATIC_AI_DISCLOSURE.md 참조."
           }
         },
         {

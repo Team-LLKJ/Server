@@ -4,7 +4,7 @@
 
 - status: PENDING | READY | FAILED. 제출 전 PENDING은 제출 시 생성 예정이라는 뜻입니다. 현재 구현은 외부 AI 호출 없는 동기 규칙 기반 생성입니다.
 - source: SYSTEM_GENERATED, editable: 항상 false
-- updatedAt: 생성 시각. 저장 후 조회·재제출 시 바뀌지 않습니다.
+- updatedAt: 자동 기록 내용이 생성되거나 마지막으로 바뀐 시각입니다.
 - conversationIds: 판단에 사용한 ai_turns.id 목록 (채팅의 conversationId와 동일)
 - evidence: [{conversationId, questionId, purpose, messageRole: "USER", quote, matchingAnswerParagraphs, answerVersion}]. quote는 기록된 학생 질문 원문입니다.
 - errorCode / failureReason: FAILED 시 DISCLOSURE_GENERATION_FAILED와 안전한 설명. 실패도 저장하고 조회 시 자동 재시도하지 않습니다.
@@ -18,9 +18,11 @@ GET /api/teacher/evaluations/{evaluationId}/students/{participantId}/ai-disclosu
 
 제출 확정 시 검토 토큰을 검증한 후 한 번 생성하고 제출 스냅샷에 함께 저장합니다. 토큰은 확정 전 답안·대화 검토용이며 생성 시각은 서버가 확정 후 추가하는 메타데이터입니다. 시간 만료·교사 종료 시 자동 제출에도 생성합니다. 시작 전 대기실 종료는 사용 기록만 생성하고 제출로 만들지 않습니다. 기존 제출은 첫 조회 시 제출 스냅샷을 이용해 한 번 생성합니다. 기존 수동 기록과 저장된 보고서 버전은 삭제하지 않습니다.
 
-tools는 완료된 비어 있지 않은 응답의 provider/model 조합을 중복 제거해 줄바꿈으로 연결합니다. 실패 요청만 있으면 빈 문자열입니다. usedParts는 문항 번호와 질문 표현의 규칙 기반 목적 분류·횟수를 제공합니다. 최종 답안의 20자 이상 문단 전체가 해당 문항 AI 응답에 그대로 포함된 경우에만 matchingAnswerParagraphs(1부터 시작)에 문단 번호를 표시합니다. 이는 동일 문구 관측이며 실제 작성자 판정이 아닙니다. 근거 없이 특정 문단 위치를 만들어내지 않습니다. reason은 시스템 관측임을 명시합니다. 실제 의도·실제 작성자·외부 AI 사용은 확정하지 않습니다. 대화가 없으면 tools="", usedParts="LIT에 기록된 AI 대화가 없습니다."입니다.
-
-분류는 기존 AssessmentAnalyzer.classify 규칙을 재사용합니다 (개념 확인, 자료 탐색, 아이디어 구체화, 답안 작성 요청, 검증 요청, 기타 요청). 자동 생성 설명은 학생의 자기 공개 근거(DISCLOSURE)로 채점기에 전달하지 않으며 점수에 쓰지 않습니다(투명성 기준은 2026-11-14 삭제). 2026-11-14부터 usedParts·reason은 문장 판정으로 만든 문장별 활용 부분·근거입니다(docs/AI_JUDGE.md "11/14 요청 반영"). PDF/HWP 공통 보고서의 AI 사용 기록 표에도 동일 결과를 사용합니다.
+- `tools`는 완료 응답의 도구·모델을 중복 제거해 줄바꿈으로 연결합니다.
+- `usedParts`는 질문마다 한 줄입니다. 용도는 채점 화면과 같은 분류를 사용합니다. 교사 확정, 저장된 LLM 분류, 키워드 대체 순으로 적용합니다.
+- `reason`은 답안 문장마다 한 줄입니다. AI 답변 인용, 표현 일치, 학생이 먼저 쓴 표현, 교사 확정 등 저장된 분석 근거를 표시합니다.
+- 용도 분류·문장 분석 저장, 재채점, 교사 용도·출처 수정 후 갱신합니다. 기존 제출은 조회할 때 최신 분석을 반영합니다. 기록 생성에 별도 LLM 호출이 없습니다.
+- 새 PDF·HWP 보고서는 같은 기록을 사용합니다. 대화 원문 포함 옵션으로 질문·AI 답변 인용을 출력할 수 있고, 기존 저장 보고서 버전은 보존됩니다.
 
 교사 조회 응답 예시 (식별자는 예시입니다):
 
@@ -29,8 +31,8 @@ tools는 완료된 비어 있지 않은 응답의 provider/model 조합을 중�
   "evaluationId": "evaluation-id",
   "participantId": "participant-id",
   "tools": "LIT 내장 AI (gemini / model-name)",
-  "usedParts": "시스템이 기록된 질문을 분류한 결과: 문항 2: 개념 확인 1건",
-  "reason": "시스템 관측: 질문 1건, 완료 응답 1건, 실패·미완료 0건. 시스템 분류: 개념 확인 1건. 활용 목적은 질문 표현에 따른 규칙 기반 추정이며 실제 의도·답안 반영 위치를 확정하지 않습니다.",
+  "usedParts": "문항 2 – 이해·조사: \"광합성이 뭐야?\"",
+  "reason": "문항 2 답안 1번째 문장 – 학생 문장으로 분류",
   "updatedAt": "2026-11-08T09:00:00Z",
   "editable": false,
   "status": "READY",
@@ -41,7 +43,7 @@ tools는 완료된 비어 있지 않은 응답의 provider/model 조합을 중�
   "evidence": [{
     "conversationId": 73,
     "questionId": "question-id",
-    "purpose": "개념 확인",
+    "purpose": "이해·조사",
     "messageRole": "USER",
     "quote": "광합성의 개념을 설명해줘",
     "matchingAnswerParagraphs": [],

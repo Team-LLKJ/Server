@@ -76,7 +76,7 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
   - AI 질문 0개 → 자기 주도적 사고는 교사 확인 `HOLD`(`reviewReason="NO_AI_USE"`, 첫 버전), 나머지 3개 `NOT_APPLICABLE`. 문서대로 이 규칙이 `noAiPolicy=NOT_APPLICABLE`에 해당하며, 정책 값과 관계없이 이렇게 처리합니다.
   - 학생 질문 2개 이하 → `HOLD`(`INSUFFICIENT_DATA`). 사전 정책의 제외 항목은 `NOT_APPLICABLE`. 사전 정책이 없어도 판정합니다.
   - 학생 글에 채점 지시로 보이는 문장 → 전 항목 `HOLD`(`PROMPT_INJECTION`).
-  - `reviewReason`: `DISAGREEMENT` | `INSUFFICIENT_DATA` | `NO_AI_USE` | `PROMPT_INJECTION` (`SAVE_ERROR`는 11/14 이전 결과의 투명성 칸에만) (확정 칸의 `HAIKU_DECIDED`는 1단계 차이 Haiku 확정).
+  - `reviewReason`: `NO_VALID_VOTES` | `GEMINI_CALL_FAILED` | `DISAGREEMENT` | `INSUFFICIENT_DATA` | `NO_AI_USE` | `PROMPT_INJECTION` (`SAVE_ERROR`는 11/14 이전 결과의 투명성 칸에만) (확정 칸의 `HAIKU_DECIDED`는 1단계 차이 Haiku 확정).
 - **점수(모두 정수, 소수 첫째 자리에서 반올림)**
   - 재분배 배점(`Cell.adjustedMaxScore`): NA 칸을 뺀 원래 배점 합을 100점이 되게 — `원래 배점 × 100 ÷ 판정 대상 배점 합` → 정수. NA가 없으면 원래 배점, NA 칸은 0.
   - 칸 점수(`Cell.score`): `재분배 배점 × (단계 − 1) ÷ 4` → 정수(20점 4단계 = 15, 30점 4단계 = 22.5 → 23).
@@ -167,3 +167,9 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
 3. **학생 직접 입력 안 씀**: `PUT .../ai-disclosure`는 저장하지 않고 자동 기록을 그대로 돌려줍니다(200, Swagger에 deprecated). 교사 화면의 `studentDisclosure`와 학생 설명 저장(`STUDENT_REPORTED`)은 없앴습니다(#71의 3번 되돌림).
 4. **질문 용도: 문항 답을 시키는 질문은 DRAFT**: 분류 자료에 질문한 문항의 내용(`item`: 제목 + 본문 앞 600자)을 넣고 규칙 8을 더했습니다 — 문항이 요구하는 답 자체를 시키면 "설명해줘"로 물어도 DRAFT, 문항을 쓰는 데 필요한 개념·자료만 물으면 UNDERSTAND. 예: 문항 "변화 한 가지를 고르고 그 원인을 설명하세요" / 질문 "우리 지역 변화 한가지 골라서 원인 설명해줘" → DRAFT. 프롬프트 `PURPOSE_GEMINI_X3_V4`.
 5. **질문 용도: 과반 = Haiku면 확정**: 의도한 동작이 아니었습니다. 루브릭과 같게 Gemini 과반(2표)과 Haiku가 같으면 `needsReview=false`, 과반이 없거나 Haiku가 다르면 Haiku 답에 `needsReview=true`입니다. 이미 저장된 분류는 그대로이고 새로 분류하는 질문부터 적용됩니다.
+
+### 루브릭 재판정과 일시 오류
+
+- Gemini 유효 표 0개면 해당 기준의 판정을 한 차례 다시 합니다. 재판정도 유효 표가 0개면 `NO_VALID_VOTES`로 HOLD 처리합니다.
+- Gemini 루브릭 HTTP 429/502/503/504와 타임아웃은 기본 1·3·7초 후 최대 세 번 재시도합니다. 서버가 더 긴 Retry-After를 주면 그 값을 따릅니다. 계속 실패하면 해당 기준만 `GEMINI_CALL_FAILED`로 HOLD 처리합니다.
+- 두 경우 모두 Haiku 단계는 `haikuLevel`에만 남기고 `needsReview=true`입니다. 나머지 기준의 결과는 저장하며, 회차별 무효·호출 오류는 `runs[].error`로 구분합니다.

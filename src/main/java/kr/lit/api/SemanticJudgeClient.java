@@ -60,6 +60,7 @@ public class SemanticJudgeClient {
     /** Gemini 키 용도. */
     public enum GeminiKey { ANALYSIS, RUBRIC }
     static final int RATE_LIMIT_RETRIES=3;
+    private static final List<Duration> RUBRIC_BACKOFF=List.of(Duration.ofSeconds(1),Duration.ofSeconds(3),Duration.ofSeconds(7));
     static final List<Duration> BACKOFF=List.of(Duration.ofSeconds(5),Duration.ofSeconds(10),Duration.ofSeconds(20));
 
     private final ObjectMapper json;
@@ -110,7 +111,7 @@ public class SemanticJudgeClient {
             var request=HttpRequest.newBuilder(URI.create(provider.getEndpoint())).timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
                     .header("x-api-key",provider.getApiKey()).header("anthropic-version",ANTHROPIC_VERSION).header("content-type","application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
-            JsonNode payload=json.readTree(send(request,"ANTHROPIC",JudgeRateLimiter.Bucket.ANTHROPIC));
+            JsonNode payload=json.readTree(send(request,"ANTHROPIC",JudgeRateLimiter.Bucket.ANTHROPIC,false));
             var used=payload.path("usage");
             usage.record("ANTHROPIC",provider.getModel(),used.path("input_tokens").asLong(),used.path("output_tokens").asLong(),0);
             if(!"end_turn".equals(payload.path("stop_reason").asText())) throw new JudgeFailure("JUDGE_ANTHROPIC_INCOMPLETE");
@@ -141,7 +142,7 @@ public class SemanticJudgeClient {
                     .timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
                     .header("x-goog-api-key",apiKey).header("Content-Type","application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
-            var payload=json.readTree(send(request,"GEMINI",rubric&&!provider.isRubricKeyShared()?JudgeRateLimiter.Bucket.RUBRIC:JudgeRateLimiter.Bucket.ANALYSIS));
+            var payload=json.readTree(send(request,"GEMINI",rubric&&!provider.isRubricKeyShared()?JudgeRateLimiter.Bucket.RUBRIC:JudgeRateLimiter.Bucket.ANALYSIS,rubric));
             var used=payload.path("usageMetadata");
             usage.record("GEMINI",model,used.path("promptTokenCount").asLong(),used.path("candidatesTokenCount").asLong(),used.path("thoughtsTokenCount").asLong());
             var candidate=payload.path("candidates").path(0);
@@ -164,16 +165,26 @@ public class SemanticJudgeClient {
         catch(Exception ex) { throw new JudgeFailure("JUDGE_REQUEST_ENCODING"); }
     }
     /**
-     * 키의 한도 안에서 보냅니다. 429면 Retry-After(초)만큼, 없으면 5→10→20초 기다렸다 같은 키로 다시 보냅니다(최대 3번).
+     * 루브릭의 일시적 호출 오류는 1·3·7초 간격으로, 다른 호출의 429는 5·10·20초 간격으로 재시도합니다.
      */
-    private String send(HttpRequest request,String provider,JudgeRateLimiter.Bucket bucket) throws Exception {
+    private String send(HttpRequest request,String provider,JudgeRateLimiter.Bucket bucket,boolean rubric) throws Exception {
         for(int attempt=0;;attempt++) {
             limiter.acquire(bucket);
             HttpResponse<String> response;
             try { response=http.send(request,HttpResponse.BodyHandlers.ofString()); }
-            catch(HttpTimeoutException ex) { throw new JudgeFailure("JUDGE_"+provider+"_TIMEOUT"); }
+            catch(HttpTimeoutException ex) {
+                if(rubric&&attempt<RUBRIC_BACKOFF.size()){limiter.backoff(RUBRIC_BACKOFF.get(attempt));continue;}
+                throw new JudgeFailure("JUDGE_"+provider+"_TIMEOUT");
+            }
             catch(InterruptedException ex) { Thread.currentThread().interrupt();throw new JudgeFailure("JUDGE_"+provider+"_INTERRUPTED"); }
-            if(response.statusCode()==429) {
+            int status=response.statusCode();
+            if(rubric&&(status==429||status==502||status==503||status==504)&&attempt<RUBRIC_BACKOFF.size()){
+                Duration delay=RUBRIC_BACKOFF.get(attempt);
+                limiter.backoff(retryAfter(response).filter(wait->wait.compareTo(delay)>0).orElse(delay));
+                continue;
+            }
+            if(status==429) {
+                if(rubric) throw new JudgeFailure("JUDGE_"+provider+"_RATE_LIMITED");
                 if(attempt>=RATE_LIMIT_RETRIES) throw new JudgeFailure("JUDGE_"+provider+"_RATE_LIMITED");
                 limiter.backoff(retryAfter(response).orElse(BACKOFF.get(Math.min(attempt,BACKOFF.size()-1))));
                 continue;

@@ -86,21 +86,22 @@ class SourceOrderTest {
                 "부정적 영향 알려줘", "부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다는 점입니다.", "다른 예는?", "상권이 바뀌었습니다.");
         var analyzer = new AutomaticDisclosureAnalyzer();
         var before = analyzer.generateDisclosure("e", "p", root, Instant.EPOCH);
-        assertThat(before.usedParts()).isEqualTo(AutomaticDisclosureAnalyzer.PENDING_PARTS);
+        assertThat(before.reason()).isEqualTo(AutomaticDisclosureAnalyzer.PENDING_PARTS);
         var span = new Sentence("q1-p1-s1", "q1", "q1-p1", "부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다는 점이다.", "AI", AssessmentAnalyzer.REASON_SPAN, 26, 0.9, 10L, 0, 30, 1, true);
         var semantic = new Sentence("q1-p1-s2", "q1", "q1-p1", "상권 모습이 달라졌다.", "AI", AssessmentAnalyzer.REASON_SEMANTIC, 0, 0.1, 12L, 31, 42, 1, true,
                 false, new AssessmentModels.SemanticVerdict(2, null, "c1", "상권이 바뀌었습니다.", 12L, true, false), null, null);
         var mine = new Sentence("q1-p1-s3", "q1", "q1-p1", "나는 시장을 살려야 한다고 본다.", "DIRECT", null, 0, 0, null, 43, 60, 1, true,
                 false, null, null, null, false, 12L);
         var after = analyzer.generateDisclosure("e", "p", root, Instant.EPOCH, List.of(span, semantic, mine), SemanticJudge.STATUS_DONE);
-        assertThat(after.usedParts()).isEqualTo("문항 1: '부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다…' (AI 답변 #10), '상권 모습이 달라졌다.' (AI 답변 #12)");
+        assertThat(after.usedParts().lines()).hasSize(2);
+        assertThat(after.usedParts()).contains("문항 1 – 이해·조사: \"부정적 영향 알려줘\"");
         assertThat(after.reason().lines()).containsExactly(
-                "문항 1 '부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다…': AI 답변 #10과 26자 이상 같음",
-                "문항 1 '상권 모습이 달라졌다.': AI 답변 #12의 표현을 바꿔 썼다고 판정(Haiku)",
-                "문항 1 '나는 시장을 살려야 한다고 본다.': AI 답변 #12에도 있지만 학생이 질문에서 먼저 쓴 표현이라 학생 문장으로 봄");
+                "문항 1 답안 1번째 문장 – AI 답변 인용: AI 답변 #10과 26자 이상 같음",
+                "문항 1 답안 2번째 문장 – AI 답변 인용 \"상권이 바뀌었습니다.\": AI 답변 #12의 표현을 바꿔 썼다고 판정(Haiku)",
+                "문항 1 답안 3번째 문장 – AI 답변 #12에도 있지만 학생이 질문에서 먼저 쓴 표현이라 학생 문장으로 봄");
         assertThat(after.evidence().get(0).matchingAnswerParagraphs()).containsExactly(1);
         var none = analyzer.generateDisclosure("e", "p", root, Instant.EPOCH, List.of(), SemanticJudge.STATUS_PENDING);
-        assertThat(none.usedParts()).isEqualTo("답안에 AI 답변을 그대로 쓴 문장 없음");
+        assertThat(none.reason()).contains("분석할 답안 문장이 없습니다.");
         assertThat(none.reason()).contains("표현을 바꿔 썼는지 판정하는 중");
     }
 

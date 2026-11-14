@@ -178,12 +178,14 @@ public class AssessmentService {
         return analyzeAndStore(id,pid);
     }
     private Analysis analyzeAndStore(String id,String pid) {
-        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
+        db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id);
+        var src=reportsWorkWithoutAuth(id,pid);
+        var result=compute(id,pid,src);
         var analyzedAt=OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC);
         int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",encode(result),analyzedAt,result.semanticStatus(),pid);
         if(updated==0) db.update("INSERT INTO grading_analyses(participant_id,evaluation_id,analysis_status,result_json,requested_at,analyzed_at,semantic_status) VALUES (?,?,'DONE',?,?,?,?)",
                 pid,id,encode(result),analyzedAt,analyzedAt,result.semanticStatus());
-        disclosures.refreshUsedParts(id,pid,result); // 교사 문장 수정·재분석 뒤 자동 기록의 '답안에서 AI를 쓴 부분'도 같은 판정으로
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
         return result;
     }
     public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
@@ -211,7 +213,7 @@ public class AssessmentService {
         var result=compute(id,pid,src);
         db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
-        disclosures.refreshUsedParts(id,pid,result);
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
     }
     /** 스케줄러 전용: 2단계 판정이 필요한(semantic_status=PENDING) 분석의 LLM 후보를 만듭니다. 대상이 아니면 null. */
     public SemanticJudge.Plan prepareSemantic(String id,String pid) {
@@ -227,12 +229,13 @@ public class AssessmentService {
         if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty())return;
         var rows=db.queryForList("SELECT participant_id FROM grading_analyses WHERE participant_id=? AND evaluation_id=? AND analysis_status='DONE' AND semantic_status='PENDING'",String.class,pid,id);
         if(rows.isEmpty()) return;
-        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid),failure);
+        var src=reportsWorkWithoutAuth(id,pid);
+        var result=compute(id,pid,src,failure);
         // 실패 없이도 캐시가 채워지지 않았다면(예: 그사이 제출본 변경) PENDING으로 남아 다음 주기에 다시 판정합니다.
         boolean failed=SemanticJudge.STATUS_PARTIAL.equals(result.semanticStatus())||SemanticJudge.STATUS_UNAVAILABLE.equals(result.semanticStatus());
         db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=?,semantic_attempts=semantic_attempts+?,semantic_failed_at=? WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),failed?1:0,failed?now():null,pid);
-        disclosures.refreshUsedParts(id,pid,result);
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
     }
     public void markSemanticUnavailable(String pid) {
         db.update("UPDATE grading_analyses SET semantic_status='UNAVAILABLE',semantic_attempts=semantic_attempts+1,semantic_failed_at=? WHERE participant_id=? AND semantic_status='PENDING'",now(),pid);
@@ -260,9 +263,11 @@ public class AssessmentService {
         if(rows.isEmpty()||!submitted(pid)) return;
         String id=rows.get(0);
         if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty()) return;
-        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
+        var src=reportsWorkWithoutAuth(id,pid);
+        var result=compute(id,pid,src);
         db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=? WHERE participant_id=? AND analysis_status='DONE'",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
     }
 
     // ===== 점수 =====

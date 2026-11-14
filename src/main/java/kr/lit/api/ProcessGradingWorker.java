@@ -8,8 +8,8 @@ import java.util.List;
 
 @Component
 public class ProcessGradingWorker {
-    private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;private final ProcessRubricGrader rubric;
-    public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine,ProcessRubricGrader rubric){this.repository=repository;this.ai=ai;this.engine=engine;this.rubric=rubric;}
+    private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;private final ProcessRubricGrader rubric;private final AutomaticDisclosureService disclosures;
+    public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine,ProcessRubricGrader rubric,AutomaticDisclosureService disclosures){this.repository=repository;this.ai=ai;this.engine=engine;this.rubric=rubric;this.disclosures=disclosures;}
     /**
      * 대기 작업을 처리합니다. LLM 루브릭 판정(rubric 키)이 켜져 있으면 질문 용도·답안 기여도 분류가 끝난 학생부터(최대 10분 대기) 학생 단위로 판정합니다.
      * 다시 제출하면 이전 대기 작업은 SUPERSEDED가 되어 마지막 제출본만 채점합니다(ProcessGradingRepository.insertJob).
@@ -46,6 +46,7 @@ public class ProcessGradingWorker {
         if(!repository.claimJob(job))return;
         try {
             var input=repository.getInput(job);Result result;
+            disclosures.getDisclosure(input.evaluationId(),input.participantId());
             if(rubric.isActive()){var graded=gradeWithJudge(job,input);repository.completeJob(job,rubric.modelLabel(),graded);carryOverReview(job,input,graded);return;}
             if(input.policy()==null)result=engine.hold(input,"PRE_EVALUATION_POLICY_REQUIRED");
             else if(engine.isV3(input)&&input.policy().excludedCriteria().containsAll(Criterion.active()))result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
