@@ -34,12 +34,11 @@ class ProcessGradingApiTest extends AuthTestSupport {
     Job latest(Fixture f){as(teacher);return service.getRuns(f.id(),f.pid()).get(0);}
     AiOutput validOutput(Input input) {
         var recommendations=new ArrayList<Recommendation>();var engine=new ProcessGradingEngine();
-        for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY) {
+        for(String q:input.questionIds())for(var c:Criterion.active()) {
             var src=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")&&s.questionId().equals(q)).findFirst().orElseThrow();
             recommendations.add(new Recommendation(q,c,4,"과제 조건에 연결함","발전·반영의 추가 근거 부족",List.of(new Condition(engine.requiredConditions(c,4).get(0),List.of(new Citation(src.id(),src.text())))),List.of(),List.of()));
         }
         var disclosure=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")).findFirst().orElseThrow();
-        recommendations.add(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,4,"활용 공개","추가 이유 부족",List.of(new Condition("TRANSPARENCY_L4",List.of(new Citation(disclosure.id(),disclosure.text())))),List.of(),List.of()));
         return V3GradingTestData.explain(input,new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations));
     }
     @Test void submissionFreezesInputsAndWorkerPublishesSeventyFiveWithVersionedReview() throws Exception {
@@ -59,7 +58,7 @@ class ProcessGradingApiTest extends AuthTestSupport {
         assertThat(service.getRuns(f.id(),f.pid())).hasSize(2);
         mvc.perform(body(request(post(root(f)+"/"+firstId+"/confirm"),teacher),new ConfirmRequest(2))).andExpect(status().isConflict()).andExpect(jsonPath("code").value("PROCESS_RESULT_STALE"));
     }
-    @Test void fiveQuestionsAreBatchedAndGlobalTransparencyIsCountedOnce() {
+    @Test void fiveQuestionsAreBatchedWithoutTransparency() {
         as(teacher);var e=evaluations.create("다문항 평가",60);
         var questions=new ArrayList<QuestionInput>();for(int i=1;i<=5;i++)questions.add(new QuestionInput(i,"문항"+i,"과제 조건을 설명하세요."));
         var configured=work.configure(e.id(),new Configure(AiPolicy.FULL,questions));
@@ -72,8 +71,8 @@ class ProcessGradingApiTest extends AuthTestSupport {
         var job=service.getRuns(e.id(),p.participantId()).get(0);
         when(ai.recommendLevels(any())).thenAnswer(call->validOutput(call.getArgument(0)));worker.processJob(job.id());
         var result=service.getRuns(e.id(),p.participantId()).get(0).result();
-        assertThat(result.cells()).hasSize(21);assertThat(result.total()).isEqualByComparingTo("75.00");
-        assertThat(result.cells().stream().filter(c->c.criterion()==Criterion.TRANSPARENCY).count()).isEqualTo(1);
+        assertThat(result.cells()).hasSize(20);assertThat(result.total()).isEqualByComparingTo("75.00");
+        assertThat(result.cells().stream().filter(c->c.criterion()==Criterion.TRANSPARENCY).count()).isZero();
         verify(ai,times(2)).recommendLevels(any());
     }
     @Test void missingPolicyUsesEvaluationDefaultsAndProviderFailureNeverBecomesZero() {
@@ -126,11 +125,11 @@ class ProcessGradingApiTest extends AuthTestSupport {
         worker.processJob(job.id());
         mvc.perform(request(get(path),teacher)).andExpect(status().isOk())
             .andExpect(jsonPath("rubricVersion").value(RUBRIC_VERSION)).andExpect(jsonPath("total").value(75))
-            .andExpect(jsonPath("criteria.length()").value(5)).andExpect(jsonPath("studentContribution.level").value(4))
-            .andExpect(jsonPath("studentContribution.score").value(18.75)).andExpect(jsonPath("studentContribution.label").value("잘함"))
+            .andExpect(jsonPath("criteria.length()").value(4)).andExpect(jsonPath("studentContribution.level").value(4))
+            .andExpect(jsonPath("studentContribution.score").value(22.5)).andExpect(jsonPath("studentContribution.label").value("잘함"))
             .andExpect(jsonPath("textSimilarity.basis").value("TEXT_SIMILARITY_ESTIMATE_V2"));
         as(teacher);service.saveReview(f.id(),f.pid(),job.id(),new ReviewRequest(0,List.of(new LevelOverride(f.question(),Criterion.CONTRIBUTION,5,"학생의 핵심 판단 확인")),"CONFIRMED_OK","확인"));
-        mvc.perform(request(get(path),teacher)).andExpect(jsonPath("studentContribution.level").value(5)).andExpect(jsonPath("total").value(81.25)).andExpect(jsonPath("confirmed").value(false));
+        mvc.perform(request(get(path),teacher)).andExpect(jsonPath("studentContribution.level").value(5)).andExpect(jsonPath("total").value(82.5)).andExpect(jsonPath("confirmed").value(false));
         mvc.perform(request(get(path),newTeacher())).andExpect(status().isNotFound());
     }
     @Test void teacherReplacesAiScoreWithDirectScoreAndConfirms() throws Exception {
@@ -141,13 +140,13 @@ class ProcessGradingApiTest extends AuthTestSupport {
         var body=new java.util.HashMap<String,Object>(Map.of("expectedRevision",0,"complianceDecision","CONFIRMED_OK","complianceReason","확인",
                 "overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",21.5,"reason","학생 판단을 직접 확인"))));
         mvc.perform(body(request(put(review),teacher),body)).andExpect(status().isOk())
-            .andExpect(jsonPath("overrides[0].score").value(21.5)).andExpect(jsonPath("overrides[0].level").isEmpty()).andExpect(jsonPath("result.total").value(77.75));
+            .andExpect(jsonPath("overrides[0].score").value(21.5)).andExpect(jsonPath("overrides[0].level").isEmpty()).andExpect(jsonPath("result.total").value(74.0));
         mvc.perform(request(get(analysis),teacher)).andExpect(jsonPath("studentContribution.score").value(21.5))
-            .andExpect(jsonPath("studentContribution.level").isEmpty()).andExpect(jsonPath("studentContribution.label").value("교사 점수 입력")).andExpect(jsonPath("total").value(77.75));
-        body.put("expectedRevision",1);body.put("overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",25.5,"reason","만점 초과")));
+            .andExpect(jsonPath("studentContribution.level").isEmpty()).andExpect(jsonPath("studentContribution.label").value("교사 점수 입력")).andExpect(jsonPath("total").value(74.0));
+        body.put("expectedRevision",1);body.put("overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",30.5,"reason","만점 초과")));
         mvc.perform(body(request(put(review),teacher),body)).andExpect(status().isBadRequest());
-        body.put("overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",30,"reason","범위 밖")));
+        body.put("overrides",List.of(Map.of("questionId",f.question(),"criterion","CONTRIBUTION","score",-1,"reason","범위 밖")));
         mvc.perform(body(request(put(review),teacher),body)).andExpect(status().isBadRequest());
-        mvc.perform(body(request(post(root(f)+"/"+job.id()+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isOk()).andExpect(jsonPath("confirmed").value(true)).andExpect(jsonPath("result.total").value(77.75));
+        mvc.perform(body(request(post(root(f)+"/"+job.id()+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isOk()).andExpect(jsonPath("confirmed").value(true)).andExpect(jsonPath("result.total").value(74.0));
     }
 }

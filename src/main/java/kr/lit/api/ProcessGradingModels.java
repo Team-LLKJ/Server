@@ -15,7 +15,14 @@ public final class ProcessGradingModels {
     public static final String GLOBAL="GLOBAL";
     public enum Criterion { PURPOSE, SELF_DIRECTION, CRITICAL_REVIEW, CONTRIBUTION, TRANSPARENCY;
         public String displayName(){return switch(this){case PURPOSE->"AI 활용 목적의 적절성";case SELF_DIRECTION->"자기 주도적 사고";case CRITICAL_REVIEW->"AI 답변의 비판적 검토";case CONTRIBUTION->"최종 답안에 대한 학생의 기여";case TRANSPARENCY->"AI 활용 과정의 투명성";};}
-        public int maxScore(){return switch(this){case PURPOSE,TRANSPARENCY->15;case SELF_DIRECTION,CONTRIBUTION->25;case CRITICAL_REVIEW->20;};}
+        /** 배점(합계 100, 2026-11-14): 활용 목적 20, 자기 주도 30, 비판적 검토 20, 학생 기여 30. 투명성은 평가하지 않습니다(0). */
+        public int maxScore(){return switch(this){case PURPOSE,CRITICAL_REVIEW->20;case SELF_DIRECTION,CONTRIBUTION->30;case TRANSPARENCY->0;};}
+        /**
+         * 투명성은 LIT가 질문·답변·답안 반영을 모두 자동 기록하므로 평가하지 않습니다(2026-11-14). 이전 결과를 읽기 위해 값만 남깁니다.
+         */
+        public boolean retired(){return this==TRANSPARENCY;}
+        /** 지금 평가하는 항목(투명성 제외). */
+        public static List<Criterion> active(){return java.util.Arrays.stream(values()).filter(c->!c.retired()).toList();}
     }
     public enum NoAiPolicy { HOLD, NOT_APPLICABLE, USE_RECORDED_EVIDENCE }
     public record QuestionWeight(@NotBlank String questionId,@NotNull @DecimalMin("0.0001") @DecimalMax("100") @Digits(integer=3,fraction=4) BigDecimal weight) {}
@@ -61,7 +68,7 @@ public final class ProcessGradingModels {
     public record JudgeInfo(@io.swagger.v3.oas.annotations.media.Schema(description="Gemini 회차별 단계(1~5 정수, \"NA\", \"HOLD\", 근거 없는 무효 회차는 null)") List<Object> votes,
                             @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답(1~5, \"NA\", \"HOLD\"), 아니면 null") Object haikuLevel,
                             @io.swagger.v3.oas.annotations.media.Schema(description="교사 직접 입력이 필요한지(교사가 확정하면 false)") boolean needsReview,
-                            @io.swagger.v3.oas.annotations.media.Schema(description="판정 사유. DISAGREEMENT: Gemini 과반과 Haiku가 2단계 이상 다름 등(교사 입력), HAIKU_DECIDED: 판정이 엇갈려 Haiku 기준으로 정함(과반과 1단계 차이, needsReview=false), INSUFFICIENT_DATA: 대화가 너무 적음(모델 호출 안 함), NO_AI_USE: AI 미사용 학생의 자기 주도적 사고(교사 확인, HOLD), SAVE_ERROR: 활용 설명란 저장 오류(투명성 HOLD), PROMPT_INJECTION: 학생 글에 채점 지시로 보이는 문장(모델 호출 안 함, 전 항목 HOLD)",allowableValues={"DISAGREEMENT","HAIKU_DECIDED","INSUFFICIENT_DATA","NO_AI_USE","SAVE_ERROR","PROMPT_INJECTION"},nullable=true) String reviewReason,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="판정 사유. DISAGREEMENT: Gemini 과반과 Haiku가 2단계 이상 다름 등(교사 입력), HAIKU_DECIDED: 판정이 엇갈려 Haiku 기준으로 정함(과반과 1단계 차이, needsReview=false), INSUFFICIENT_DATA: 대화가 너무 적음(모델 호출 안 함), NO_AI_USE: AI 미사용 학생의 자기 주도적 사고(교사 확인, HOLD), SAVE_ERROR: (2026-11-14 이전 결과만) 활용 설명란 저장 오류로 투명성 HOLD, PROMPT_INJECTION: 학생 글에 채점 지시로 보이는 문장(모델 호출 안 함, 전 항목 HOLD)",allowableValues={"DISAGREEMENT","HAIKU_DECIDED","INSUFFICIENT_DATA","NO_AI_USE","SAVE_ERROR","PROMPT_INJECTION"},nullable=true) String reviewReason,
                             @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","SERVER_RULE"}) String method,List<RubricJudge.Run> runs,
                             String promptVersion,String geminiModel,String haikuModel,
                             @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸는데 Haiku 판정이 없는 이유(NOT_CONFIGURED: Anthropic 키 없음, NO_VERIFIED_EVIDENCE: Haiku 인용을 원문에서 2번 모두 못 찾음, 그 외 호출 오류 코드)",nullable=true) String haikuError,

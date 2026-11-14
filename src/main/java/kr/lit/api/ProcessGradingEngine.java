@@ -22,12 +22,12 @@ public class ProcessGradingEngine {
     public Result evaluate(Input input,AiOutput output) {
         if(output==null||output.recommendations()==null||output.compliance()==null)throw new IllegalArgumentException("INVALID_AI_OUTPUT");
         var expected=keys(input);var recommended=new HashMap<String,Recommendation>();
-        for(var r:output.recommendations())if(r==null||r.criterion()==null||!expected.contains(key(r.questionId(),r.criterion()))||recommended.put(key(r.questionId(),r.criterion()),r)!=null)
+        // 투명성(2026-11-14 삭제) 추천은 이전 모델 답에 남아 있어도 무시합니다.
+        for(var r:output.recommendations())if(r!=null&&r.criterion()!=null&&r.criterion().retired())continue;else if(r==null||r.criterion()==null||!expected.contains(key(r.questionId(),r.criterion()))||recommended.put(key(r.questionId(),r.criterion()),r)!=null)
             throw new IllegalArgumentException("INVALID_AI_OUTPUT");
         if(recommended.size()!=expected.size())throw new IllegalArgumentException("INCOMPLETE_AI_OUTPUT");
         var cells=new ArrayList<Cell>();
-        for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY)cells.add(excluded(input,c)?notApplicable(q,c):validate(input,recommended.get(key(q,c))));
-        cells.add(excluded(input,Criterion.TRANSPARENCY)?notApplicable(GLOBAL,Criterion.TRANSPARENCY):validate(input,recommended.get(key(GLOBAL,Criterion.TRANSPARENCY))));
+        for(String q:input.questionIds())for(var c:Criterion.active())cells.add(excluded(input,c)?notApplicable(q,c):validate(input,recommended.get(key(q,c))));
         var compliance=output.compliance();
         if(!Set.of("OK","CHECK","INSUFFICIENT_EVIDENCE").contains(Objects.toString(compliance.status(),""))||!validCitations(input,GLOBAL,compliance.evidence())
                 ||compliance.reason()==null||compliance.reason().isBlank()||(!"INSUFFICIENT_EVIDENCE".equals(compliance.status())&&compliance.evidence().isEmpty()))
@@ -93,8 +93,7 @@ public class ProcessGradingEngine {
     }
     public Result hold(Input input,String reason) {
         var cells=new ArrayList<Cell>();
-        for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY)cells.add(excluded(input,c)?notApplicable(q,c):held(new Recommendation(q,c,null,reason,"",List.of(),List.of(),List.of()),reason));
-        cells.add(excluded(input,Criterion.TRANSPARENCY)?notApplicable(GLOBAL,Criterion.TRANSPARENCY):held(new Recommendation(GLOBAL,Criterion.TRANSPARENCY,null,reason,"",List.of(),List.of(),List.of()),reason));
+        for(String q:input.questionIds())for(var c:Criterion.active())cells.add(excluded(input,c)?notApplicable(q,c):held(new Recommendation(q,c,null,reason,"",List.of(),List.of(),List.of()),reason));
         return calculate(input,cells,new Compliance("INSUFFICIENT_EVIDENCE",reason,List.of(),List.of()),List.of(reason),null);
     }
     /** 학생 단위 결과(LLM 루브릭, 칸마다 questionId=null)인지. */
@@ -168,6 +167,6 @@ public class ProcessGradingEngine {
     }
     private static int roundInt(BigDecimal v){return v.setScale(0,RoundingMode.HALF_UP).intValueExact();}
     private BigDecimal score(Input input,Criterion c,int level){return BigDecimal.valueOf(c.maxScore()).multiply(BigDecimal.valueOf(level-minimumLevel(input))).divide(BigDecimal.valueOf(4));}
-    private Set<String> keys(Input input){var keys=new HashSet<String>();for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY&&!excluded(input,c))keys.add(key(q,c));if(!excluded(input,Criterion.TRANSPARENCY))keys.add(key(GLOBAL,Criterion.TRANSPARENCY));return keys;}
+    private Set<String> keys(Input input){var keys=new HashSet<String>();for(String q:input.questionIds())for(var c:Criterion.active())if(!excluded(input,c))keys.add(key(q,c));return keys;}
     private String key(String q,Criterion c){return Objects.toString(q,"")+":"+c;}
 }

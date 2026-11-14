@@ -37,18 +37,8 @@ public class AutomaticDisclosureService {
             if(!"READY".equals(previous.status())||!"SYSTEM_GENERATED".equals(previous.source()))return;
             var snapshots=repository.getSubmission(pid);if(snapshots.isEmpty())return;
             var source=json.readTree(snapshots.get(0));
-            var paragraphs=new java.util.HashMap<Long,java.util.TreeSet<Integer>>();
-            var questionOf=new java.util.HashMap<Long,String>();
-            for(var turn:source.path("conversations"))questionOf.put(turn.path("id").asLong(),turn.path("questionId").asText());
-            for(var s:analysis.sentences()){
-                if(!AssessmentAnalyzer.SENTENCE_AI.equals(s.source())||s.conversationId()==null||s.paragraphId()==null)continue;
-                if(!s.questionId().equals(questionOf.get(s.conversationId())))continue;
-                int at=s.paragraphId().lastIndexOf("-p");if(at<0)continue;
-                try{paragraphs.computeIfAbsent(s.conversationId(),k->new java.util.TreeSet<>()).add(Integer.parseInt(s.paragraphId().substring(at+2)));}catch(NumberFormatException ignored){}
-            }
-            var map=new java.util.HashMap<Long,List<Integer>>();paragraphs.forEach((k,v)->map.put(k,List.copyOf(v)));
-            var result=new AutomaticDisclosureAnalyzer().generateDisclosure(id,pid,source,Instant.now(),map);
-            if(result.usedParts().equals(previous.usedParts())&&result.evidence().equals(previous.evidence()))return;
+            var result=new AutomaticDisclosureAnalyzer().generateDisclosure(id,pid,source,Instant.now(),analysis.sentences(),analysis.semanticStatus());
+            if(result.usedParts().equals(previous.usedParts())&&result.reason().equals(previous.reason())&&result.evidence().equals(previous.evidence()))return;
             repository.updateDisclosure(pid,json.writeValueAsString(result));
         }catch(Exception e){throw new IllegalStateException(e);}
     }

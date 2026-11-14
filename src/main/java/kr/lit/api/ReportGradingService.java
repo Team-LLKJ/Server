@@ -42,6 +42,7 @@ public class ReportGradingService {
         var cells=review==null?List.<ProcessGradingModels.Cell>of():review.result().cells();
         for(var criterion:ProcessGradingModels.Criterion.values()){
             var cell=cells.stream().filter(c->c.criterion()==criterion).findFirst().orElse(null);
+            if(cell==null&&criterion.retired())continue; // 투명성은 이전 결과에 있을 때만
             if(cell==null){criteria.add(new GradingCriterion(criterion.ordinal()+1,criterion.displayName(),criterion.maxScore(),null,false,null,null));continue;}
             boolean na=cell.status().equals("NOT_APPLICABLE");
             String feedback=String.join(" ",review.overrides().stream().filter(o->o.criterion()==criterion).map(ProcessGradingModels.LevelOverride::reason).toList());
@@ -58,6 +59,7 @@ public class ReportGradingService {
         var criteria=new ArrayList<GradingCriterion>();
         for(var criterion:ProcessGradingModels.Criterion.values()){
             var cells=result==null?List.<ProcessGradingModels.Cell>of():result.cells().stream().filter(c->c.criterion()==criterion).toList();
+            if(cells.isEmpty()&&criterion.retired())continue;
             java.math.BigDecimal score=java.math.BigDecimal.ZERO;boolean complete=!cells.isEmpty();
             for(var cell:cells){
                 if(cell.score()==null){complete=false;continue;}

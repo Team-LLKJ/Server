@@ -62,7 +62,7 @@ public class ProcessRubricGrader {
             var record=judge.buildRecord(input,context(input));
             var excluded=input.policy()==null?List.<Criterion>of():input.policy().excludedCriteria();
             var cells=new ArrayList<Cell>();int confirmed=0,review=0,na=0;
-            for(var criterion:Criterion.values()) {
+            for(var criterion:Criterion.active()) { // 투명성은 판정하지 않고 결과에도 넣지 않습니다(2026-11-14)
                 if(excluded.contains(criterion)) { cells.add(new Cell(null,criterion,null,null,"NOT_APPLICABLE","교사의 사전 정책에 따라 평가 대상이 아닙니다.","",List.of(),List.of(),List.of()));na++;continue; }
                 heartbeat.run();
                 var indicator=Indicator.valueOf(criterion.name());

@@ -93,13 +93,13 @@ class ProcessRubricApiTest extends AuthTestSupport {
 
         worker.processJob(first.id());first=latest(f);
         assertThat(first.status()).isEqualTo("DONE");assertThat(first.model()).isEqualTo("gemini-test×3+claude-test");
-        assertThat(first.result().cells()).hasSize(5).allMatch(c->c.questionId()==null&&c.level()==4&&c.status().equals("RECOMMENDED"));
-        assertThat(first.result().total()).isEqualByComparingTo("75"); // 11+19+15+19+11 (항목마다 정수로 반올림한 뒤 합)
+        assertThat(first.result().cells()).hasSize(4).allMatch(c->c.questionId()==null&&c.level()==4&&c.status().equals("RECOMMENDED"));
+        assertThat(first.result().total()).isEqualByComparingTo("76"); // 15+23+15+23 (항목마다 정수로 반올림한 뒤 합, 22.5→23)
         var purpose=cell(first.result(),Criterion.PURPOSE);
-        assertThat(purpose.score()).isEqualByComparingTo("11");assertThat(purpose.adjustedMaxScore()).isEqualTo(15);assertThat(purpose.judge().votes()).containsExactly(4,4,4);assertThat(purpose.judge().needsReview()).isFalse();
+        assertThat(purpose.score()).isEqualByComparingTo("15");assertThat(purpose.adjustedMaxScore()).isEqualTo(20);assertThat(purpose.judge().votes()).containsExactly(4,4,4);assertThat(purpose.judge().needsReview()).isFalse();
         var citation=purpose.conditions().get(0).evidence().stream().filter(c->c.location().conversationId()!=null).findFirst().orElseThrow();
         assertThat(citation.quote()).isEqualTo(QUESTIONS.get(1));assertThat(citation.location().messageRole()).isEqualTo("USER");
-        assertThat(rubricCalls.get()).isEqualTo(15); // 학생 한 명 × 5항목 × 3번
+        assertThat(rubricCalls.get()).isEqualTo(12); // 학생 한 명 × 4항목 × 3번(투명성 없음)
 
         // 종료 후 유예 시간에 문항 2를 두 번 고쳐 저장(자동 제출본 갱신) → 새 작업. 시작 전 이전 작업은 SUPERSEDED.
         work.save(f.id(),f.token(),f.questions().get(1),new SaveAnswer("<p>"+ANSWER2+" 예산은 구청과 나눈다.</p>",1,AnswerSource.DIRECT,null));
@@ -117,9 +117,9 @@ class ProcessRubricApiTest extends AuthTestSupport {
         // 학생 단위 칸은 questionId=null로 보정합니다.
         String path=runs(f)+"/"+third.id();
         var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(new LevelOverride(null,Criterion.CONTRIBUTION,5,null)),null,null)));
-        assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("81"); // 11+19+15+25+11
+        assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("83"); // 15+23+15+30
         var reviewed=review.path("result").path("cells").get(3);
-        assertThat(reviewed.path("questionId").isNull()).isTrue();assertThat(reviewed.path("status").asText()).isEqualTo("TEACHER_REVIEWED");assertThat(reviewed.path("score").decimalValue()).isEqualByComparingTo("25");assertThat(reviewed.path("adjustedMaxScore").asInt()).isEqualTo(25);
+        assertThat(reviewed.path("questionId").isNull()).isTrue();assertThat(reviewed.path("status").asText()).isEqualTo("TEACHER_REVIEWED");assertThat(reviewed.path("score").decimalValue()).isEqualByComparingTo("30");assertThat(reviewed.path("adjustedMaxScore").asInt()).isEqualTo(30);
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(1,List.of(new LevelOverride("not-a-question",Criterion.PURPOSE,3,"잘못된 칸")),"CONFIRMED_OK","확인")))
                 .andExpect(status().isBadRequest());
 
@@ -130,8 +130,8 @@ class ProcessRubricApiTest extends AuthTestSupport {
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isOk()).andExpect(jsonPath("confirmed").value(true));
         var confirmed=reports.getSnapshot(f.id(),f.pid());
         assertThat(confirmed.status()).isEqualTo("CONFIRMED");
-        assertThat(confirmed.criteria()).extracting(ReportModels.GradingCriterion::score).containsExactly(11.0,19.0,15.0,25.0,11.0);
-        assertThat(confirmed.teacherReview().result().partialScore().assessedScore()).isEqualByComparingTo("81");
+        assertThat(confirmed.criteria()).extracting(ReportModels.GradingCriterion::score).containsExactly(15.0,23.0,15.0,30.0);
+        assertThat(confirmed.teacherReview().result().partialScore().assessedScore()).isEqualByComparingTo("83");
         assertThat(confirmed.evaluationSummary().strengths()).anyMatch(entry->QUESTIONS.get(1).equals(entry.quote()));
         var analysis=ok(request(get(runs(f).replace("/runs","/analysis")),teacher));
         assertThat(json.treeToValue(analysis.path("summary"),ProcessGradingSummary.class)).isEqualTo(confirmed.evaluationSummary());
@@ -140,20 +140,21 @@ class ProcessRubricApiTest extends AuthTestSupport {
         worker.processJob(again.id());
         as(teacher);var carried=service.getReview(f.id(),f.pid(),again.id());
         assertThat(carried.confirmed()).isFalse();assertThat(carried.overrides()).extracting(LevelOverride::level).containsExactly(5);
-        assertThat(cell(carried.result(),Criterion.CONTRIBUTION).level()).isEqualTo(5);assertThat(carried.result().total()).isEqualByComparingTo("81");
+        assertThat(cell(carried.result(),Criterion.CONTRIBUTION).level()).isEqualTo(5);assertThat(carried.result().total()).isEqualByComparingTo("83");
     }
     @Test void selfDirectionTeacherInputRedistributesNaAndRounds() throws Exception {
-        // AI를 쓰지 않은 학생: 자기 주도적 사고는 모델 없이 교사 확인(HOLD·NO_AI_USE), 나머지 4개는 NA
+        // AI를 쓰지 않은 학생: 자기 주도적 사고는 모델 없이 교사 확인(HOLD·NO_AI_USE), 나머지 3개는 NA
         var f=endWithAutoSubmission(List.of());
         var job=latest(f);worker.processJob(job.id());job=latest(f);
         var r=job.result();
         assertThat(r.status()).isEqualTo("HOLD");assertThat(r.total()).isNull();
-        for(var c:List.of(Criterion.PURPOSE,Criterion.CRITICAL_REVIEW,Criterion.CONTRIBUTION,Criterion.TRANSPARENCY)) assertThat(cell(r,c).status()).isEqualTo("NOT_APPLICABLE");
+        assertThat(r.cells()).noneMatch(c->c.criterion()==Criterion.TRANSPARENCY);
+        for(var c:List.of(Criterion.PURPOSE,Criterion.CRITICAL_REVIEW,Criterion.CONTRIBUTION)) assertThat(cell(r,c).status()).isEqualTo("NOT_APPLICABLE");
         var sd=cell(r,Criterion.SELF_DIRECTION);
         assertThat(sd.status()).isEqualTo("HOLD");assertThat(sd.level()).isNull();assertThat(sd.judge().needsReview()).isTrue();assertThat(sd.judge().reviewReason()).isEqualTo("NO_AI_USE");
         assertThat(sd.judge().votes()).isEmpty();assertThat(sd.judge().haikuLevel()).isNull();assertThat(sd.judge().method()).isEqualTo("SERVER_RULE");
         assertThat(ProcessGradingSummary.fromResult(r).checks()).anyMatch(c->c.startsWith("자기 주도적 사고"));
-        assertThat(r.partialScore().heldMaxScore()).isEqualByComparingTo("100");assertThat(r.partialScore().notApplicableMaxScore()).isEqualByComparingTo("75");
+        assertThat(r.partialScore().heldMaxScore()).isEqualByComparingTo("100");assertThat(r.partialScore().notApplicableMaxScore()).isEqualByComparingTo("70");
         assertThat(sd.adjustedMaxScore()).isEqualTo(100);assertThat(sd.score()).isNull(); // HOLD 몫은 교사가 채울 때까지 비움
         assertThat(rubricCalls.get()).isZero(); // 모델을 부르지 않음
         String path=runs(f)+"/"+job.id();
@@ -161,19 +162,19 @@ class ProcessRubricApiTest extends AuthTestSupport {
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),null,null))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isConflict()).andExpect(jsonPath("code").value("PROCESS_CONFIRMATION_HELD"));
 
-        // 교사가 자기 주도 4단계 입력: 25점 항목 하나가 재분배 배점 100점 → 100 × 3/4 = 75
+        // 교사가 자기 주도 4단계 입력: 30점 항목 하나가 재분배 배점 100점 → 100 × 3/4 = 75
         var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(1,List.of(level(Criterion.SELF_DIRECTION,4)),"CONFIRMED_OK","확인")));
         assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("75");assertThat(review.at("/result/status").asText()).isEqualTo("DONE");
         assertThat(review.at("/result/cells/1/score").decimalValue()).isEqualByComparingTo("75");assertThat(review.at("/result/cells/1/adjustedMaxScore").asInt()).isEqualTo(100);
         assertThat(review.at("/result/cells/1/judge/needsReview").asBoolean()).isFalse();
-        // 점수를 직접 넣으면 원래 배점 기준 정수로 반올림(13.33 → 13) 후 재분배 배점 비율로 환산: 13 × 100/25 = 52
+        // 점수를 직접 넣으면 원래 배점 기준 정수로 반올림(13.33 → 13) 후 재분배 배점 비율로 환산: 13 × 100/30 = 43.3 → 43
         review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(2,List.of(LevelOverride.ofScore(null,Criterion.SELF_DIRECTION,new BigDecimal("13.33"),"직접 점수")),"CONFIRMED_OK","확인")));
-        assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("52");
+        assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("43");
         assertThat(review.at("/result/partialScore/assessedMaxScore").decimalValue()).isEqualByComparingTo("100");
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(3))).andExpect(status().isOk());
         var report=reports.getSnapshot(f.id(),f.pid());
-        assertThat(report.criteria()).filteredOn(ReportModels.GradingCriterion::notApplicable).hasSize(4);
-        assertThat(report.criteria().get(1).score()).isEqualTo(52.0);assertThat(report.criteria().get(1).maxScore()).isEqualTo(100);
+        assertThat(report.criteria()).filteredOn(ReportModels.GradingCriterion::notApplicable).hasSize(3);assertThat(report.criteria()).hasSize(4);
+        assertThat(report.criteria().get(1).score()).isEqualTo(43.0);assertThat(report.criteria().get(1).maxScore()).isEqualTo(100);
     }
     @Test void holdIsNotRedistributedButNaIs() throws Exception {
         gemini.put("AI 활용 목적의 적절성",List.of("NA"));                       // 모델이 해당 없음 → 배점 재분배
@@ -182,18 +183,18 @@ class ProcessRubricApiTest extends AuthTestSupport {
         var job=latest(f);worker.processJob(job.id());job=latest(f);
         var r=job.result();
         assertThat(cell(r,Criterion.PURPOSE).status()).isEqualTo("NOT_APPLICABLE");assertThat(cell(r,Criterion.CRITICAL_REVIEW).status()).isEqualTo("HOLD");
-        // 기준 85점(100 − NA 15)을 100으로 환산. HOLD 20점은 자기 몫(23.5)을 그대로 남겨 둡니다.
+        // 기준 80점(100 − NA 20)을 100으로 환산. HOLD 20점은 자기 몫(25)을 그대로 남겨 둡니다.
         var p=r.partialScore();
-        assertThat(p.notApplicableMaxScore()).isEqualByComparingTo("15");
-        assertThat(p.heldMaxScore()).isEqualByComparingTo("24");                  // 20 × 100/85 = 23.5 → 24
-        assertThat(p.assessedMaxScore()).isEqualByComparingTo("76");              // 29 + 29 + 18
-        assertThat(p.assessedScore()).isEqualByComparingTo("58");                 // 22 + 22 + 14 (29×3/4=21.75→22, 18×3/4=13.5→14)
-        assertThat(r.cells()).extracting(Cell::adjustedMaxScore).containsExactly(0,29,24,29,18); // 재분배 배점 합 100
+        assertThat(p.notApplicableMaxScore()).isEqualByComparingTo("20");
+        assertThat(p.heldMaxScore()).isEqualByComparingTo("25");                  // 20 × 100/80 = 25
+        assertThat(p.assessedMaxScore()).isEqualByComparingTo("76");              // 38 + 38 (30 × 100/80 = 37.5 → 38)
+        assertThat(p.assessedScore()).isEqualByComparingTo("58");                 // 29 + 29 (38×3/4=28.5→29)
+        assertThat(r.cells()).extracting(Cell::adjustedMaxScore).containsExactly(0,38,25,38); // 재분배 배점 합(반올림으로 101)
         assertThat(r.total()).isNull();assertThat(r.status()).isEqualTo("HOLD");
         String path=runs(f)+"/"+job.id();
         // 보정 사유는 비워도 됩니다. 규정 준수 HOLD여도 학생 단위 결과는 확정할 수 있습니다.
         var review=ok(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(new LevelOverride(null,Criterion.CRITICAL_REVIEW,4,"")),"HOLD",null)));
-        assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("76");     // 58 + 24×3/4=18
+        assertThat(review.at("/result/total").decimalValue()).isEqualByComparingTo("77");     // 58 + 25×3/4=18.75→19
         assertThat(review.at("/result/cells/2/reason").asText()).isEmpty();
         assertThat(review.at("/result/partialScore/heldMaxScore").decimalValue()).isEqualByComparingTo("0");
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isOk());

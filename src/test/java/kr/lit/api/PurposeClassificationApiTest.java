@@ -60,12 +60,13 @@ class PurposeClassificationApiTest extends AuthTestSupport {
         var view=ok(request(get(usagePath(f)),teacher));
         assertThat(question(view,Q1).path("purpose").asText()).isEqualTo("UNDERSTAND");assertThat(question(view,Q1).path("needsReview").asBoolean()).isFalse();
         var q2=question(view,Q2);
-        assertThat(q2.path("purpose").asText()).isEqualTo("REVIEW");assertThat(q2.path("needsReview").asBoolean()).isTrue();
+        // 과반(REVIEW 2표)과 Haiku(REVIEW)가 같으면 확정(2026-11-14, 루브릭과 같은 규칙)
+        assertThat(q2.path("purpose").asText()).isEqualTo("REVIEW");assertThat(q2.path("needsReview").asBoolean()).isFalse();
         assertThat(q2.path("haikuPurpose").asText()).isEqualTo("REVIEW");assertThat(q2.path("method").asText()).isEqualTo("LLM_GEMINI_X3_HAIKU");
         assertThat(texts(q2.path("votes"))).containsExactly("REVIEW","REVIEW","UNDERSTAND");
         assertThat(question(view,Q1).path("haikuPurpose").isNull()).isTrue();
         assertThat(question(view,Q3).path("purpose").asText()).isEqualTo("EDIT");
-        assertThat(view.path("reviewCount").asInt()).isEqualTo(1);assertThat(view.path("pendingCount").asInt()).isZero();
+        assertThat(view.path("reviewCount").asInt()).isZero();assertThat(view.path("pendingCount").asInt()).isZero();
         double sum=0;for(var g:view.path("usage"))sum+=g.path("percentage").asDouble();assertThat(sum).isCloseTo(100.0,within(1e-9));
         assertThat(texts(view.path("usage"),"name")).containsExactly("이해·조사","비판적 검토","표현 수정");
 
@@ -75,7 +76,7 @@ class PurposeClassificationApiTest extends AuthTestSupport {
         assertThat(new HashSet<>(data.getAllValues())).hasSize(1);
         var items=json.readTree(data.getValue().substring(data.getValue().indexOf('{'))).path("items");
         var third=items.get(2);
-        assertThat(texts(third.path("previous"))).containsExactly(Q1,Q2);assertThat(third.path("previousAiAnswer").asText()).hasSize(200);
+        assertThat(texts(third.path("previous"))).containsExactly(Q1,Q2);assertThat(third.path("item").asText()).isEqualTo("문항\n광합성을 설명하세요.");assertThat(third.path("previousAiAnswer").asText()).hasSize(200);
         var haikuData=org.mockito.ArgumentCaptor.forClass(String.class);
         verify(client,times(1)).callAnthropic(eq(PurposeClassifier.INSTRUCTIONS),haikuData.capture(),isNull());
         var haikuItems=json.readTree(haikuData.getValue().substring(haikuData.getValue().indexOf('{'))).path("items");
@@ -92,7 +93,7 @@ class PurposeClassificationApiTest extends AuthTestSupport {
         assertThat(confirmed.path("purpose").asText()).isEqualTo("UNDERSTAND");assertThat(confirmed.path("teacherPurpose").asText()).isEqualTo("UNDERSTAND");
         assertThat(confirmed.path("needsReview").asBoolean()).isFalse();assertThat(patched.path("reviewCount").asInt()).isZero();
         var label=db.queryForMap("SELECT teacher_purpose,llm_purpose,votes,haiku_purpose,needs_review FROM purpose_labels WHERE conversation_id=?",q2Id);
-        assertThat(label).containsEntry("TEACHER_PURPOSE","UNDERSTAND").containsEntry("LLM_PURPOSE","REVIEW").containsEntry("VOTES","REVIEW,REVIEW,UNDERSTAND").containsEntry("HAIKU_PURPOSE","REVIEW").containsEntry("NEEDS_REVIEW",true);
+        assertThat(label).containsEntry("TEACHER_PURPOSE","UNDERSTAND").containsEntry("LLM_PURPOSE","REVIEW").containsEntry("VOTES","REVIEW,REVIEW,UNDERSTAND").containsEntry("HAIKU_PURPOSE","REVIEW").containsEntry("NEEDS_REVIEW",false);
 
         // 채점 지표의 질문 분류도 같은 결과를 씁니다(교사 확정 UNDERSTAND → 개념 이해, LLM EDIT → 표현 수정).
         var conversations=ok(request(get("/api/teacher/evaluations/"+f.id()+"/participants/"+f.pid()+"/conversations"),teacher));

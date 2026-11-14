@@ -65,7 +65,6 @@ public class ReportService {
    var snapshot=(com.fasterxml.jackson.databind.node.ObjectNode)decode(stored.get(0));boolean frozen=snapshot.hasNonNull("aiDisclosure");
    if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));
    if(!"SYSTEM_GENERATED".equals(snapshot.path("aiDisclosure").path("source").asText()))snapshot.set("studentAiDisclosure",snapshot.path("aiDisclosure"));
-   else if(hasStudentDisclosure(pid))snapshot.set("studentAiDisclosure",readDisclosure(pid)); // 학생이 직접 쓴 설명은 자동 기록과 함께 남깁니다
    snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.generateDisclosure(id,pid,snapshot)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
   }
   var root=json.createObjectNode();root.put("evaluationId",id);root.put("participantId",pid);
@@ -91,16 +90,12 @@ public class ReportService {
   root.set("aiDisclosure",json.valueToTree(closed?automaticDisclosure.generateDisclosure(id,pid,root):automaticDisclosure.getDisclosure(id,pid)));root.put("aiDisclosureFrozen",closed);
   return root;
  }
- private boolean hasStudentDisclosure(String pid){
-  return db.queryForObject("SELECT COUNT(*) FROM ai_disclosures WHERE participant_id=? AND (tools<>'' OR used_parts<>'' OR reason<>'')",Integer.class,pid)>0;
- }
  private JsonNode readDisclosure(String pid){
   var rows=db.queryForList("SELECT tools,used_parts,reason,updated_at FROM ai_disclosures WHERE participant_id=?",pid);
   var result=json.createObjectNode();for(String field:List.of("tools","used_parts","reason"))result.put(field.equals("used_parts")?"usedParts":field,rows.isEmpty()?"":Objects.toString(rows.get(0).get(field.toUpperCase(java.util.Locale.ROOT)),""));
   result.set("updatedAt",rows.isEmpty()?json.nullNode():json.valueToTree(rows.get(0).get("UPDATED_AT")));return result;
  }
- public JsonNode teacherDisclosure(String id,String pid){teacher(id);person(id,pid);var source=source(id,pid);var result=((com.fasterxml.jackson.databind.node.ObjectNode)source.path("aiDisclosure")).deepCopy();result.put("frozen",source.path("aiDisclosureFrozen").asBoolean());
-  result.set("studentDisclosure",hasStudentDisclosure(pid)?readDisclosure(pid):json.nullNode());return result;}
+ public JsonNode teacherDisclosure(String id,String pid){teacher(id);person(id,pid);var source=source(id,pid);var result=((com.fasterxml.jackson.databind.node.ObjectNode)source.path("aiDisclosure")).deepCopy();result.put("frozen",source.path("aiDisclosureFrozen").asBoolean());return result;}
  public UsageReport teacherHwpReport(String id,String pid,Integer version){
   if(version!=null)return teacherReport(id,pid,version);
   try{return teacherReport(id,pid,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND")||db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,pid)==0)throw failure;return teacherGenerate(id,pid);}

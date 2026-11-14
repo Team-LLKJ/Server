@@ -29,6 +29,7 @@ public class ProcessAnalysisService {
         var input=repository.getInput(job.id());var summaries=new ArrayList<CriterionSummary>();
         for(var criterion:Criterion.values()) {
             var cells=result.cells().stream().filter(c->c.criterion()==criterion).toList();
+            if(cells.isEmpty()&&criterion.retired()) continue; // 투명성은 이전 결과에 있을 때만 보여 줍니다
             BigDecimal score=BigDecimal.ZERO;boolean complete=!cells.isEmpty();
             for(var cell:cells) {
                 if(cell.score()==null){complete=false;continue;}

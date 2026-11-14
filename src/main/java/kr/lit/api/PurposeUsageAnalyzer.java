@@ -167,7 +167,7 @@ public class PurposeUsageAnalyzer {
 
     private static List<RubricImpact> getRubricImpacts(List<RubricImpact> observed) {
         var impacts=new ArrayList<>(observed);
-        for (var criterion:ProcessGradingModels.Criterion.values()) {
+        for (var criterion:ProcessGradingModels.Criterion.active()) {
             var indicator=AssessmentModels.Indicator.valueOf(criterion.name());
             if (observed.stream().noneMatch(impact->impact.criterion()==indicator)) {
                 impacts.add(new RubricImpact(indicator,"NONE","이 질문이 해당 기준에 개별 반영된 근거를 확인할 수 없습니다."));

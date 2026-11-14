@@ -63,7 +63,7 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
 
 - **학생 단위**: 항목마다 한 칸, `Cell.questionId = null`(문항 가중치 없음). 작업 `model`은 실제 모델 이름(예: `gemini-3.1-flash-lite×3+claude-haiku-5-5`).
 - **시점**: 제출 때 작업이 만들어지고, 질문 용도·답안 기여도 분류가 끝난 학생부터 처리합니다(최대 10분 기다린 뒤에는 있는 결과로 진행).
-- **학생 기록**: 제출 시점에 고정된 `Input.sources`로 만듭니다. `Q`=문항, `U`=질문(질문 용도 표시), `A`=AI 답변(1500자까지), `S`=브라우저 경고(붙여넣기 등), `ANS`=최종 답안 문단, `DIS`=활용 설명란(ai-disclosure의 tools·usedParts·reason). 제출 때 서버가 자동으로 만든 기록이면 `(제출 때 자동 기록)`을 붙여 넣습니다(입력 `sources`에서는 `AUTO_DISCLOSURE`로 학생 설명과 구분).
+- **학생 기록**: 제출 시점에 고정된 `Input.sources`로 만듭니다. `Q`=문항, `U`=질문(질문 용도 표시), `A`=AI 답변(1500자까지), `S`=브라우저 경고(붙여넣기 등), `ANS`=최종 답안 문단. AI 활용 기록(ai-disclosure)은 점수에 쓰지 않으므로 넣지 않습니다(2026-11-14, 이전에는 `DIS` 줄).
 - **프롬프트 순서**: 지시·공통 규칙·답 형식(system) → 학생 기록 → 항목 본문(`grading/rubric-judge-v1.md`, v3 표 + 경계 판정 + 문서의 문구 수정 3곳). 바꾸면 `RubricJudge.PROMPT_VERSION`도 올립니다.
 - **인용 검증**: 각 답의 인용을 원문에서 공백·문장부호를 빼고 찾아 `Citation`(sourceId·start·end·location)으로 연결합니다. 원문에 없는 인용은 버리고, 근거가 하나도 남지 않은 단계 답은 그 회차를 무효로 봅니다.
   `…`·`...`로 중간을 줄인 인용은 조각마다 같은 줄에서 순서대로 찾습니다. 회차마다 `runs[].rawLevel`에 모델이 답한 단계, `runs[].rejectedQuotes`에 원문에서 못 찾은 인용(`src: quote`)이 그대로 남습니다.
@@ -73,15 +73,14 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
   - 과반이 없으면(유효한 답 1개 이하이거나 모두 다름): **Haiku 단계로 확정**(`needsReview=false`). Haiku도 인용 무효·실패면 `HOLD`(`DISAGREEMENT`).
   Haiku 답의 인용을 원문에서 못 찾으면 1번 더 묻습니다. 그래도 Haiku 판정이 없으면 `judge.haikuError`에 이유가 남습니다(`NOT_CONFIGURED`: Anthropic 키 없음, `NO_VERIFIED_EVIDENCE`, 호출 오류 코드). 이런 결과는 캐시하지 않아 다음 분석 때 다시 묻습니다.
 - **특수 경우(모델 호출 없음)**
-  - AI 질문 0개 → 자기 주도적 사고는 교사 확인 `HOLD`(`reviewReason="NO_AI_USE"`, 첫 버전), 나머지 4개 `NOT_APPLICABLE`. 문서대로 이 규칙이 `noAiPolicy=NOT_APPLICABLE`에 해당하며, 정책 값과 관계없이 이렇게 처리합니다.
-  - 활용 설명란(자동 AI 사용 기록) 저장 오류(`status=FAILED` 또는 `errorCode`) → 투명성 `HOLD`(`reviewReason="SAVE_ERROR"`).
+  - AI 질문 0개 → 자기 주도적 사고는 교사 확인 `HOLD`(`reviewReason="NO_AI_USE"`, 첫 버전), 나머지 3개 `NOT_APPLICABLE`. 문서대로 이 규칙이 `noAiPolicy=NOT_APPLICABLE`에 해당하며, 정책 값과 관계없이 이렇게 처리합니다.
   - 학생 질문 2개 이하 → `HOLD`(`INSUFFICIENT_DATA`). 사전 정책의 제외 항목은 `NOT_APPLICABLE`. 사전 정책이 없어도 판정합니다.
   - 학생 글에 채점 지시로 보이는 문장 → 전 항목 `HOLD`(`PROMPT_INJECTION`).
-  - `reviewReason`: `DISAGREEMENT` | `INSUFFICIENT_DATA` | `NO_AI_USE` | `SAVE_ERROR` | `PROMPT_INJECTION` (확정 칸의 `HAIKU_DECIDED`는 1단계 차이 Haiku 확정).
+  - `reviewReason`: `DISAGREEMENT` | `INSUFFICIENT_DATA` | `NO_AI_USE` | `PROMPT_INJECTION` (`SAVE_ERROR`는 11/14 이전 결과의 투명성 칸에만) (확정 칸의 `HAIKU_DECIDED`는 1단계 차이 Haiku 확정).
 - **점수(모두 정수, 소수 첫째 자리에서 반올림)**
   - 재분배 배점(`Cell.adjustedMaxScore`): NA 칸을 뺀 원래 배점 합을 100점이 되게 — `원래 배점 × 100 ÷ 판정 대상 배점 합` → 정수. NA가 없으면 원래 배점, NA 칸은 0.
-  - 칸 점수(`Cell.score`): `재분배 배점 × (단계 − 1) ÷ 4` → 정수(15점 4단계 = 11, 25점 4단계 = 19).
-  - 교사 직접 점수: 원래 배점 기준 정수로 반올림한 뒤(13.33 → 13) 재분배 배점 비율로 환산 → 정수(자기 주도 하나만 남으면 13 × 100/25 = 52).
+  - 칸 점수(`Cell.score`): `재분배 배점 × (단계 − 1) ÷ 4` → 정수(20점 4단계 = 15, 30점 4단계 = 22.5 → 23).
+  - 교사 직접 점수: 원래 배점 기준 정수로 반올림한 뒤(13.33 → 13) 재분배 배점 비율로 환산 → 정수(자기 주도 하나만 남으면 13 × 100/30 = 43.3 → 43).
   - 총점 = 반올림한 칸 점수의 합(재분배 배점의 반올림 때문에 만점 합이 99·101이 될 수 있습니다).
   - **HOLD 칸은 재분배하지 않습니다**: 자기 재분배 배점을 `heldMaxScore`로 남기고 점수·총점은 교사가 채울 때까지 null.
   - `partialScore`: `assessedScore`(판정된 칸 점수 합), `assessedMaxScore`(그 칸 배점 합), `heldMaxScore`(HOLD 칸 배점 합), `notApplicableMaxScore`(NA 칸의 **원래** 배점 합).
@@ -109,7 +108,7 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
   - 학생 기록의 U·A 줄에 대화 순서 번호(`U#123 · 순서 3`)를 붙이고 공통 규칙에 출처 규칙을 넣었습니다.
   - 최종 답안 줄 뒤에 9번 수정 후 문장 판정을 붙입니다(`(출처 판정: AI 답변을 가져온 문장 n개)`).
   - 경계 판정 문구 추가: 자기 주도(학생이 먼저 말한 이유는 AI가 되풀이해도 학생의 이유), 비판적 검토(AI가 권한 검증을 따르기만 했으면 4단계까지), 학생 기여(출처 규칙), 활용 목적(거절된 답안 생성 요청은 낮은 단계 근거가 아님).
-  - 투명성 기준: "자동 기록(대화·도구) + 답안·설명란에서 학생이 AI 활용을 밝혔는가". 자동 기록에 있는 항목(도구명 등)을 학생에게 요구하지 않고, 답안에서 밝혔으면 설명란이 비어도 인정합니다.
+  - 투명성 기준은 2026-11-14에 삭제했습니다(아래).
   - `met`·`blocked`에 내부 표기(DIS, ANS, U#12 등)가 나오지 않게 프롬프트로 막고, 서버도 화면 이름(활용 설명란, 최종 답안, 학생 질문 등)으로 바꿉니다.
 - **② 질문 용도**: 답안 생성(DRAFT) 질문에 `aiComplied`(AI가 실제로 답안을 써 줬는지, 거절이면 `false`)를 붙입니다. 거절됐고 그 대화의 AI 답변이 답안에 쓰이지 않았으면 활용 목적 영향은 `NONE`, 이유는 "답안 작성을 요청했지만 AI가 거절했습니다"로 시작합니다. 루브릭 기록에도 `용도: 답안 생성(AI가 거절, 답안에 안 쓰임)`으로 표시합니다.
   분류 프롬프트(`PURPOSE_GEMINI_X3_V3`)에 "학생이 자기 글 검토를 부탁하면 EDIT, REVIEW는 AI 답·주장을 검증하는 것"과 앞 대화가 있어야 뜻이 정해지는 짧은 질문 규칙을 더했습니다(맥락: 앞 질문 2개 + 직전 AI 답변 앞부분은 기존대로).
@@ -153,3 +152,18 @@ rubric 키가 설정되면 과정 채점 작업(`process_grading_jobs`)이 기�
 - Gemini 키 2개(analysis·rubric)를 학생 대화용과 **다른 Google 프로젝트**에서 받아 `/opt/lit/app.env`에 넣습니다. 무료 프로젝트 여러 개를 쓰는 것이 약관에 맞는지 확인해 주세요.
 - 실제 쓸 Gemini Flash-Lite로 질문 용도·루브릭 정확도를 아직 확인하지 않았습니다. 실제 제출물 30~50개를 교사 채점과 비교해 주세요.
 - 학생 글이 외부 모델로 전송됩니다. 개인정보 처리방침·동의 화면에 판정 목적의 전송이 적혀 있는지 확인해 주세요. 모델에는 학생 이름 대신 내부 id만 보냅니다.
+
+## 11/14 요청 반영 (2026-11-14)
+
+1. **투명성(TRANSPARENCY) 기준 삭제**: 배점은 활용 목적 20 · 자기 주도 30 · 비판적 검토 20 · 학생 기여 30(합 100). 새 결과에는 투명성 칸이 없고 Gemini·Haiku도 부르지 않습니다(학생당 루브릭 호출 15 → 12번). 점수 공식·NA 재분배는 그대로입니다.
+   - `Criterion.TRANSPARENCY`는 이전 결과를 읽기 위해 enum에 남겨 두었습니다(`maxScore`=0, 새 결과에는 안 나옴). 이전에 저장된 결과는 그대로 보입니다.
+   - `GET .../process-grading/rubric`, `rubric-scores`(기본 루브릭), 분석·보고서 화면 모두 4개 항목입니다. 루브릭 프롬프트 `RUBRIC_GEMINI_X3_HAIKU_V6`(새 버전이라 다시 채점하면 새로 판정).
+2. **AI 활용 기록은 서버가 모두 자동으로 채움**(`GET /api/student/evaluations/{id}/ai-disclosure`, 교사 `GET .../students/{pid}/ai-disclosure`, 보고서 "AI 활용 기록"). 점수에는 쓰지 않습니다.
+   - `tools`: 기존과 같음(완료된 대화의 provider/model).
+   - `usedParts`: 문항마다 한 줄. AI 답변을 가져온 답안 문장과 그 대화. 예: `문항 2: '부정적 영향은 개발로 인해 물가와 임대료…' (AI 답변 #192)`. 그 문항에 없으면 `문항 1: 답안에 AI 답변을 그대로 쓴 문장 없음`, 전체에 없으면 `답안에 AI 답변을 그대로 쓴 문장 없음`.
+   - `reason`: 문장마다 한 줄. `… : AI 답변 #192와 22자 이상 같음`(연속 일치), `… 표현이 N% 겹침(3글자 단위 비교)`, `… AI 답변 #192의 표현을 바꿔 썼다고 판정(Haiku)`(또는 `Haiku·Gemini`), `교사가 AI 답변을 쓴 문장으로 확정`. 교사 확인이 필요하면 `· 교사 확인 필요`. 학생이 먼저 말해 학생 문장으로 본 경우도 `… AI 답변 #190에도 있지만 학생이 질문에서 먼저 쓴 표현이라 학생 문장으로 봄`으로 적습니다.
+   - 제출 직후(문장 분석 전)에는 `usedParts`·`reason`이 "답안 문장 분석 중입니다…"이고, 분석·LLM 판정·교사 문장 수정 때마다 다시 채웁니다. 표현 판정(②단계 Haiku)이 대기 중이면 이유 끝에 그 안내가 붙습니다.
+   - 학생 문장 판정에 `sentences[].studentFirstConversationId`를 더했습니다(AI 답변과 겹치지만 학생이 먼저 쓴 표현이라 DIRECT로 본 문장의 대화 id).
+3. **학생 직접 입력 안 씀**: `PUT .../ai-disclosure`는 저장하지 않고 자동 기록을 그대로 돌려줍니다(200, Swagger에 deprecated). 교사 화면의 `studentDisclosure`와 학생 설명 저장(`STUDENT_REPORTED`)은 없앴습니다(#71의 3번 되돌림).
+4. **질문 용도: 문항 답을 시키는 질문은 DRAFT**: 분류 자료에 질문한 문항의 내용(`item`: 제목 + 본문 앞 600자)을 넣고 규칙 8을 더했습니다 — 문항이 요구하는 답 자체를 시키면 "설명해줘"로 물어도 DRAFT, 문항을 쓰는 데 필요한 개념·자료만 물으면 UNDERSTAND. 예: 문항 "변화 한 가지를 고르고 그 원인을 설명하세요" / 질문 "우리 지역 변화 한가지 골라서 원인 설명해줘" → DRAFT. 프롬프트 `PURPOSE_GEMINI_X3_V4`.
+5. **질문 용도: 과반 = Haiku면 확정**: 의도한 동작이 아니었습니다. 루브릭과 같게 Gemini 과반(2표)과 Haiku가 같으면 `needsReview=false`, 과반이 없거나 Haiku가 다르면 Haiku 답에 `needsReview=true`입니다. 이미 저장된 분류는 그대로이고 새로 분류하는 질문부터 적용됩니다.

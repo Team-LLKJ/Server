@@ -75,7 +75,11 @@ public final class WorkModels {
     }
     public record Disclosure(@NotNull @Size(max=500) String tools, @NotNull @Size(max=4000) String usedParts,
                              @NotNull @Size(max=4000) String reason) {}
-    public record DisclosureView(String evaluationId, String participantId, String tools, String usedParts, String reason,
+    @io.swagger.v3.oas.annotations.media.Schema(description="AI 활용 기록. 서버가 자동으로 만들고(source=SYSTEM_GENERATED) 점수에는 쓰지 않습니다. 교사 화면·보고서의 'AI 활용 기록'에 그대로 보여 줍니다.")
+    public record DisclosureView(String evaluationId, String participantId,
+                                 @io.swagger.v3.oas.annotations.media.Schema(description="사용한 도구(줄마다 하나)") String tools,
+                                 @io.swagger.v3.oas.annotations.media.Schema(description="활용 부분. 문항마다 한 줄: \"문항 2: '부정적 영향은 개발로 인해…' (AI 답변 #192)\". 없으면 \"답안에 AI 답변을 그대로 쓴 문장 없음\". 문장 분석 전에는 분석 중 안내 문구") String usedParts,
+                                 @io.swagger.v3.oas.annotations.media.Schema(description="이유. 문장마다 한 줄: \"문항 2 '…': AI 답변 #192와 22자 이상 같음\", \"… AI 답변 #192의 표현을 바꿔 썼다고 판정(Haiku)\", 학생이 질문에서 먼저 쓴 표현이라 학생 문장으로 본 경우도 적습니다") String reason,
                                  Instant updatedAt, boolean editable, String status, String source, String errorCode,
                                  String failureReason, List<Long> conversationIds, List<DisclosureEvidence> evidence) {
         public DisclosureView(String evaluationId,String participantId,String tools,String usedParts,String reason,Instant updatedAt,boolean editable){this(evaluationId,participantId,tools,usedParts,reason,updatedAt,editable,"READY","STUDENT_REPORTED",null,null,List.of(),List.of());}
