@@ -8,7 +8,7 @@
 - `classId` = `evaluationId`: 반 **회차** ID. 기존 학생/참가자/답안/대화/리포트/채점 API에는 이 값을 넣습니다. 틀 ID를 넣지 않습니다.
 - 반 생성: 프런트용 `state=READY`, 기존 evaluation 상태는 `evaluationState=WAITING`이며 PIN·QR·expiresAt·endsAt은 null입니다. 아직 참여할 수 없습니다.
 - 대기실 열기: `POST .../classes/{classId}/lobby`로 PIN·QR을 발급합니다. `state=READY`, `lobbyState=WAITING`, `evaluationState=WAITING`, `started_at/endsAt=null`이며 학생은 PIN으로 참가해 기다립니다. 요청의 `expiresInMinutes`는 대기실 PIN 유효 시간입니다.
-- 실제 시작: 대기실을 연 후 `POST .../classes/{classId}/start`를 호출하면 기존 PIN을 유지하고 `STARTED`로 바뀝니다. 이때부터 풀이 시간이 흐릅니다. 기존 계약대로 시작 요청의 `expiresInMinutes`가 실제 풀이 시간입니다. 참가자0명 시작과 시작 후 추가 참가는 기존처럼 허용합니다. 대기실 없이 start를 호출하면409 `CLASS_LOBBY_REQUIRED`입니다.
+- 실제 시작: 대기실을 연 후 `POST .../classes/{classId}/start`를 호출하면 기존 PIN을 유지하고 `STARTED`로 바뀝니다. 이때부터 풀이 시간이 흐릅니다. 기존 계약대로 시작 요청의 `expiresInMinutes`가 실제 풀이 시간입니다. 대기실에 연결된 참가자가 없으면 409 `NO_PARTICIPANTS`를 반환합니다. 퇴장·추방했거나 최근 30초간 접속 기록이 없는 참가자는 제외합니다. 시작 후 추가 참가도 가능합니다. 대기실 없이 start를 호출하면409 `CLASS_LOBBY_REQUIRED`입니다.
 - 기존 독립 평가의 대기실→참가자 확인→시작 방식은 유지합니다. **반 회차만** 시작 후 새 참가를 허용합니다.
 - 반 종료: 기존 자동 제출·분석 예약·교사 알림을 재사용합니다. 시작 전 반 종료는409, 이미 종료된 반 종료는 같은 결과를 반환합니다.
 

@@ -2520,7 +2520,7 @@
                 }
               }
             },
-            "description": "대기실 열기 이후 호출. 기존 PIN 유지, STARTED 전환 및45분 타이머 시작. 학생 state 조회가 SOLVING으로 변경됩니다."
+            "description": "대기실 열기 이후 호출. 기존 PIN 유지, STARTED 전환 및45분 타이머 시작. 학생 state 조회가 SOLVING으로 변경됩니다. 대기실에 연결된 참가자가 없으면 409 NO_PARTICIPANTS를 반환합니다."
           },
           "event": [
             {
@@ -2614,6 +2614,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}/classes/{{classId}}/start",
+            "description": "대기실에 연결된 참가자가 없으면 409 NO_PARTICIPANTS를 반환합니다.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expiresInMinutes\": 45\n}",

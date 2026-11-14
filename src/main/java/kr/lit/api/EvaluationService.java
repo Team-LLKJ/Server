@@ -106,8 +106,7 @@ public class EvaluationService {
  }
  public Lobby start(String id){var e=read(id);ClassSnapshots.requireStandalone(db,id);available(e);
   if(!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","이미 시작된 평가입니다.");
-  int count=db.queryForObject("SELECT COUNT(*) FROM participants WHERE evaluation_id=? AND active=TRUE AND last_seen>=?",Integer.class,id,OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(30));
-  if(count==0)throw fail(HttpStatus.CONFLICT,"NO_PARTICIPANTS","연결된 참가자가 없습니다.");
+  requireConnectedParticipant(id);
   int minutes=db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);
   var started=OffsetDateTime.now(ZoneOffset.UTC);var ends=started.plusMinutes(minutes);
   db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=? WHERE id=?",started,ends,ends,id);return lobby(read(id));
@@ -123,6 +122,12 @@ public class EvaluationService {
   var deadline=OffsetDateTime.ofInstant(effective,ZoneOffset.UTC);
   db.update("UPDATE evaluations SET ends_at=?,expires_at=?,duration_minutes=duration_minutes+? WHERE id=?",deadline.plusMinutes(additionalMinutes),deadline.plusMinutes(additionalMinutes),additionalMinutes,id);
   return lobby(read(id));
+ }
+ private void requireConnectedParticipant(String id) {
+  boolean hasParticipant=db.queryForObject(
+    "SELECT EXISTS(SELECT 1 FROM participants WHERE evaluation_id=? AND active=TRUE AND expelled_at IS NULL AND last_seen>=?)",
+    Boolean.class,id,OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(30));
+  if(!hasParticipant)throw fail(HttpStatus.CONFLICT,"NO_PARTICIPANTS","연결된 참가자가 없습니다.");
  }
  void openClassLobby(String id,int minutes) {
   var e=read(id);
@@ -146,6 +151,7 @@ public class EvaluationService {
   if(e.pin()==null)throw fail(HttpStatus.CONFLICT,"CLASS_LOBBY_REQUIRED","먼저 대기실을 열어 학생에게 PIN을 안내해주세요.");
   available(e);
   if(minutes<1||minutes>1440)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","풀이 시간은1~1440분이어야 합니다.");
+  requireConnectedParticipant(id);
   var now=OffsetDateTime.now(ZoneOffset.UTC);var end=now.plusMinutes(minutes);
   db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=?,duration_minutes=? WHERE id=?",now,end,end,minutes,id);
  }
