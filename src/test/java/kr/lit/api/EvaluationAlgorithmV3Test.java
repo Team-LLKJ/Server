@@ -20,7 +20,7 @@ class EvaluationAlgorithmV3Test {
         var in=input();var out=output(in);var r=out.recommendations().get(0);
         var bad=new Recommendation(r.questionId(),r.criterion(),r.level(),"자기 생각 부족",r.unmetNextLevel(),r.conditions(),r.counterEvidence(),r.limitations(),r.details());
         var result=engine.evaluate(in,replace(out,0,bad));assertThat(result.total()).isNull();assertThat(result.cells().get(0).level()).isNull();
-        assertThat(result.partialScore().assessedScore()).isEqualByComparingTo("63.75");assertThat(result.partialScore().assessedMaxScore()).isEqualByComparingTo("85");assertThat(result.partialScore().heldMaxScore()).isEqualByComparingTo("15");
+        assertThat(result.partialScore().assessedScore()).isEqualByComparingTo("60");assertThat(result.partialScore().assessedMaxScore()).isEqualByComparingTo("80");assertThat(result.partialScore().heldMaxScore()).isEqualByComparingTo("20");
     }
     @Test void essentialUnknownAndContradictoryFindingsNeverBecomeLowScores(){
         var in=input();var out=output(in);var r=out.recommendations().get(0);var d=r.details();
@@ -34,7 +34,7 @@ class EvaluationAlgorithmV3Test {
     @Test void preselectedExclusionIsDistinctAndIsNotRescaledToOneHundred(){
         var old=input();var p=old.policy();var in=new Input(old.evaluationId(),old.participantId(),old.submissionHash(),old.title(),old.aiPolicy(),new Policy(1,RUBRIC_VERSION,p.taskGoal(),p.allowedRules(),p.noAiPolicy(),p.questionWeights(),List.of(Criterion.CONTRIBUTION)),old.questionIds(),old.sources(),old.limitations());
         var out=output(in);var result=engine.evaluate(in,new AiOutput(out.compliance(),out.recommendations().stream().filter(r->r.criterion()!=Criterion.CONTRIBUTION).toList(),out.summary()));
-        assertThat(result.total()).isEqualByComparingTo("56.25");assertThat(result.partialScore().assessedMaxScore()).isEqualByComparingTo("75");assertThat(result.partialScore().notApplicableMaxScore()).isEqualByComparingTo("25");
+        assertThat(result.total()).isEqualByComparingTo("52.5");assertThat(result.partialScore().assessedMaxScore()).isEqualByComparingTo("70");assertThat(result.partialScore().notApplicableMaxScore()).isEqualByComparingTo("30");
         assertThat(result.cells().get(3).status()).isEqualTo("NOT_APPLICABLE");
         assertThatThrownBy(()->engine.applyReview(in,result,List.of(new LevelOverride("q1",Criterion.CONTRIBUTION,5,"사후 추가")))).isInstanceOf(IllegalArgumentException.class);
     }

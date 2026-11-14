@@ -74,10 +74,15 @@ public final class AssessmentModels {
                            @io.swagger.v3.oas.annotations.media.Schema(description="AI로 본 근거",allowableValues={"SPAN_MATCH","GRAM_MATCH","SEMANTIC","TEACHER"},nullable=true) String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
                            boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel,AiAnswerMatch aiAnswerMatch,
-                           @io.swagger.v3.oas.annotations.media.Schema(description="긴 붙여넣기 구간과 겹치는 문장. LIT AI 답변과 안 겹쳐도 다른 AI에서 가져왔을 수 있어 교사 확인 대상(needsReview)입니다") boolean pasted) {
+                           @io.swagger.v3.oas.annotations.media.Schema(description="긴 붙여넣기 구간과 겹치는 문장. LIT AI 답변과 안 겹쳐도 다른 AI에서 가져왔을 수 있어 교사 확인 대상(needsReview)입니다") boolean pasted,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="AI 답변과 겹치지만 학생이 질문에서 먼저 쓴 표현이라 학생 문장(DIRECT)으로 본 경우, 겹친 AI 답변의 대화 id. 아니면 null",nullable=true) Long studentFirstConversationId) {
+        public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
+                        boolean needsReview,SemanticVerdict semantic,String teacherLabel,AiAnswerMatch aiAnswerMatch,boolean pasted){
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,needsReview,semantic,teacherLabel,aiAnswerMatch,pasted,null);
+        }
         public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
                         boolean needsReview,SemanticVerdict semantic,String teacherLabel,AiAnswerMatch aiAnswerMatch){
-            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,needsReview,semantic,teacherLabel,aiAnswerMatch,false);
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,needsReview,semantic,teacherLabel,aiAnswerMatch,false,null);
         }
         /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)

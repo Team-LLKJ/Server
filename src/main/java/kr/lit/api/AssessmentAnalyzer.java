@@ -211,8 +211,13 @@ public class AssessmentAnalyzer {
                         }
                     }
                     String reason=longest>=minSpan?REASON_SPAN:best>=gramThreshold?REASON_GRAM:null;
+                    Long studentFirst=null;
                     // 짧은 문장(20자 연속 일치 없이 3-gram 비율로만 AI가 된 문장)은 핵심 어휘가 모두 학생 질문에 먼저 나왔으면 학생 것으로 봅니다.
-                    if(REASON_GRAM.equals(reason)&&conversation!=null&&studentSaidFirst(sentence,turns,conversation,excludedNormalized)) { reason=null;conversation=null;matchedAnswer=null; }
+                    if(REASON_GRAM.equals(reason)&&conversation!=null&&studentSaidFirst(sentence,turns,conversation,excludedNormalized)) { studentFirst=conversation;reason=null;conversation=null;matchedAnswer=null; }
+                    // 학생이 먼저 쓴 표현을 빼서 긴 일치가 사라진 문장: 빼지 않으면 AI 답변과 긴 구간이 같았던 경우를 AI 활용 기록에 남깁니다.
+                    if(reason==null&&studentFirst==null) for(var ref:references) {
+                        if(SentenceSimilarity.compare(sentence,ref.getValue(),exclusion).longestSpan()>=minSpan) { studentFirst=ref.getKey().path("id").asLong();break; }
+                    }
                     // 2단계: 글자 비교로 DIRECT가 된 문장만 저장된 LLM 판정을 적용합니다.
                     var verdict=semantic.verdicts().get(sentenceKey(qid,sentence));
                     if(reason!=null) verdict=null;
@@ -236,7 +241,8 @@ public class AssessmentAnalyzer {
                     sentences.add(new Sentence(paragraphId+"-s"+(k+1),qid,paragraphId,sentence,src,reason,longest,similarity,
                             reason==null?null:conversation,offset+range.start(),offset+range.end(),version,true,
                             needsReview,verdict,teacherLabel,
-                            (REASON_SPAN.equals(reason)||REASON_GRAM.equals(reason))?SentenceSimilarity.findAnswerMatch(sentence,matchedAnswer,matchedExclusion,minSpan):null,pasted));
+                            (REASON_SPAN.equals(reason)||REASON_GRAM.equals(reason))?SentenceSimilarity.findAnswerMatch(sentence,matchedAnswer,matchedExclusion,minSpan):null,pasted,
+                            reason==null&&teacherLabel==null?studentFirst:null));
                     segments.add(new Segment(qid,offset+segStart,offset+segEnd,reason==null?"STUDENT":SOURCE_AI,similarity,similarity,true,version));
                     paragraphBest=Math.max(paragraphBest,best);
                     if(reason!=null) {

@@ -48,7 +48,7 @@ public class ProcessGradingWorker {
             var input=repository.getInput(job);Result result;
             if(rubric.isActive()){var graded=gradeWithJudge(job,input);repository.completeJob(job,rubric.modelLabel(),graded);carryOverReview(job,input,graded);return;}
             if(input.policy()==null)result=engine.hold(input,"PRE_EVALUATION_POLICY_REQUIRED");
-            else if(engine.isV3(input)&&input.policy().excludedCriteria().size()==Criterion.values().length)result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
+            else if(engine.isV3(input)&&input.policy().excludedCriteria().containsAll(Criterion.active()))result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
             else if(input.policy().questionWeights().size()!=input.questionIds().size()
                     ||!input.policy().questionWeights().stream().map(QuestionWeight::questionId).collect(java.util.stream.Collectors.toSet()).equals(new java.util.HashSet<>(input.questionIds())))result=engine.hold(input,"QUESTION_WEIGHTS_OUTDATED");
             else if(repository.encode(input).getBytes(StandardCharsets.UTF_8).length>524288)result=engine.hold(input,"INPUT_TOO_LARGE_NO_TRUNCATION");
@@ -70,7 +70,7 @@ public class ProcessGradingWorker {
      */
     private Result gradeWithJudge(String job,Input input) {
         var policy=input.policy();
-        if(policy!=null&&policy.excludedCriteria().size()==Criterion.values().length)return engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
+        if(policy!=null&&policy.excludedCriteria().containsAll(Criterion.active()))return engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
         if(repository.encode(input).getBytes(StandardCharsets.UTF_8).length>524288)return engine.hold(input,"INPUT_TOO_LARGE_NO_TRUNCATION");
         return rubric.grade(input,()->repository.touchJob(job));
     }

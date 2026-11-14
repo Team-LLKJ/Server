@@ -20,7 +20,7 @@ GET /api/teacher/evaluations/{evaluationId}/students/{participantId}/ai-disclosu
 
 tools는 완료된 비어 있지 않은 응답의 provider/model 조합을 중복 제거해 줄바꿈으로 연결합니다. 실패 요청만 있으면 빈 문자열입니다. usedParts는 문항 번호와 질문 표현의 규칙 기반 목적 분류·횟수를 제공합니다. 최종 답안의 20자 이상 문단 전체가 해당 문항 AI 응답에 그대로 포함된 경우에만 matchingAnswerParagraphs(1부터 시작)에 문단 번호를 표시합니다. 이는 동일 문구 관측이며 실제 작성자 판정이 아닙니다. 근거 없이 특정 문단 위치를 만들어내지 않습니다. reason은 시스템 관측임을 명시합니다. 실제 의도·실제 작성자·외부 AI 사용은 확정하지 않습니다. 대화가 없으면 tools="", usedParts="LIT에 기록된 AI 대화가 없습니다."입니다.
 
-분류는 기존 AssessmentAnalyzer.classify 규칙을 재사용합니다 (개념 확인, 자료 탐색, 아이디어 구체화, 답안 작성 요청, 검증 요청, 기타 요청). 자동 생성 설명은 학생의 자기 공개 근거(DISCLOSURE)로 채점기에 전달하지 않으며 투명성 점수에 자동 가산하지 않습니다. PDF/HWP 공통 보고서의 AI 사용 기록 표에도 동일 결과를 사용합니다.
+분류는 기존 AssessmentAnalyzer.classify 규칙을 재사용합니다 (개념 확인, 자료 탐색, 아이디어 구체화, 답안 작성 요청, 검증 요청, 기타 요청). 자동 생성 설명은 학생의 자기 공개 근거(DISCLOSURE)로 채점기에 전달하지 않으며 점수에 쓰지 않습니다(투명성 기준은 2026-11-14 삭제). 2026-11-14부터 usedParts·reason은 문장 판정으로 만든 문장별 활용 부분·근거입니다(docs/AI_JUDGE.md "11/14 요청 반영"). PDF/HWP 공통 보고서의 AI 사용 기록 표에도 동일 결과를 사용합니다.
 
 교사 조회 응답 예시 (식별자는 예시입니다):
 

@@ -63,23 +63,21 @@ public class AssessmentService {
     }
 
     // ===== 루브릭 =====
+    /** 기본 루브릭(2026-11-14): 목적 20, 자기 주도 30, 비판적 검토 20, 학생 기여 30. 투명성은 평가하지 않습니다. */
     public static List<Criterion> defaultCriteria() {
         return List.of(
-            new Criterion(1,"AI 활용 목적의 적절성",15,"AI를 답 생성이 아니라 학습·탐색·이해를 위해 썼는가",List.of(
+            new Criterion(1,"AI 활용 목적의 적절성",20,"AI를 답 생성이 아니라 학습·탐색·이해를 위해 썼는가",List.of(
                 "AI를 주로 답안 생성·대리 작성에 사용함","학습 목적 질문이 일부 있으나 답 생성 요청이 많음","학습·탐색 목적과 답 생성 요청이 섞여 있음",
                 "대부분 개념 이해·자료 탐색·아이디어 구체화에 사용함","모든 질문이 학습·탐색·이해 목적에 적절함"),Indicator.PURPOSE,"프로젝트 제안 초안·교사 확인 필요"),
-            new Criterion(2,"자기 주도적 사고",25,"자기 생각과 판단을 먼저 내고 AI는 보조로 썼는가",List.of(
+            new Criterion(2,"자기 주도적 사고",30,"자기 생각과 판단을 먼저 내고 AI는 보조로 썼는가",List.of(
                 "자기 생각 없이 AI에 의존함","AI 질문 전 자기 생각이 거의 없음","일부 문항에서 자기 생각을 먼저 제시함",
                 "대부분 자기 생각을 먼저 쓰고 질문을 구체화함","자기 주장·질문 구체화·선택 이유가 모두 분명함"),Indicator.SELF_DIRECTION,"프로젝트 제안 초안·교사 확인 필요"),
             new Criterion(3,"AI 답변의 비판적 검토",20,"AI 답을 그대로 받지 않고 검증·수정했는가",List.of(
                 "AI 답변을 검토 없이 그대로 수용함","검토 흔적이 거의 없음","일부 답변을 확인하거나 수정함",
                 "대부분의 답변을 확인·반박·수정함","모든 답변을 근거와 함께 검증·수정함"),Indicator.CRITICAL_REVIEW,"프로젝트 제안 초안·교사 확인 필요"),
-            new Criterion(4,"최종 답안에 대한 학생의 기여",25,"자신의 해석과 근거가 최종 답안에 반영됐는가",List.of(
+            new Criterion(4,"최종 답안에 대한 학생의 기여",30,"자신의 해석과 근거가 최종 답안에 반영됐는가",List.of(
                 "최종 답안이 AI 문장 위주임","학생 기여가 적음","학생 작성과 AI 참고가 비슷함",
-                "대부분 학생의 해석과 근거로 작성함","학생 고유의 해석·근거·사례로 완성함"),Indicator.CONTRIBUTION,"프로젝트 제안 초안·교사 확인 필요"),
-            new Criterion(5,"AI 활용 과정의 투명성",15,"AI 사용 범위와 반영 과정을 명확히 기록했는가",List.of(
-                "AI 사용 기록이 없음","기록이 매우 부족함","도구·질문·활용 부분 중 일부를 기록함",
-                "대부분 기록함","사용 도구·질문 기록·활용 부분을 모두 명확히 기록함"),Indicator.TRANSPARENCY,"프로젝트 제안 초안·교사 확인 필요"));
+                "대부분 학생의 해석과 근거로 작성함","학생 고유의 해석·근거·사례로 완성함"),Indicator.CONTRIBUTION,"프로젝트 제안 초안·교사 확인 필요"));
     }
     private List<Criterion> criteria(String id) {
         var rows=db.queryForList("SELECT criteria_json FROM evaluation_rubrics WHERE evaluation_id=?",String.class,id);

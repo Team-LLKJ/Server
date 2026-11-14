@@ -297,34 +297,12 @@ public class WorkService {
     private DisclosureView snapshotDisclosure(Context c) {
         return automaticDisclosure.getDisclosure(c.evaluationId(),c.participantId());
     }
-    /** 학생 화면의 AI 활용 설명: 학생이 직접 쓴 설명이 있으면 그것(source=STUDENT_REPORTED, 근거 목록은 자동 기록 것), 없으면 자동 기록. */
     public DisclosureView disclosure(String id,String token) {
-        var c=authenticate(id,token);return studentView(c);
+        var c=authenticate(id,token);return snapshotDisclosure(c);
     }
-    private DisclosureView studentView(Context c) {
-        var auto=snapshotDisclosure(c);
-        var rows=db.queryForList("SELECT tools,used_parts,reason,updated_at FROM ai_disclosures WHERE participant_id=?",c.participantId());
-        if(rows.isEmpty())return auto;
-        var r=rows.get(0);
-        String tools=Objects.toString(r.get("TOOLS"),""),used=Objects.toString(r.get("USED_PARTS"),""),reason=Objects.toString(r.get("REASON"),"");
-        if(tools.isBlank()&&used.isBlank()&&reason.isBlank())return auto;
-        Instant updated=r.get("UPDATED_AT") instanceof java.sql.Timestamp t?t.toInstant():r.get("UPDATED_AT") instanceof OffsetDateTime o?o.toInstant():null;
-        return new DisclosureView(c.evaluationId(),c.participantId(),tools,used,reason,updated,true,"READY","STUDENT_REPORTED",null,null,
-                auto==null?List.of():auto.conversationIds(),auto==null?List.of():auto.evidence());
-    }
-    /**
-     * 학생이 직접 쓴 AI 활용 설명을 저장합니다(제출 전·후 모두, 자동 기록은 그대로 둠). 투명성 판정에는 학생 설명이 들어가고
-     * 자동 기록은 참고로 따로 붙습니다. 제출 뒤에 내용을 바꾸면 과정 채점을 다시 대기열에 넣어 새 설명으로 판정합니다.
-     */
-    @Transactional
+    /** Compatibility endpoint: client input is deliberately ignored. */
     public DisclosureView saveDisclosure(String id,String token,Disclosure input) {
-        var c=authenticate(id,token);started(c);
-        var before=processGrading.studentDisclosure(c.participantId());
-        DatabaseUpsert.save(db,"ai_disclosures","participant_id,evaluation_id,tools,used_parts,reason,updated_at","participant_id","?,?,?,?,?,?",
-                c.participantId(),id,input.tools().strip(),input.usedParts().strip(),input.reason().strip(),OffsetDateTime.now(ZoneOffset.UTC));
-        var after=processGrading.studentDisclosure(c.participantId());
-        if(!Objects.equals(before,after)&&submitted(c))processGrading.queueSubmission(id,c.participantId());
-        return studentView(c);
+        return disclosure(id,token);
     }
     private ReviewContent finalizeDisclosure(Context c,ReviewContent content){
         var disclosure=automaticDisclosure.generateDisclosure(c.evaluationId(),c.participantId(),json.valueToTree(content));

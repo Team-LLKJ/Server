@@ -59,10 +59,10 @@ class CompletedContractApiTest extends AuthTestSupport {
     }
     @Test void processCellsExposeDisplayNameAndMaxScoreWithoutChangingPersistedModel() throws Exception {
         var cell=new ProcessGradingModels.Cell("q",ProcessGradingModels.Criterion.PURPOSE,3,new BigDecimal("11.25"),"DONE","근거","다음 단계",List.of(),List.of(),List.of());
-        var encoded=json.valueToTree(cell);assertThat(encoded.path("maxScore").asInt()).isEqualTo(15);assertThat(encoded.path("criterionName").asText()).isEqualTo("AI 활용 목적의 적절성");
+        var encoded=json.valueToTree(cell);assertThat(encoded.path("maxScore").asInt()).isEqualTo(20);assertThat(encoded.path("criterionName").asText()).isEqualTo("AI 활용 목적의 적절성");
         assertThat(json.treeToValue(encoded,ProcessGradingModels.Cell.class)).isEqualTo(cell);
         as(teacher);var e=evaluations.create("척도",60);
         mvc.perform(request(get("/api/teacher/evaluations/"+e.id()+"/process-grading/rubric"),teacher)).andExpect(status().isOk())
-                .andExpect(jsonPath("criteria[0].criterion").value("PURPOSE")).andExpect(jsonPath("criteria[0].name").value("AI 활용 목적의 적절성")).andExpect(jsonPath("criteria[0].maxScore").value(15));
+                .andExpect(jsonPath("criteria[0].criterion").value("PURPOSE")).andExpect(jsonPath("criteria[0].name").value("AI 활용 목적의 적절성")).andExpect(jsonPath("criteria[0].maxScore").value(20)).andExpect(jsonPath("criteria.length()").value(4));
     }
 }

@@ -12,7 +12,7 @@ import static kr.lit.api.ProcessGradingModels.*;
 
 @Repository
 public class ProcessGradingRepository {
-    /** 제출 때 서버가 자동으로 만든 AI 사용 기록(학생이 쓴 설명란과 구분). 루브릭 투명성 판정의 DIS 줄에만 씁니다. */
+    /** 제출 때 서버가 자동으로 만든 AI 사용 기록(학생이 쓴 설명란과 구분). 점수에는 쓰지 않습니다(투명성 기준 삭제, 2026-11-14). */
     public static final String KIND_AUTO_DISCLOSURE="AUTO_DISCLOSURE";
     /** 활용 설명란(자동 기록) 저장 오류. text=errorCode. */
     public static final String KIND_DISCLOSURE_ERROR="DISCLOSURE_ERROR";
@@ -24,14 +24,6 @@ public class ProcessGradingRepository {
     public List<String> getQuestionIds(String id){return db.queryForList("SELECT id FROM questions WHERE evaluation_id=? ORDER BY position,id",String.class,id);}
     public String getEvaluationState(String id){return db.queryForObject("SELECT state FROM evaluations WHERE id=? FOR UPDATE",String.class,id);}
     public void savePolicy(String id,Policy policy){DatabaseUpsert.save(db,"process_grading_policies","evaluation_id,policy_json","evaluation_id","?,?",id,encode(policy));}
-    /** 학생이 직접 쓴 활용 설명(세 칸 중 하나라도 내용이 있을 때). 없으면 null. */
-    public Map<String,String> studentDisclosure(String pid) {
-        var rows=db.queryForList("SELECT tools,used_parts,reason FROM ai_disclosures WHERE participant_id=?",pid);
-        if(rows.isEmpty())return null;
-        var out=new LinkedHashMap<String,String>();
-        for(String field:List.of("TOOLS","USED_PARTS","REASON"))out.put(field,Objects.toString(rows.get(0).get(field),"").strip());
-        return out.values().stream().allMatch(String::isEmpty)?null:out;
-    }
     public String queueSubmission(String id,String pid) {
         // 호출자는 평가 행을 잠근 제출 트랜잭션입니다. 제출 시점의 모든 입력을 별도 보존합니다.
         var rows=db.queryForList("SELECT s.snapshot,s.review_token,e.title,e.evaluation_content FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.evaluation_id=? AND s.participant_id=?",id,pid);
@@ -64,12 +56,8 @@ public class ProcessGradingRepository {
             sources.add(new Source("warning:"+e.path("id").asText(),e.path("questionId").isNull()?GLOBAL:e.path("questionId").asText(),"WARNING",e.path("type").asText()+" (브라우저 신고·참고용)",e.path("createdAt").asText(null),null));
         if(snapshot.hasNonNull("aiDisclosure")) {
             var disclosure=snapshot.path("aiDisclosure");boolean auto="SYSTEM_GENERATED".equals(disclosure.path("source").asText());
-            // 학생이 직접 쓴 활용 설명(ai_disclosures)이 있으면 학생 근거(DISCLOSURE)로 넣고, 자동 기록은 auto-disclosure:로 따로 둡니다.
-            var student=auto?studentDisclosure(pid):null;
-            if(student!=null)for(String field:List.of("TOOLS","USED_PARTS","REASON"))sources.add(new Source("disclosure:"+field,GLOBAL,"DISCLOSURE",student.get(field)));
-            String prefix=student!=null?"auto-disclosure:":"disclosure:";
             // 자동 기록은 학생 근거(DISCLOSURE)와 구분해 AUTO_DISCLOSURE로 넣습니다.
-            for(String field:List.of("tools","usedParts","reason"))sources.add(new Source(prefix+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,auto?KIND_AUTO_DISCLOSURE:"DISCLOSURE",disclosure.path(field).asText()));
+            for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,auto?KIND_AUTO_DISCLOSURE:"DISCLOSURE",disclosure.path(field).asText()));
             if("FAILED".equals(disclosure.path("status").asText())||disclosure.hasNonNull("errorCode"))
                 sources.add(new Source("disclosure:ERROR",GLOBAL,KIND_DISCLOSURE_ERROR,disclosure.path("errorCode").asText("DISCLOSURE_SAVE_ERROR")));
         }else {
