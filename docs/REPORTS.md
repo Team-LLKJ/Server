@@ -2,7 +2,7 @@
 
 브랜치: feature/#4-teacher-reports. 기존 가입·PIN 참여·문항·제출 API와 함께 사용합니다.
 
-교사 API는 `Authorization: Bearer {accessToken}`, 학생 API는 `X-Participant-Token: {participantToken}`이 필요합니다. 교사는 본인이 만든 평가만, 학생은 본인 제출 리포트만 접근합니다. 닉네임은 식별 키가 아니며 participantId를 사용합니다.
+교사 API는 `Authorization: Bearer {accessToken}`, 학생 API는 `X-Participant-Token: {participantToken}`이 필요합니다. 교사는 본인이 만든 평가만, 학생(참가자 토큰)은 리포트에 접근할 수 없습니다(2026-11-14, 아래 학생용 경로는 모두 403 `TEACHER_ONLY`). 닉네임은 식별 키가 아니며 participantId를 사용합니다.
 
 ## API
 
@@ -16,10 +16,10 @@
 | GET | /api/teacher/evaluations/{id}/students/{participantId}/report?version=1 | 특정 버전, 생략하면 최신 버전 |
 | GET | /api/teacher/evaluations/{id}/students/{participantId}/report/pdf?version=1&includeConversations=false | PDF 첨부 다운로드 |
 | GET | /api/teacher/evaluations/{id}/students/{participantId}/report/hwp?version=1 | HWP 첨부 다운로드 |
-| GET | /api/evaluations/{id}/report/hwp?version=1 | 학생 본인의 HWP 다운로드 |
-| POST | /api/evaluations/{id}/reports | 학생 자신의 제출 리포트 생성 |
-| GET | /api/evaluations/{id}/report?version=1 | 학생 자신의 리포트 조회 |
-| GET | /api/evaluations/{id}/report/pdf?version=1&includeConversations=false | 학생 자신의 PDF 다운로드 |
+| GET | /api/evaluations/{id}/report/hwp?version=1 | (없앰) 403 `TEACHER_ONLY`(2026-11-14 삭제, 교사 API 사용) |
+| POST | /api/evaluations/{id}/reports | (없앰) 403 `TEACHER_ONLY`(2026-11-14 삭제, 교사 API 사용) |
+| GET | /api/evaluations/{id}/report?version=1 | (없앰) 403 `TEACHER_ONLY`(2026-11-14 삭제, 교사 API 사용) |
+| GET | /api/evaluations/{id}/report/pdf?version=1&includeConversations=false | (없앰) 403 `TEACHER_ONLY`(2026-11-14 삭제, 교사 API 사용) |
 | POST | /api/teacher/evaluations/{id}/end | 기존 종료 API 보강: 진행 AI 실패 확정·추가 작성 차단 |
 
 ## 학생 목록·상세

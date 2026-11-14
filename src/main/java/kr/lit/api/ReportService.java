@@ -100,10 +100,6 @@ public class ReportService {
   if(version!=null)return teacherReport(id,pid,version);
   try{return teacherReport(id,pid,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND")||db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,pid)==0)throw failure;return teacherGenerate(id,pid);}
  }
- public UsageReport studentHwpReport(String id,String token,Integer version){
-  if(version!=null)return studentReport(id,token,version);
-  try{return studentReport(id,token,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND"))throw failure;var guest=participants.authenticateReport(id,token);if(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,guest.participantId())==0)throw failure;return studentGenerate(id,token);}
- }
  private TeacherReview review(String pid){var values=db.queryForList("SELECT review_json FROM teacher_reviews WHERE participant_id=?",String.class,pid);return values.isEmpty()?null:parse(values.get(0),TeacherReview.class);}
  private Analysis classify(JsonNode source){
   var classified=new ArrayList<Classification>();var missing=new ArrayList<String>();
@@ -189,8 +185,6 @@ public class ReportService {
  public UsageReport teacherGenerate(String id,String pid){teacher(id);return generate(id,pid);}
  public UsageReport teacherReport(String id,String pid,Integer version){teacher(id);return getReport(id,pid,version,null);}
  public List<ReportVersion> versions(String id,String pid){teacher(id);person(id,pid);return db.query("SELECT id,version,created_at FROM usage_reports WHERE participant_id=? ORDER BY version DESC",(r,n)->new ReportVersion(r.getString("id"),r.getInt("version"),instant(r,"created_at")),pid);}
- public UsageReport studentGenerate(String id,String token){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return generate(id,pid);}
- public UsageReport studentReport(String id,String token,Integer version){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return getReport(id,pid,version,null);}
  // Called by the scheduled job through the Spring proxy, one transaction per participant.
  public void generateForJob(String id,String pid){generate(id,pid);}
 }

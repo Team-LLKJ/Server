@@ -55,14 +55,15 @@ class EvaluationLifecycleApiTest extends AuthTestSupport {
         as(teacher);evaluations.end(f.id());
         var saved=work.save(f.id(),f.token(),f.q1(),new SaveAnswer("마지막 입력",1,AnswerSource.DIRECT,null));
         assertThat(saved.version()).isEqualTo(2);
-        var submission=work.submission(f.id(),f.token());
+        var submission=submissionByToken(f.id(),f.token());
         assertThat(submission.submissionMode()).isEqualTo("AUTO_TEACHER_END");
         assertThat(submission.snapshot().path("answers").get(0).path("answer").path("content").asText()).isEqualTo("마지막 입력");
+        // 직접 제출한 학생은 유예 시간에도 평가 화면에 들어올 수 없습니다(2026-11-14).
         assertThatThrownBy(()->work.save(f.id(),f.otherToken(),f.q1(),new SaveAnswer("늦음",0,AnswerSource.DIRECT,null)))
-                .isInstanceOfSatisfying(ApiError.Failure.class,ex->assertThat(ex.code).isEqualTo("ALREADY_SUBMITTED"));
+                .isInstanceOfSatisfying(ApiError.Failure.class,ex->assertThat(ex.code).isEqualTo("INVALID_PARTICIPANT_TOKEN"));
         db.update("UPDATE evaluations SET ended_at=DATEADD('SECOND',-31,CURRENT_TIMESTAMP) WHERE id=?",f.id());
         assertThatThrownBy(()->work.save(f.id(),f.token(),f.q1(),new SaveAnswer("유예 후",2,AnswerSource.DIRECT,null)))
-                .isInstanceOfSatisfying(ApiError.Failure.class,ex->assertThat(ex.code).isEqualTo("ALREADY_SUBMITTED"));
+                .isInstanceOfSatisfying(ApiError.Failure.class,ex->assertThat(ex.code).isEqualTo("INVALID_PARTICIPANT_TOKEN"));
     }
 
 }

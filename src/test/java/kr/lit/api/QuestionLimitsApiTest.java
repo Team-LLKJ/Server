@@ -23,7 +23,7 @@ class QuestionLimitsApiTest extends AuthTestSupport {
         mvc.perform(body(post("/api/student/evaluations/"+f.id()+"/submission").header("X-Participant-Token",f.token()),Map.of("reviewToken",review.reviewToken()))).andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("ANSWER_LENGTH_INVALID"));
         work.save(f.id(),f.token(),f.q(),new SaveAnswer("<p>가😀나</p>",1,AnswerSource.DIRECT,null));
         var good=work.review(f.id(),f.token());assertThat(good.canConfirm()).isTrue();work.submit(f.id(),f.token(),good.reviewToken());
-        assertThat(work.submission(f.id(),f.token()).snapshot().path("answers").get(0).path("question").path("minChars").asInt()).isEqualTo(3);
+        assertThat(submissionByToken(f.id(),f.token()).snapshot().path("answers").get(0).path("question").path("minChars").asInt()).isEqualTo(3);
     }
     @Test void maximumIsEnforcedWithoutDestroyingPreviouslySavedAnswer() throws Exception {
         var f=fixture(0,3);work.save(f.id(),f.token(),f.q(),new SaveAnswer("가😀나",0,AnswerSource.DIRECT,null));
@@ -33,7 +33,7 @@ class QuestionLimitsApiTest extends AuthTestSupport {
     }
     @Test void automaticEndKeepsShortSavedDraftWithoutDiscardingIt() {
         var f=fixture(20,100);work.save(f.id(),f.token(),f.q(),new SaveAnswer("짧은 초안",0,AnswerSource.DIRECT,null));
-        evaluations.end(f.id());var submitted=work.submission(f.id(),f.token());assertThat(submitted.submissionMode()).isEqualTo("AUTO_TEACHER_END");
+        evaluations.end(f.id());var submitted=submissionByToken(f.id(),f.token());assertThat(submitted.submissionMode()).isEqualTo("AUTO_TEACHER_END");
         assertThat(submitted.snapshot().path("answers").get(0).path("answer").path("content").asText()).isEqualTo("짧은 초안");
     }
     @Test void legacyConfigurationSavesCriteriaAndAntiCheatAndRubricChangesStayInSync() throws Exception {

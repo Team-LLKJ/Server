@@ -33,16 +33,7 @@ class WorkController {
     @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     Event recordEvent(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token,
                       @Valid @RequestBody ClientEvent input) { return work.recordClientEvent(id,token,input); }
-    @io.swagger.v3.oas.annotations.Operation(summary="AI 활용 기록(서버 자동 작성)",description="사용한 도구 / 활용 부분 / 이유를 서버가 대화·답안 문장 판정으로 만듭니다. 점수에는 쓰지 않습니다.")
-    @GetMapping({"/evaluations/{id}/ai-disclosure","/student/evaluations/{id}/ai-disclosure"})
-    DisclosureView disclosure(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token) {
-        return work.disclosure(id,token);
-    }
-    @io.swagger.v3.oas.annotations.Operation(summary="(사용 안 함) 학생 AI 활용 기록 저장",deprecated=true,
-            description="2026-11-14부터 AI 활용 기록은 서버가 자동으로 만들고 학생 입력은 저장하지 않습니다. 호환을 위해 200과 자동 기록을 그대로 돌려줍니다.")
-    @PutMapping({"/evaluations/{id}/ai-disclosure","/student/evaluations/{id}/ai-disclosure"})
-    DisclosureView saveDisclosure(@PathVariable String id,@RequestHeader(value="X-Participant-Token",required=false) String token,
-                                  @Valid @RequestBody Disclosure input) { return work.saveDisclosure(id,token,input); }
+    // 학생 AI 활용 기록 API(GET·PUT /ai-disclosure)는 없앴습니다(2026-11-14). 교사 GET /api/teacher/evaluations/{id}/students/{pid}/ai-disclosure만 씁니다.
     @GetMapping({"/evaluations/{id}/questions/{questionId}","/student/evaluations/{id}/questions/{questionId}"})
     QuestionAnswer select(@PathVariable String id,@PathVariable String questionId,@RequestHeader(value="X-Participant-Token",required=false) String token) {
         return work.select(id,token,questionId);

@@ -19,7 +19,7 @@ class ParticipantExpulsionApiTest extends AuthTestSupport {
         var f=createFixture(false);expel(f);var at=db.queryForObject("SELECT expelled_at FROM participants WHERE id=?",java.time.OffsetDateTime.class,f.pid());expel(f);
         assertThat(db.queryForObject("SELECT active FROM participants WHERE id=?",Boolean.class,f.pid())).isFalse();assertThat(db.queryForObject("SELECT expelled_at FROM participants WHERE id=?",java.time.OffsetDateTime.class,f.pid())).isEqualTo(at);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM learning_events WHERE participant_id=? AND event_type='PARTICIPANT_EXPELLED'",Integer.class,f.pid())).isEqualTo(1);
-        for(String route:List.of("/api/evaluations/"+f.id()+"/state","/api/evaluations/"+f.id()+"/me","/api/student/evaluations/"+f.id()+"/ai-disclosure"))mvc.perform(get(route).header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("PARTICIPANT_EXPELLED"));
+        for(String route:List.of("/api/evaluations/"+f.id()+"/state","/api/evaluations/"+f.id()+"/me","/api/student/evaluations/"+f.id()+"/questions"))mvc.perform(get(route).header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("PARTICIPANT_EXPELLED"));
         mvc.perform(post("/api/evaluations/"+f.id()+"/heartbeat").header("X-Participant-Token",f.token())).andExpect(status().isForbidden());
         mvc.perform(body(post("/api/participation/reconnect"),Map.of("evaluationId",f.id(),"participantToken",f.token()))).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("PARTICIPANT_EXPELLED"));
         mvc.perform(body(post("/api/participation/join"),Map.of("pin",f.pin(),"nickname","학생","participantToken",f.token()))).andExpect(status().isForbidden());
@@ -40,7 +40,8 @@ class ParticipantExpulsionApiTest extends AuthTestSupport {
     }
     @Test void reportAccessIsRevokedButTeacherSubmissionAndReportStayIntact()throws Exception {
         var f=createFixture(true);work.save(f.id(),f.token(),f.qid(),new SaveAnswer("제출 기록 보존",0,AnswerSource.DIRECT,null));var review=work.review(f.id(),f.token());work.submit(f.id(),f.token(),review.reviewToken());as(teacher);var report=reports.teacherGenerate(f.id(),f.pid());String snapshot=db.queryForObject("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,f.pid());expel(f);
-        mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("PARTICIPANT_EXPELLED"));
+        mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("TEACHER_ONLY"));
+        mvc.perform(get("/api/evaluations/"+f.id()+"/state").header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("PARTICIPANT_EXPELLED"));
         assertThat(db.queryForObject("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,f.pid())).isEqualTo(snapshot);as(teacher);assertThat(reports.teacherReport(f.id(),f.pid(),report.version()).id()).isEqualTo(report.id());
     }
     @Test void rejectsAnonymousForeignTeachersWrongEvaluationAndEndedNewExpulsion()throws Exception {
@@ -48,9 +49,16 @@ class ParticipantExpulsionApiTest extends AuthTestSupport {
         var other=createFixture(false);mvc.perform(request(delete("/api/teacher/evaluations/"+f.id()+"/participants/"+other.pid()),teacher)).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("PARTICIPANT_NOT_FOUND"));
         assertThat(db.queryForObject("SELECT expelled_at FROM participants WHERE id=?",java.time.OffsetDateTime.class,f.pid())).isNull();as(teacher);evaluations.end(f.id());mvc.perform(request(delete(path(f)),teacher)).andExpect(status().isConflict()).andExpect(jsonPath("code").value("EVALUATION_ENDED"));
     }
-    @Test void ordinaryLeaveReconnectAndInactiveSubmittedReportRemainAllowed()throws Exception {
-        var f=createFixture(true);var preview=work.review(f.id(),f.token());work.submit(f.id(),f.token(),preview.reviewToken());as(teacher);reports.teacherGenerate(f.id(),f.pid());evaluations.participant(f.id(),f.token(),true);
-        mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",f.token())).andExpect(status().isOk());
-        mvc.perform(body(post("/api/participation/reconnect"),Map.of("evaluationId",f.id(),"participantToken",f.token()))).andExpect(status().isOk());
+    @Test void submittedStudentCannotReconnectOrReadReportsAfterLeave()throws Exception {
+        // 2026-11-14: 제출한 학생은 다시 들어오기·보고서 모두 막습니다(나가기 호출이 실패해도 같음).
+        var f=createFixture(true);var preview=work.review(f.id(),f.token());work.submit(f.id(),f.token(),preview.reviewToken());as(teacher);reports.teacherGenerate(f.id(),f.pid());
+        for(boolean left:List.of(false,true)) {
+            if(left)evaluations.participant(f.id(),f.token(),true);
+            mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",f.token())).andExpect(status().isForbidden());
+            mvc.perform(body(post("/api/participation/reconnect"),Map.of("evaluationId",f.id(),"participantToken",f.token()))).andExpect(status().isUnauthorized()).andExpect(jsonPath("code").value("INVALID_PARTICIPANT_TOKEN"));
+            mvc.perform(body(post("/api/participation/join"),Map.of("pin",f.pin(),"nickname","학생","participantToken",f.token()))).andExpect(status().isUnauthorized());
+            mvc.perform(get("/api/student/evaluations/"+f.id()+"/workspace").header("X-Participant-Token",f.token())).andExpect(status().isUnauthorized());
+        }
+        assertThat(db.queryForObject("SELECT active FROM participants WHERE id=?",Boolean.class,f.pid())).isFalse(); // 다시 들어오기 실패는 활성으로 바꾸지 않음
     }
 }

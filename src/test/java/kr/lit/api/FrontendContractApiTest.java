@@ -80,7 +80,7 @@ class FrontendContractApiTest extends AuthTestSupport {
                 .andExpect(status().isNotFound());
         as(teacher);evaluations.end(f.id());
         mvc.perform(body(post(root(f)+"/events").header("X-Participant-Token",f.token()),Map.of("type","WINDOW_LEAVE","occurredAt",Instant.now().toString())))
-                .andExpect(status().isConflict());
+                .andExpect(status().isUnauthorized()); // 종료로 자동 제출됨
     }
     @Test void tableOnlyAnswerIsSavedAndCountedAsNonBlank() throws Exception {
         var f=fixture(true);
@@ -117,7 +117,7 @@ class FrontendContractApiTest extends AuthTestSupport {
         work.save(f.id(),f.token(),f.question(),new SaveAnswer("저장 가능",0,AnswerSource.DIRECT,null));
         var preview=work.review(f.id(),f.token());work.submit(f.id(),f.token(),preview.reviewToken());
         mvc.perform(body(post(root(f)+"/events").header("X-Participant-Token",f.token()),Map.of("type","WINDOW_LEAVE","occurredAt",Instant.now().toString())))
-                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("ALREADY_SUBMITTED"));
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("code").value("INVALID_PARTICIPANT_TOKEN"));
     }
     @Test void sanitizesExecutableMarkupAndRetainsLegacyRasterImages() {
         String safe=AnswerHtml.clean("<table onclick='bad()'><tr><td colspan='2'>표<script>alert(1)</script><img src='data:image/png;base64,aGVsbG8=' onerror='bad()'><a href='javascript:bad()'>링크</a></td></tr></table>");

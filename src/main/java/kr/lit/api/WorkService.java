@@ -58,7 +58,13 @@ public class WorkService {
     }
     private Context authenticate(String id,String token) {
         var e=evaluation(id);
-        var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+        var guest=new kr.lit.auth.ParticipantAccess(db,endGraceSeconds).authenticate(id,token);
+        return new Context(id,guest.participantId(),e.state(),e.expiresAt());
+    }
+    /** 제출 요청의 재시도(같은 reviewToken)는 제출한 뒤에도 같은 응답을 받게 합니다. 그 밖의 조회는 막습니다. */
+    private Context authenticateSubmit(String id,String token) {
+        var e=evaluation(id);
+        var guest=new kr.lit.auth.ParticipantAccess(db,endGraceSeconds).authenticateLobby(id,token);
         return new Context(id,guest.participantId(),e.state(),e.expiresAt());
     }
 
@@ -297,13 +303,6 @@ public class WorkService {
     private DisclosureView snapshotDisclosure(Context c) {
         return automaticDisclosure.getDisclosure(c.evaluationId(),c.participantId());
     }
-    public DisclosureView disclosure(String id,String token) {
-        var c=authenticate(id,token);return snapshotDisclosure(c);
-    }
-    /** Compatibility endpoint: client input is deliberately ignored. */
-    public DisclosureView saveDisclosure(String id,String token,Disclosure input) {
-        return disclosure(id,token);
-    }
     private ReviewContent finalizeDisclosure(Context c,ReviewContent content){
         var disclosure=automaticDisclosure.generateDisclosure(c.evaluationId(),c.participantId(),json.valueToTree(content));
         return new ReviewContent(content.evaluationId(),content.participantId(),content.aiPolicy(),content.answers(),content.conversations(),content.learningEvents(),disclosure);
@@ -349,11 +348,11 @@ public class WorkService {
         var c=authenticate(id,token);editable(c);return review(c);
     }
     public Submission submit(String id,String token,String reviewToken) {
-        var c=authenticate(id,token);
+        var c=authenticateSubmit(id,token);
         if(submitted(c)) {
             String previous=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,c.participantId());
             if(!Objects.equals(previous,reviewToken)) throw failure(HttpStatus.CONFLICT,"ALREADY_SUBMITTED","이미 제출한 평가입니다.");
-            return submission(c);
+            return studentView(submission(c));
         }
         editable(c);var review=review(c);
         if(!review.answerValidationErrors().isEmpty())throw failure(HttpStatus.BAD_REQUEST,"ANSWER_LENGTH_INVALID","문항별 최소·최대 글자 수를 확인해주세요.");
@@ -365,7 +364,12 @@ public class WorkService {
         requestAnalysis(id,c.participantId());
         notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",
                 c.participantId(),"submission:"+c.participantId());
-        return submission(c);
+        return studentView(submission(c));
+    }
+    /** 학생에게 주는 제출 응답에는 AI 활용 기록(교사 전용)을 넣지 않습니다. */
+    private Submission studentView(Submission s) {
+        if(s.snapshot() instanceof com.fasterxml.jackson.databind.node.ObjectNode node){var copy=node.deepCopy();copy.remove("aiDisclosure");return new Submission(s.status(),s.submittedAt(),copy,s.submissionMode());}
+        return s;
     }
     private Submission submission(Context c) {
         var records=db.query("SELECT * FROM submissions WHERE participant_id=?",(r,n)->

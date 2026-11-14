@@ -110,7 +110,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | GET | `/api/evaluations/{id}/conversations` | 본인 대화 |
 | GET | `/api/evaluations/{id}/learning-events` | 본인 학습 기록 |
 | POST | `/api/evaluations/{id}/learning-events` | 창 이탈·캡처·복사 시도·붙여넣기·AI 답변 복사 기록 |
-| GET·PUT | `/api/evaluations/{id}/ai-disclosure` | 사용한 AI 도구·활용 부분·선택 이유 |
+| GET·PUT | `/api/evaluations/{id}/ai-disclosure` | (2026-11-14 없앰, 403 `TEACHER_ONLY`) 교사 `GET /api/teacher/evaluations/{id}/students/{pid}/ai-disclosure` 사용 |
 | GET | `/api/evaluations/{id}/submission-preview` | 제출 내용 확인 |
 | POST | `/api/evaluations/{id}/submission` | 최종 제출 확정 |
 | GET | `/api/evaluations/{id}/submission` | 확정된 기록 조회 |
@@ -329,7 +329,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 ### HWP 리포트 다운로드
 
-저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 학생용 `GET /api/evaluations/{id}/report/hwp`로 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 기존 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
+저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 교사용 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
 
 ### 학생 재접속
 

@@ -50,4 +50,11 @@ abstract class AuthTestSupport {
     }
     MockHttpServletRequestBuilder body(MockHttpServletRequestBuilder r,Object value) throws Exception {return r.contentType("application/json").content(json.writeValueAsString(value));}
     JsonNode ok(MockHttpServletRequestBuilder r) throws Exception {return json.readTree(mvc.perform(r).andExpect(status().is2xxSuccessful()).andReturn().getResponse().getContentAsString());}
+    @Autowired AutomaticDisclosureService automaticDisclosureForTests;
+    /** 제출한 학생 토큰으로는 제출본을 볼 수 없으므로(2026-11-14) 테스트는 저장된 제출본을 직접 읽습니다. */
+    String participantOf(String id,String token){return db.queryForObject("SELECT id FROM participants WHERE evaluation_id=? AND ((token_hashed=TRUE AND token=?) OR (token_hashed=FALSE AND token=?))",String.class,id,AuthService.hash(token),token);}
+    WorkModels.Submission submissionByToken(String id,String token){
+        return db.query("SELECT * FROM submissions WHERE participant_id=?",(r,n)->{try{return new WorkModels.Submission("SUBMITTED",r.getObject("submitted_at",java.time.OffsetDateTime.class).toInstant(),json.readTree(r.getString("snapshot")),r.getString("submission_mode"));}catch(Exception e){throw new IllegalStateException(e);}},participantOf(id,token)).get(0);
+    }
+    WorkModels.DisclosureView disclosureByToken(String id,String token){return automaticDisclosureForTests.getDisclosure(id,participantOf(id,token));}
 }

@@ -42,7 +42,7 @@ class BackendIntegrationApiTest extends AuthTestSupport {
         var f=fixture();
         var one=work.reserve(f.id(),f.token(),f.q(),new Ask("concept","광합성 개념을 설명해줘"),"stub","local-stub");work.finish(one,"빛을 사용해 양분을 만드는 과정입니다.",null);
         var two=work.reserve(f.id(),f.token(),f.q(),new Ask("verify","방금 설명의 출처와 근거가 맞는지 확인해줘"),"stub","local-stub");work.finish(two,"출처를 함께 대조하세요.",null);
-        work.saveDisclosure(f.id(),f.token(),new Disclosure("내장 AI","개념 확인","근거를 검증하기 위해"));submit(f);
+        submit(f);
         var scores=assessment.scores(f.id(),f.pid());assertThat(scores.recommendedMaxScore()).isEqualTo(70);
         assertThat(scores.criteria().get(3).ai()).isNull();assertThat(scores.status()).isEqualTo("NOT_STARTED");
         assertThatThrownBy(()->assessment.confirm(f.id(),f.pid(),true)).isInstanceOf(ApiError.Failure.class);

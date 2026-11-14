@@ -15,7 +15,8 @@ public class EvaluationService {
  private final String baseUrl;
  private final WorkService work;
  private final SecureRandom random=new SecureRandom();
- public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl,WorkService work){this.db=db;this.baseUrl=baseUrl;this.work=work;}
+ private final kr.lit.auth.ParticipantAccess access;
+ public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl,WorkService work,kr.lit.auth.ParticipantAccess access){this.db=db;this.baseUrl=baseUrl;this.work=work;this.access=access;}
  public record Evaluation(String id,String title,String pin,String state,Instant expiresAt,String assessmentId,String className){}
  public record EvaluationPage(List<Evaluation> items,int page,int size,long totalElements,long totalPages){}
  public record Participant(String id,String nickname,String presence){}
@@ -80,7 +81,7 @@ public class EvaluationService {
  public Joined join(String pin,String nickname,String token){
   var e=byPin(pin);available(e);
   if(token!=null&&!token.isBlank()) {
-   var guest=new kr.lit.auth.ParticipantAccess(db).authenticateReconnect(e.id(),token);
+   var guest=access.authenticateReconnect(e.id(),token);
    db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=? AND expelled_at IS NULL",guest.participantId());
    return new Joined(guest.participantId(),token,personalLobby(e,guest.participantId()));
   }
@@ -93,7 +94,7 @@ public class EvaluationService {
   return new Joined(id,secret,lobby(e));
  }
  public Lobby participant(String id,String token,boolean leave){
-  var e=read(id);var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+  var e=read(id);var guest=access.authenticateLobby(id,token);
   if(e.state().equals("STARTED")) {work.finishEvaluation(id,true);e=read(id);}
   db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE id=?",!leave,guest.participantId());
   return personalLobby(e,guest.participantId());
