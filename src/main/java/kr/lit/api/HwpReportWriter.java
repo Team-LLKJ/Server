@@ -16,7 +16,7 @@ import java.util.*;
 final class HwpReportWriter {
     private static final int WIDTH=50458, MAX_PARAGRAPH_CHARS=2000;
     private final HWPFile document;
-    private final int bodyChar,titleChar,subtitleChar,headingChar,noteChar,tableLabelChar;
+    private final int bodyChar,titleChar,subtitleChar,headingChar,noteChar;
     private final int bodyPara,titlePara,headerNotePara,headingPara,cellPara;
     private final int cellBorder,headerBorder;
     private boolean first=true;
@@ -30,8 +30,7 @@ final class HwpReportWriter {
         for(var faces:List.of(info.getHangulFaceNameList(),info.getEnglishFaceNameList(),info.getHanjaFaceNameList(),info.getJapaneseFaceNameList(),info.getEtcFaceNameList(),info.getSymbolFaceNameList(),info.getUserFaceNameList()))for(var face:faces)face.setName("나눔고딕");
         bodyChar=createCharShape(11,false,0x292929);
         titleChar=createCharShape(18,true,0x292929);
-        subtitleChar=createCharShape(12,false,0x292929);
-        tableLabelChar=createCharShape(11,true,0x292929);
+        subtitleChar=createCharShape(11,true,0x292929);
         headingChar=createCharShape(12,true,0x292929);
         noteChar=createCharShape(9,false,0x666666);
         bodyPara=createParaShape(Alignment.Left,0,500,false);
@@ -111,7 +110,7 @@ final class HwpReportWriter {
         paragraph.getCharShape().getPositonShapeIdPairList().clear();paragraph.getCharShape().addParaCharShape(0,charId);
         paragraph.deleteLineSeg();
     }
-    /** 표를 만들고 긴 셀은 페이지 경계에서 나눌 수 있게 합니다. */
+    /** 짧은 요약 정보는 표에, 긴 자유 서술은 표 밖의 일반 문단에 배치합니다. */
     void addTable(List<List<String>> rows,int[] widths,boolean firstRowHeader) {
         if(rows.isEmpty()||Arrays.stream(widths).sum()!=42520)throw new IllegalArgumentException("Invalid report table");
         widths=widths.clone();int assigned=0;for(int i=0;i<widths.length;i++){widths[i]=i==widths.length-1?WIDTH-assigned:(int)((long)widths[i]*WIDTH/42520);assigned+=widths[i];}
@@ -143,7 +142,7 @@ final class HwpReportWriter {
                 String value=sanitize(rows.get(r).get(c));var parts=new ArrayList<String>();
                 for(String line:value.split("\\R",-1)){if(line.isEmpty())parts.add("");else for(int start=0;start<line.length();){int end=Math.min(start+MAX_PARAGRAPH_CHARS,line.length());if(end<line.length()&&Character.isHighSurrogate(line.charAt(end-1)))end--;parts.add(line.substring(start,end));start=end;}}
                 cellHeader.setParaCount(parts.size());
-                for(int i=0;i<parts.size();i++){var p=cell.getParagraphList().addNewParagraph();p.createText();p.createCharShape();p.getHeader().setLastInList(i==parts.size()-1);setParagraph(p,parts.get(i),shaded?tableLabelChar:bodyChar,cellPara);}
+                for(int i=0;i<parts.size();i++){var p=cell.getParagraphList().addNewParagraph();p.createText();p.createCharShape();p.getHeader().setLastInList(i==parts.size()-1);setParagraph(p,parts.get(i),shaded?subtitleChar:bodyChar,cellPara);}
             }
         }
     }
