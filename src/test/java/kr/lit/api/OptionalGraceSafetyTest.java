@@ -25,7 +25,7 @@ class OptionalGraceSafetyTest extends AuthTestSupport {
         assessment.saveScore(f.id(),f.pid(),1,new AssessmentModels.ScoreInput(null,null));
         assertThatThrownBy(()->work.save(f.id(),f.token(),f.q(),new SaveAnswer("늦은 변경",1,AnswerSource.DIRECT,null)))
                 .isInstanceOfSatisfying(ApiError.Failure.class,e->assertThat(e.code).isEqualTo("ALREADY_SUBMITTED"));
-        assertThat(work.submission(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).isEqualTo("저장 답안");
+        assertThat(submissionByToken(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).isEqualTo("저장 답안");
     }
     @Test void delayedExpiryWorkerDoesNotOpenANewGraceWindowAfterScheduledDeadline() {
         var f=fixture();
@@ -33,7 +33,7 @@ class OptionalGraceSafetyTest extends AuthTestSupport {
         evaluations.end(f.id());
         assertThatThrownBy(()->work.save(f.id(),f.token(),f.q(),new SaveAnswer("기한 이후 입력",1,AnswerSource.DIRECT,null)))
                 .isInstanceOf(ApiError.Failure.class);
-        assertThat(work.submission(f.id(),f.token()).submissionMode()).isEqualTo("AUTO_DEADLINE");
-        assertThat(work.submission(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).isEqualTo("저장 답안");
+        assertThat(submissionByToken(f.id(),f.token()).submissionMode()).isEqualTo("AUTO_DEADLINE");
+        assertThat(submissionByToken(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).isEqualTo("저장 답안");
     }
 }

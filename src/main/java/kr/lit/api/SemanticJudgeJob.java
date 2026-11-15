@@ -15,7 +15,8 @@ public class SemanticJudgeJob {
     private final JdbcTemplate db;
     private final AssessmentService assessment;
     private final SemanticJudge judge;
-    public SemanticJudgeJob(JdbcTemplate db,AssessmentService assessment,SemanticJudge judge){this.db=db;this.assessment=assessment;this.judge=judge;}
+    private final JudgeUsage usage;
+    public SemanticJudgeJob(JdbcTemplate db,AssessmentService assessment,SemanticJudge judge,JudgeUsage usage){this.db=db;this.assessment=assessment;this.judge=judge;this.usage=usage;}
 
     private record Target(String evaluationId,String participantId) {}
 
@@ -30,7 +31,7 @@ public class SemanticJudgeJob {
 
     /** 한 학생의 판정: 후보 고르기(트랜잭션) → LLM 호출(트랜잭션 밖) → 다시 계산해 저장(트랜잭션). */
     public void process(String evaluationId,String participantId) {
-        try {
+        try(var ignored=usage.open(evaluationId,participantId,JudgeUsage.Task.SEMANTIC)) {
             var plan=assessment.prepareSemantic(evaluationId,participantId);
             if(plan==null) return;
             String failure=judge.run(plan);

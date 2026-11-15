@@ -4,22 +4,72 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import static kr.lit.api.ProcessGradingModels.*;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import jakarta.annotation.PreDestroy;
 
 @Component
 public class ProcessGradingWorker {
-    private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;
-    public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine){this.repository=repository;this.ai=ai;this.engine=engine;}
+    private static final int PARALLEL_JOBS=2;
+    private final Map<String,String> activeJobs=new ConcurrentHashMap<>();
+    private final java.util.concurrent.ExecutorService workers=Executors.newFixedThreadPool(PARALLEL_JOBS,
+            new org.springframework.scheduling.concurrent.CustomizableThreadFactory("process-grading-"));
+    private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;private final ProcessRubricGrader rubric;private final AutomaticDisclosureService disclosures;
+    public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine,ProcessRubricGrader rubric,AutomaticDisclosureService disclosures){this.repository=repository;this.ai=ai;this.engine=engine;this.rubric=rubric;this.disclosures=disclosures;}
+    /**
+     * 대기 작업을 처리합니다. LLM 루브릭 판정(rubric 키)이 켜져 있으면 질문 용도·답안 기여도 분류가 끝난 학생부터(최대 10분 대기) 학생 단위로 판정합니다.
+     * 다시 제출하면 이전 대기 작업은 SUPERSEDED가 되어 마지막 제출본만 채점합니다(ProcessGradingRepository.insertJob).
+     */
     @Scheduled(fixedDelayString="${lit.grading.process-interval-ms:3000}",initialDelayString="${lit.grading.process-interval-ms:3000}")
     public void analyzePending() {
-        repository.recoverJobs();for(String job:repository.getPendingJobs())processJob(job);
+        repository.recoverJobs();
+        for(var pending:repository.getPendingJobRows()) {
+            if(activeJobs.size()>=PARALLEL_JOBS)break;
+            if(rubric.isActive()&&!rubric.ready(pending.participantId(),pending.createdAt()))continue;
+            if(activeJobs.putIfAbsent(pending.participantId(),pending.id())!=null)continue;
+            try {
+                workers.execute(()->{
+                    try{processJob(pending.id());}
+                    finally{activeJobs.remove(pending.participantId(),pending.id());}
+                });
+            } catch(RejectedExecutionException ex) {
+                activeJobs.remove(pending.participantId(),pending.id());
+                if(!workers.isShutdown())throw ex;
+                break;
+            }
+        }
+    }
+    @PreDestroy void stopWorkers(){workers.shutdownNow();}
+    /**
+     * 재분석해도 교사가 고친 항목은 덮어쓰지 않습니다. 같은 학생의 바로 앞 분석에 교사 검토가 있으면 그 보정(overrides)을 새 결과에 다시 적용한
+     * 검토 초안(확정 안 됨)을 저장합니다. 문항·항목 구조가 달라 적용할 수 없으면 건너뜁니다. 확정은 교사가 새 결과를 보고 다시 합니다.
+     */
+    void carryOverReview(String job,Input input,Result result) {
+        try {
+            var jobs=repository.getJobs(input.evaluationId(),input.participantId());
+            int index=-1;for(int i=0;i<jobs.size();i++) if(jobs.get(i).id().equals(job)) index=i;
+            if(index<0||repository.getReview(job).isPresent()) return;
+            for(int i=index+1;i<jobs.size();i++) {
+                var previous=repository.getReview(jobs.get(i).id());
+                if(previous.isEmpty()) continue;
+                var old=previous.get();
+                if(old.overrides()==null||old.overrides().isEmpty()) return;
+                var applied=engine.applyReview(input,result,old.overrides());
+                repository.saveReview(job,new Review(1,old.teacherId(),java.time.Instant.now(),old.overrides(),old.complianceDecision(),old.complianceReason(),applied,false));
+                return;
+            }
+        } catch(RuntimeException ignored) {} // 구조가 달라 적용할 수 없는 보정은 옮기지 않습니다.
     }
     public void processJob(String job) {
         if(!repository.claimJob(job))return;
         try {
             var input=repository.getInput(job);Result result;
+            disclosures.getDisclosure(input.evaluationId(),input.participantId());
+            if(rubric.isActive()){var graded=gradeWithJudge(job,input);repository.completeJob(job,rubric.modelLabel(),graded);carryOverReview(job,input,graded);return;}
             if(input.policy()==null)result=engine.hold(input,"PRE_EVALUATION_POLICY_REQUIRED");
-            else if(engine.isV3(input)&&input.policy().excludedCriteria().size()==Criterion.values().length)result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
+            else if(engine.isV3(input)&&input.policy().excludedCriteria().containsAll(Criterion.active()))result=engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
             else if(input.policy().questionWeights().size()!=input.questionIds().size()
                     ||!input.policy().questionWeights().stream().map(QuestionWeight::questionId).collect(java.util.stream.Collectors.toSet()).equals(new java.util.HashSet<>(input.questionIds())))result=engine.hold(input,"QUESTION_WEIGHTS_OUTDATED");
             else if(repository.encode(input).getBytes(StandardCharsets.UTF_8).length>524288)result=engine.hold(input,"INPUT_TOO_LARGE_NO_TRUNCATION");
@@ -32,7 +82,18 @@ public class ProcessGradingWorker {
             }
             repository.completeJob(job,ai.getModel(),result);
         }catch(ProcessGradingAiClient.GradingFailure ex){repository.failJob(job,ex.code);}
+        catch(SemanticJudgeClient.JudgeFailure ex){repository.failJob(job,ex.code());}
         catch(Exception ex){repository.failJob(job,"GRADING_VALIDATION_FAILED");}
+    }
+    /**
+     * LLM 루브릭 판정(학생 단위, 문항 가중치 없음). 사전 정책은 없어도 됩니다: 정책의 제외 항목은 NA로 둡니다.
+     * AI 미사용 학생은 문서 규칙(자기 주도적 사고는 모델 없이 교사 확인 HOLD, 나머지 NA)을 따릅니다. 이 규칙이 noAiPolicy=NOT_APPLICABLE에 해당합니다.
+     */
+    private Result gradeWithJudge(String job,Input input) {
+        var policy=input.policy();
+        if(policy!=null&&policy.excludedCriteria().containsAll(Criterion.active()))return engine.notApplicable(input,"PRESELECTED_NOT_APPLICABLE");
+        if(repository.encode(input).getBytes(StandardCharsets.UTF_8).length>524288)return engine.hold(input,"INPUT_TOO_LARGE_NO_TRUNCATION");
+        return rubric.grade(input,()->repository.touchJob(job));
     }
     private AiOutput recommendBatches(String job,Input input) {
         var recommendations=new java.util.ArrayList<Recommendation>();Compliance compliance=null;String summary=null;

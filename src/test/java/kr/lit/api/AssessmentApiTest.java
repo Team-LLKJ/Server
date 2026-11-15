@@ -56,7 +56,7 @@ class AssessmentApiTest extends AuthTestSupport {
         String aiText=ask(f,f.q2(),"r3","답안을 대신 작성해줘");
         work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.COPY_ATTEMPT,Instant.now(),null));
         work.save(f.id(),f.token(),f.q2(),new SaveAnswer("<p>"+aiText+"</p><p>학교 화단의 나팔꽃이 좋은 예시다.</p>",0,AnswerSource.AI_USED,"r3"));
-        work.saveDisclosure(f.id(),f.token(),new Disclosure("LIT 내장 AI","문항 2 첫 문단","개념 확인 후 내 예시로 바꿨다"));
+        
         submit(f.id(),f.token());
 
         JsonNode subs=ok(request(get(root(f)+"/submissions"),teacher));
@@ -80,26 +80,27 @@ class AssessmentApiTest extends AuthTestSupport {
         var c=analysis.path("contribution");
         assertThat(c.path("direct").asInt()+c.path("aiReferenced").asInt()).isEqualTo(100);assertThat(c.path("aiUsed").asInt()).isZero();
         assertThat(c.path("basis").asText()).isEqualTo("TEXT_SIMILARITY_ESTIMATE_V2");
-        assertThat(texts(analysis.path("sentences"),"source")).containsOnly("DIRECT","AI_REFERENCED").contains("AI_REFERENCED");
+        assertThat(texts(analysis.path("sentences"),"source")).containsOnly("DIRECT","AI").contains("AI");
         mvc.perform(request(get(root(f)+"/participants/"+f.otherPid()+"/analysis"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("status").value("NOT_SUBMITTED"));
 
         String score=root(f)+"/participants/"+f.pid()+"/rubric-scores";
-        mvc.perform(request(get(score),teacher)).andExpect(status().isOk()).andExpect(jsonPath("criteria.length()").value(5))
-                .andExpect(jsonPath("criteria[0].maxScore").value(15)).andExpect(jsonPath("status").value("NOT_STARTED"));
+        mvc.perform(request(get(score),teacher)).andExpect(status().isOk()).andExpect(jsonPath("criteria.length()").value(4))
+                .andExpect(jsonPath("criteria[0].maxScore").value(20)).andExpect(jsonPath("criteria[1].maxScore").value(30)).andExpect(jsonPath("status").value("NOT_STARTED"));
         mvc.perform(body(request(put(score+"/1"),teacher),Map.of("level",3,"feedback","목적 적절"))).andExpect(status().isOk())
-                .andExpect(jsonPath("criteria[0].teacher.score").value(11.25)).andExpect(jsonPath("status").value("DRAFT"));
+                .andExpect(jsonPath("criteria[0].teacher.score").value(15.0)).andExpect(jsonPath("status").value("DRAFT"));
         mvc.perform(body(request(put(score+"/9"),teacher),Map.of("level",3))).andExpect(status().isNotFound());
+        mvc.perform(body(request(put(score+"/5"),teacher),Map.of("level",3))).andExpect(status().isNotFound()); // 투명성 삭제(2026-11-14)
         mvc.perform(body(request(put(score+"/2"),teacher),Map.of("level",5))).andExpect(status().isBadRequest());
         mvc.perform(body(request(put(root(f)+"/participants/"+f.otherPid()+"/rubric-scores/1"),teacher),Map.of("level",3))).andExpect(status().isConflict());
         mvc.perform(request(post(root(f)+"/participants/"+f.pid()+"/grade/confirm"),teacher)).andExpect(status().isConflict()).andExpect(jsonPath("code").value("GRADING_INCOMPLETE"));
-        for(int id=2;id<=5;id++) mvc.perform(body(request(put(score+"/"+id),teacher),Map.of("level",3))).andExpect(status().isOk());
+        for(int id=2;id<=4;id++) mvc.perform(body(request(put(score+"/"+id),teacher),Map.of("level",3))).andExpect(status().isOk());
         mvc.perform(request(post(root(f)+"/participants/"+f.pid()+"/grade/confirm"),teacher)).andExpect(status().isOk())
                 .andExpect(jsonPath("status").value("CONFIRMED")).andExpect(jsonPath("confirmedTotal").value(75.0));
         mvc.perform(body(request(put(score+"/2"),teacher),Map.of("level",4))).andExpect(status().isOk())
-                .andExpect(jsonPath("status").value("DRAFT")).andExpect(jsonPath("confirmedTotal").value(75.0)).andExpect(jsonPath("totalTeacher").value(81.25));
+                .andExpect(jsonPath("status").value("DRAFT")).andExpect(jsonPath("confirmedTotal").value(75.0)).andExpect(jsonPath("totalTeacher").value(82.5));
         mvc.perform(body(request(put(root(f)+"/participants/"+f.pid()+"/compliance-review"),teacher),Map.of("decision","HOLD")))
                 .andExpect(status().isOk()).andExpect(jsonPath("compliance.decision").value("HOLD")).andExpect(jsonPath("compliance.ai").value("CHECK"));
-        mvc.perform(request(get(score+"/history"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("length()").value(6));
+        mvc.perform(request(get(score+"/history"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("length()").value(5));
         mvc.perform(body(request(put(root(f)+"/rubric"),teacher),Map.of("criteria",List.of(Map.of("name","a","maxScore",100,"indicator","MANUAL")))))
                 .andExpect(status().isConflict()).andExpect(jsonPath("code").value("RUBRIC_LOCKED"));
         mvc.perform(request(post(root(f)+"/analysis/run"),teacher)).andExpect(status().isAccepted()).andExpect(jsonPath("queued").value(1));
@@ -116,7 +117,7 @@ class AssessmentApiTest extends AuthTestSupport {
         submit(f.id(),f.token());
         mvc.perform(request(get(root(f)+"/participants/"+f.pid()+"/rubric-scores"),teacher)).andExpect(status().isOk())
                 .andExpect(jsonPath("criteria[1].ai").doesNotExist());
-        mvc.perform(request(delete(path),teacher)).andExpect(status().isOk()).andExpect(jsonPath("criteria.length()").value(5));
+        mvc.perform(request(delete(path),teacher)).andExpect(status().isOk()).andExpect(jsonPath("criteria.length()").value(4));
     }
 
     @Test void warningEventsAcceptNewTypesAndCountInSubmissions() throws Exception {
@@ -191,7 +192,7 @@ class AssessmentApiTest extends AuthTestSupport {
         String pdfText;try(var doc=org.apache.pdfbox.Loader.loadPDF(pdf.render(first,false))){pdfText=new org.apache.pdfbox.text.PDFTextStripper().getText(doc);}
         var document=kr.dogfoot.hwplib.reader.HWPReader.fromInputStream(new java.io.ByteArrayInputStream(hwp.exportReport(first,false)));
         String hwpText=kr.dogfoot.hwplib.tool.textextractor.TextExtractor.extract(document,kr.dogfoot.hwplib.tool.textextractor.TextExtractMethod.InsertControlTextBetweenParagraphText);
-        for(String text:List.of(pdfText,hwpText)){assertThat(text).contains("교사근거우선표식","AI 활용 목적의 적절성","11.25 / 15");assertThat(text.replaceAll("\\s+","")).contains(aiReason.replaceAll("\\s+",""));}
+        for(String text:List.of(pdfText,hwpText)){assertThat(text).contains("교사근거우선표식","AI 활용 목적의 적절성","15 / 20");assertThat(text.replaceAll("\\s+","")).contains(aiReason.replaceAll("\\s+",""));}
         grading.saveScore(f.id(),f.pid(),1,new AssessmentModels.ScoreInput(3,"후속근거표식"));
         var next=reports.teacherGenerate(f.id(),f.pid());assertThat(next.version()).isEqualTo(first.version()+1);
         assertThat(reports.teacherReport(f.id(),f.pid(),first.version()).content().grading().criteria().get(0).feedback()).isEqualTo("교사근거우선표식");

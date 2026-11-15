@@ -1,11 +1,13 @@
+> **LLM 루브릭 판정(학생 단위)**: rubric 키가 설정되면 과정 채점 결과가 학생 단위 칸(`questionId=null`)과 NA 재분배 총점으로 바뀝니다. [AI_JUDGE.md](AI_JUDGE.md#-루브릭-단계--과정-채점process-grading에-붙음) 참고.
+
 # AI 활용 과정 평가 V1 API
 
 첨부된 최종 요약안을 `LIT_PROCESS_RUBRIC_V1`으로 구현합니다. 이는 LIT 제안 척도이며 공식 인증 점수가 아닙니다. Web은 변경하지 않았습니다. 기존 `/analysis`, `/rubric-scores`의 키워드 규칙 기반 모델과 별개인 `/process-grading` API입니다. 기존 채점·PDF/HWP 리포트를 자동 대체하거나 학교 성적에 반영하지 않습니다. 프런트가 새 API를 연동해야 새 결과를 표시합니다.
 
 ## 평가 원칙
 
-- PURPOSE15 / SELF_DIRECTION25 / CRITICAL_REVIEW20 / CONTRIBUTION25 / TRANSPARENCY15.
-- 문항마다 앞4개 항목을 먼저 평가하고 교사가 **시작 전에** 설정한 문항 비율(합계100%)로 합산합니다. 투명성은 평가 전체 GLOBAL에서 한 번만15점으로 반영합니다.
+- PURPOSE 20 / SELF_DIRECTION 30 / CRITICAL_REVIEW 20 / CONTRIBUTION 30 (2026-11-14, 투명성 삭제. 이전 결과의 TRANSPARENCY 칸은 그대로 보입니다).
+- 문항마다 앞4개 항목을 먼저 평가하고 교사가 **시작 전에** 설정한 문항 비율(합계100%)로 합산합니다. (이전에는 투명성을 GLOBAL에서 한 번 반영했습니다.)
 - 각 영역 점수=배점×수준÷4. 중간 반올림 없이 BigDecimal로 합산하고 최종 총점만 소수 둘째 자리 HALF_UP 표시합니다. 한 문항의3·3·2·3·3은70.00, 모두3이면75.00입니다.
 - 근거 부족은 level/score/total=null과 HOLD로 구분합니다. 0단계는 해당 행동이 실제 기록에서 확인된 경우에만 추천합니다. 실패·자료 부족을0점으로 바꾸지 않습니다.
 - 규정 준수는 OK/CHECK/INSUFFICIENT_EVIDENCE로 별도 제시합니다. 교사가 CONFIRMED_OK/HOLD/CONFIRMED_VIOLATION으로 판단합니다. 역량 점수와 위반 가능성을 자동 상쇄·감점하지 않습니다.
@@ -58,17 +60,17 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 
 이는 ‘관측된 대화·사용 공개 기록이 없음’에 대한 처리입니다. 외부 AI 미사용을 인증하지 않습니다. 자동 수집 기록을 학생이 다시 제출할 필요는 없습니다.
 
-## 2. 제출 시 자동 예약·입력 고정
+## 2. 제출 시 분석 시작과 입력 고정
 
-수동 제출·시간 만료·교사 종료 자동 제출 시 별도 분석 버전을 예약합니다. 서버 재기동 후 PENDING 작업도 처리합니다. 배치 주기는 `LIT_PROCESS_GRADING_INTERVAL_MS`(기본3000ms)입니다.
+수동 제출과 시간 만료·교사 종료에 따른 자동 제출은 제출본과 분석 작업을 함께 저장합니다. 저장이 완료되면 백그라운드 분석을 시작합니다. 제출 응답은 분석 결과를 기다리지 않습니다. 서버 재기동 등으로 대기 중인 작업은 기존 주기 작업이 처리합니다. 주기 설정은 `lit.grading.process-interval-ms`(기본 3000ms)입니다.
 
 고정 항목: 제출 스냅샷 해시, 문항/최종 답안, 대화와 답안 변경 이력, 당시 AI 사용 공개 내용, 교사 정책 버전, 기준 버전, 목표·규칙, 평가 AI 허용 단계. 이후 라이브 DB나 교사 검토가 바뀌어도 과거 버전은 덮어쓰지 않습니다. 대기/진행 중 중복 예약은409 PROCESS_ANALYSIS_PENDING입니다. 명시적 재분석은 새로운 version·runId를 만듭니다. 기존 제출 데이터는 자동 소급 분석하지 않으며 필요하면 POST runs로 예약합니다.
 
-- 정책 없음: 외부 AI를 호출하지 않고 HOLD/PRE_EVALUATION_POLICY_REQUIRED.
+- 사전 정책이 없는 평가에서 문항이 설정되면 GET /process-grading/policy가 서버 기본 정책(version=0)을 반환합니다. 교사가 저장한 정책이 우선하며, 기본 정책을 수정하는 첫 PUT은 expectedVersion=0을 사용합니다. 사전 정책이 없는 새 작업은 평가 안내(없으면 제목), AI 허용 범위, 제출본 문항의 균등 비율로 기본 정책(version=0)을 만들어 입력에 고정합니다. 관측된 AI 기록이 없는 문항별 채점은 보류합니다. 기존 분석 버전은 그대로 조회됩니다.
 - 문항 비율과 제출 문항 불일치: HOLD/QUESTION_WEIGHTS_OUTDATED.
 - 입력이 UTF-8 512KiB 초과: 기록을 몰래 잘라 평가하지 않고 HOLD/INPUT_TOO_LARGE_NO_TRUNCATION.
 - 외부 호출 실패: FAILED와 errorCode. 점수 결과는 null이며 사용자가 재분석할 수 있습니다.
-- RUNNING 상태로5분 넘게 남은 작업: FAILED/WORKER_INTERRUPTED로 전환 후 명시적 재분석 가능.
+- 채점 작업은 최대 2건을 처리합니다. 대기열 확인과 복구는 모델 호출과 별도로 진행합니다. RUNNING 작업의 마지막 heartbeat가 5분을 넘으면 FAILED/WORKER_INTERRUPTED로 전환되어 다시 분석할 수 있습니다. 루브릭 모델 호출과 재시도 사이에 heartbeat를 갱신합니다.
 - 종료 후 선택적 유예 저장으로 제출본이 바뀌면 새 분석을 예약하고 이전 제출본의 새 확정은 차단합니다.
 
 ## 3. AI 출력과 서버 검증
@@ -94,7 +96,7 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 
 검증 항목:
 
-- 각 문항4항목+GLOBAL 투명성을 정확히 한 번 반환했는가.
+- 각 문항 4항목을 정확히 한 번 반환했는가(이전 모델 답의 투명성 칸은 무시).
 - 근거 ID가 해당 학생의 고정 입력에 존재하고 인용문이 실제 그 문장에 포함되는가(최대2000자).
 - 다른 문항의 개별 근거를 가져오지 않았는가. GLOBAL 공개 내용은 공통 근거로 활용할 수 있습니다.
 - 필수조건의 근거가 비어 있지 않고 허용된 조건 key인가.
@@ -124,7 +126,7 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 }
 ```
 
-PUT review의 overrides는 해당 검토의 전체 보정 목록입니다. 생략한 항목은 AI 검증 결과로 계산합니다. reason은 필수이며 누가·언제 수정했는지 저장합니다. 새 검토는 confirmed=false로 돌아가고 이전 검토·확정 이력을 남깁니다. expectedRevision이 다르면409 PROCESS_REVIEW_VERSION_CONFLICT입니다.
+PUT review의 overrides는 해당 검토의 전체 보정 목록입니다. 생략한 항목은 AI 검증 결과로 계산합니다. reason은 선택 입력이며 누가·언제 수정했는지 저장합니다. 새 검토는 confirmed=false로 돌아가고 이전 검토·확정 이력을 남깁니다. expectedRevision이 다르면409 PROCESS_REVIEW_VERSION_CONFLICT입니다.
 
 #### 교사 점수 직접 입력
 
@@ -134,7 +136,7 @@ AI가 정한 점수를 수준(level) 대신 점수로 바로 덮어쓸 수 있�
 {"questionId":"문항 ID","criterion":"CONTRIBUTION","score":21.5,"reason":"학생의 핵심 판단을 직접 확인했다."}
 ```
 
-- `score`: 0 이상, 그 영역 만점(목적 적절성·투명성 15, 자기 주도·기여 25, 비판적 검토 20) 이하, 소수 둘째 자리까지. 문항 배점 비율은 기존과 같이 곱해 총점을 계산합니다.
+- `score`: 0 이상, 그 영역 만점(목적 적절성·비판적 검토 20, 자기 주도·기여 30) 이하, 소수 둘째 자리까지. 문항 배점 비율은 기존과 같이 곱해 총점을 계산합니다.
 - 결과 칸은 `status: TEACHER_REVIEWED`, `level: null`, `score`는 입력값입니다. 분석 화면 영역 요약 `label`은 `교사 점수 입력`입니다.
 - 둘 다 보내거나 둘 다 빠졌거나 범위를 벗어나면 400 `INVALID_PROCESS_REVIEW`입니다. 저장·이력·확정(`POST …/confirm`)은 수준 보정과 같습니다.
 
@@ -144,7 +146,7 @@ AI가 정한 점수를 수준(level) 대신 점수로 바로 덮어쓸 수 있�
 {"expectedRevision":1}
 ```
 
-POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revision이 일치하고 총점이 존재하며 규정 판단이 HOLD가 아닐 때만 성공합니다. 보류 항목이 있으면409 PROCESS_CONFIRMATION_HELD, 오래된 분석/제출본은409 PROCESS_RESULT_STALE입니다. 확정도 이력 revision을 하나 추가합니다. 학생 제출본은 변경하지 않습니다. 규정 위반으로 확정해도 역량 점수를 자동 감점하지 않습니다.
+POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revision이 일치하고 총점이 존재할 때 성공합니다. 보류 항목이 있으면409 PROCESS_CONFIRMATION_HELD, 오래된 분석/제출본은409 PROCESS_RESULT_STALE입니다. 확정도 이력 revision을 하나 추가합니다. 학생 제출본은 변경하지 않습니다. 규정 위반으로 확정해도 역량 점수를 자동 감점하지 않습니다.
 
 ## 운영·검증
 
@@ -162,3 +164,21 @@ POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revisi
 ## V2 개정
 
 새 분석의 현재 계약은 [ANALYSIS_RUBRIC_V2.md](ANALYSIS_RUBRIC_V2.md)입니다. 위 V1 0~4단계 설명은 기존 run에만 적용하며 V2는 1~5단계·배점×(단계−1)/4입니다. 새 통합 분석 API로 화면의 5개 기준과 기여도를 조회할 수 있습니다.
+
+## 채점 화면과 보고서 종합 평가
+
+`GET /api/teacher/evaluations/{id}/process-grading/participants/{pid}/analysis`의 `summary`는 검증된 루브릭 근거로 구성한 객체입니다. 기존 텍스트 요약은 `summaryText`에서 조회할 수 있습니다. 구조화할 결과가 없는 경우 `summary`는 null입니다.
+
+```json
+{
+  "summary": {
+    "strengths": [{"text": "먼저 자신의 설명을 제시하고 근거를 비교했습니다.", "conversationId": 2, "quote": "근거를 비교해줘"}],
+    "weaknesses": [],
+    "checks": ["AI 답변의 비판적 검토 항목의 근거와 단계를 확인해 주세요."]
+  }
+}
+```
+
+새 PDF·HWP 보고서는 같은 요약을 출력합니다. 학생 단위 결과는 교사 확정 후 보고서에 포함되며 저장된 이전 보고서 버전은 당시 내용을 유지합니다.
+
+학생 단위 루브릭 검토에서는 `complianceDecision`과 `complianceReason`을 생략할 수 있습니다. 점수 검토가 끝나면 규정 준수 판단이 HOLD인 상태로 확정할 수 있습니다. 문항별 채점에서도 규정 준수 판단은 선택입니다. `overrides[].reason`은 선택 입력입니다.

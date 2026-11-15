@@ -61,7 +61,11 @@ public class AuthService {
         consents.recordSignupConsents(user.id(),request);return user;
     }
     private Tokens issue(String userId,String familyId,OffsetDateTime familyExpiry) {
-        String access=secret(),refresh=secret(),id=UUID.randomUUID().toString();var timestamp=now();
+        return issue(userId,familyId,familyExpiry,UUID.randomUUID().toString(),secret(),secret());
+    }
+    private Tokens issue(String userId,String familyId,OffsetDateTime familyExpiry,String id,String access,String refresh) {
+        // Match database timestamp precision so the original and repeated refresh return the same expiry.
+        var timestamp=now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         var accessExpiry=timestamp.plusHours(2);if(accessExpiry.isAfter(familyExpiry))accessExpiry=familyExpiry;
         db.update("INSERT INTO auth_sessions VALUES (?,?,?,?,?,?,?,NULL,NULL,?)",id,userId,familyId,hash(access),hash(refresh),accessExpiry,familyExpiry,timestamp);
         return new Tokens("Bearer",access,accessExpiry.toInstant(),refresh,familyExpiry.toInstant(),me(userId));
@@ -87,22 +91,45 @@ public class AuthService {
                 (r,n)->new Principal(r.getString("user_id"),Role.valueOf(r.getString("user_role")),r.getString("id")),hash(token));
         if(rows.isEmpty())throw fail(HttpStatus.UNAUTHORIZED,"INVALID_ACCESS_TOKEN","만료되었거나 유효하지 않은 로그인 토큰입니다.");return rows.get(0);
     }
-    @Transactional(noRollbackFor=ApiError.Failure.class)
     public Tokens refresh(String token) {
         // Lock the user before the session so logout and refresh have consistent lock ordering.
         var ids=db.queryForList("SELECT user_id FROM auth_sessions WHERE refresh_hash=?",String.class,hash(token));
         if(ids.isEmpty())throw fail(HttpStatus.UNAUTHORIZED,"INVALID_REFRESH_TOKEN","유효하지 않은 갱신 토큰입니다.");
         String uid=ids.get(0);db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",uid);
-        var row=db.queryForList("SELECT * FROM auth_sessions WHERE refresh_hash=? FOR UPDATE",hash(token)).get(0);
+        var rows=db.queryForList("SELECT * FROM auth_sessions WHERE refresh_hash=? FOR UPDATE",hash(token));
+        if(rows.isEmpty())throw invalidRefresh();
+        var row=rows.get(0);
         String family=(String)row.get("FAMILY_ID");
-        if(row.get("ROTATED_AT")!=null) {
-            db.update("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=?",now(),family);
-            throw fail(HttpStatus.UNAUTHORIZED,"REFRESH_TOKEN_REUSED","이미 사용된 갱신 토큰입니다. 다시 로그인해주세요.");
+        var expiry=(OffsetDateTime)row.get("REFRESH_EXPIRES_AT");
+        var timestamp=now();
+        var user=me(uid);
+        if(!expiry.isAfter(timestamp)||!"ACTIVE".equals(user.status())||user.role()!=Role.TEACHER)throw invalidRefresh();
+        if(row.get("ROTATED_AT") instanceof OffsetDateTime rotatedAt) {
+            if(rotatedAt.plusSeconds(10).isAfter(timestamp)) {
+                var successors=db.queryForList("SELECT id,refresh_hash,access_expires_at FROM auth_sessions WHERE family_id=? AND revoked_at IS NULL AND rotated_at IS NULL",family);
+                for(var successor:successors) {
+                    String id=(String)successor.get("ID");
+                    String refresh=rotationToken(token,id,"refresh");
+                    if(hash(refresh).equals(successor.get("REFRESH_HASH"))) {
+                        return new Tokens("Bearer",rotationToken(token,id,"access"),
+                                ((OffsetDateTime)successor.get("ACCESS_EXPIRES_AT")).toInstant(),refresh,expiry.toInstant(),user);
+                    }
+                }
+            }
+            throw fail(HttpStatus.UNAUTHORIZED,"REFRESH_TOKEN_REUSED","이미 사용된 갱신 토큰입니다.");
         }
-        if(row.get("REVOKED_AT")!=null||!((OffsetDateTime)row.get("REFRESH_EXPIRES_AT")).isAfter(now())||(!me(uid).status().equals("ACTIVE")||me(uid).role()!=Role.TEACHER))
-            throw fail(HttpStatus.UNAUTHORIZED,"INVALID_REFRESH_TOKEN","만료되었거나 유효하지 않은 갱신 토큰입니다.");
-        db.update("UPDATE auth_sessions SET revoked_at=?,rotated_at=? WHERE id=?",now(),now(),row.get("ID"));
-        return issue(uid,family,(OffsetDateTime)row.get("REFRESH_EXPIRES_AT"));
+        if(row.get("REVOKED_AT")!=null)throw invalidRefresh();
+        String id=UUID.randomUUID().toString();
+        db.update("UPDATE auth_sessions SET revoked_at=?,rotated_at=? WHERE id=?",timestamp,timestamp,row.get("ID"));
+        return issue(uid,family,expiry,id,rotationToken(token,id,"access"),rotationToken(token,id,"refresh"));
+    }
+    private String rotationToken(String previousToken,String sessionId,String purpose) {
+        // A fresh internal session ID lets a short retry recover the same tokens without storing plaintext.
+        byte[] bytes=HexFormat.of().parseHex(hash(purpose+":"+sessionId+":"+previousToken));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+    private ApiError.Failure invalidRefresh() {
+        return fail(HttpStatus.UNAUTHORIZED,"INVALID_REFRESH_TOKEN","만료되었거나 유효하지 않은 갱신 토큰입니다.");
     }
     public void logout(Principal p) {
         db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",p.userId());

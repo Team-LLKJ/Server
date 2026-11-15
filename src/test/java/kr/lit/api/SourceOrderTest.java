@@ -1,0 +1,137 @@
+package kr.lit.api;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+
+import static kr.lit.api.AssessmentModels.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** 전달 문서 3의 9·10번: 출처는 대화에서 처음 나온 사람(AI가 학생 질문을 되풀이한 내용은 학생 것). */
+class SourceOrderTest {
+    final ObjectMapper json = new ObjectMapper();
+    final AssessmentAnalyzer analyzer = new AssessmentAnalyzer(new GradingConfig());
+
+    ObjectNode source(String answer, String... turns) {
+        var root = json.createObjectNode();
+        root.put("aiPolicy", "FULL");
+        root.put("evaluationContent", "<p>각 문항에 자신의 생각을 쓰세요.</p>");
+        var item = root.putArray("answers").addObject();
+        item.putObject("question").put("id", "q1").put("position", 1).put("title", "문항 1").put("content", "<p>지역 축제가 줄어든 원인을 설명하세요.</p>");
+        item.putObject("answer").put("content", "<p>" + answer + "</p>").put("version", 1);
+        var conversations = root.putArray("conversations");
+        for (int i = 0; i < turns.length; i += 2)
+            conversations.addObject().put("id", 10 + i).put("requestId", "r" + i).put("questionId", "q1")
+                    .put("questionText", turns[i]).put("answerText", turns[i + 1]).put("state", "COMPLETED");
+        root.putArray("learningEvents");
+        return root;
+    }
+    Sentence only(ObjectNode source) {
+        var a = analyzer.analyze("p1", source, AssessmentAnalyzer.DisclosureInput.EMPTY, Instant.EPOCH);
+        assertThat(a.sentences()).hasSize(1);
+        return a.sentences().get(0);
+    }
+
+    @Test void aiEchoOfTheStudentsOwnIdeaStaysDirect() {
+        // 운영 사례: 학생이 먼저 낸 구분을 AI가 되풀이 → 학생 답안 문장은 학생 것
+        var s = only(source("나는 원인을 경제적 원인과 생활 변화 원인으로 나눠 생각했다.",
+                "원인을 경제적 원인과 생활 변화 원인으로 나눠서 쓰려는데 괜찮을까?",
+                "원인을 '경제적 원인'과 '생활 변화 원인'으로 나누어 구성하려는 아이디어는 정말 훌륭합니다. 각 원인마다 사례를 하나씩 들어 보세요."));
+        assertThat(s.source()).isEqualTo("DIRECT");
+        assertThat(s.reason()).isNull();
+    }
+
+    @Test void expressionTheAiSaidFirstStaysAiEvenIfTheStudentRepeatsIt() {
+        // AI 답변에 먼저 나온 표현을 학생이 다음 질문에 옮겨도 그 표현은 AI 것입니다.
+        var s = only(source("축제 예산이 줄고 관광객 소비 패턴이 바뀐 것이 가장 큰 원인이다.",
+                "축제가 줄어든 원인을 알려줘",
+                "축제 예산이 줄고 관광객 소비 패턴이 바뀐 것이 가장 큰 원인입니다.",
+                "축제 예산이 줄고 관광객 소비 패턴이 바뀐 것이 가장 큰 원인이라는 게 맞아?",
+                "네, 여러 조사에서 비슷한 결과가 나옵니다."));
+        assertThat(s.source()).isEqualTo("AI");
+        assertThat(s.conversationId()).isEqualTo(10L);
+    }
+
+    @Test void studentOriginKeepsOnlyWhatTheStudentSaidFirst() {
+        var origins = SentenceSimilarity.StudentOrigin.chronological(
+                List.of("경제적 원인을 먼저 쓸래", "생활 변화도 넣을까"),
+                java.util.Arrays.asList("경제적 원인을 먼저 쓰면 좋습니다. 생활 변화도 중요합니다.", null), 20);
+        assertThat(origins.get(0).containsGram(AssessmentAnalyzer.normalize("경제적").substring(0, 3))).isTrue();
+        // 두 번째 질문의 '생활 변화'는 앞선 AI 답변에 먼저 나왔으므로 학생 것이 아닙니다.
+        assertThat(origins.get(1).containsGram(AssessmentAnalyzer.normalize("생활변").substring(0, 3))).isFalse();
+    }
+
+    @Test void longPasteRangeMarksDirectSentencesForReview() {
+        var root = source("외부에서 정리한 문장을 그대로 옮겼다. 마지막 문장은 직접 썼다.", "아무거나", "답변입니다.");
+        ((com.fasterxml.jackson.databind.node.ArrayNode) root.path("learningEvents")).addObject().put("id", 1).put("type", "PASTE").put("questionId", "q1")
+                .putObject("details").put("start", 0).put("end", 19).put("answerVersion", 1).put("length", 300);
+        var a = analyzer.analyze("p1", root, AssessmentAnalyzer.DisclosureInput.EMPTY, Instant.EPOCH);
+        assertThat(a.sentences()).extracting(Sentence::pasted).containsExactly(true, false);
+        assertThat(a.sentences()).extracting(Sentence::needsReview).containsExactly(true, false);
+        assertThat(a.reviewCount()).isEqualTo(1);
+    }
+
+    @Test void refusalIsDetected() {
+        assertThat(PurposeUsageAnalyzer.isRefusal("답안을 대신 써 줄 수는 없어요. 대신 힌트를 드릴게요.")).isTrue();
+        assertThat(PurposeUsageAnalyzer.isRefusal("죄송하지만 작성해 드릴 수 없습니다. 스스로 작성해 보세요.")).isTrue();
+        assertThat(PurposeUsageAnalyzer.isRefusal("지역 축제는 지역 경제를 살리는 역할을 합니다. 첫째, 관광객이 늘어납니다.")).isFalse();
+        assertThat(PurposeUsageAnalyzer.isRefusal("")).isTrue();
+    }
+
+    @Test void automaticDisclosureListsSentencesWithConversationAndReason() {
+        var root = source("부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다는 점이다. 나는 시장을 살려야 한다고 본다.",
+                "부정적 영향 알려줘", "부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다는 점입니다.", "다른 예는?", "상권이 바뀌었습니다.");
+        var analyzer = new AutomaticDisclosureAnalyzer();
+        var before = analyzer.generateDisclosure("e", "p", root, Instant.EPOCH);
+        assertThat(before.reason()).isEqualTo(AutomaticDisclosureAnalyzer.PENDING_PARTS);
+        var span = new Sentence("q1-p1-s1", "q1", "q1-p1", "부정적 영향은 개발로 인해 물가와 임대료가 함께 올랐다는 점이다.", "AI", AssessmentAnalyzer.REASON_SPAN, 26, 0.9, 10L, 0, 30, 1, true);
+        var semantic = new Sentence("q1-p1-s2", "q1", "q1-p1", "상권 모습이 달라졌다.", "AI", AssessmentAnalyzer.REASON_SEMANTIC, 0, 0.1, 12L, 31, 42, 1, true,
+                false, new AssessmentModels.SemanticVerdict(2, null, "c1", "상권이 바뀌었습니다.", 12L, true, false), null, null);
+        var mine = new Sentence("q1-p1-s3", "q1", "q1-p1", "나는 시장을 살려야 한다고 본다.", "DIRECT", null, 0, 0, null, 43, 60, 1, true,
+                false, null, null, null, false, 12L);
+        var after = analyzer.generateDisclosure("e", "p", root, Instant.EPOCH, List.of(span, semantic, mine), SemanticJudge.STATUS_DONE);
+        assertThat(after.usedParts().lines()).hasSize(2);
+        assertThat(after.usedParts()).contains("문항 1 – 이해·조사: \"부정적 영향 알려줘\"");
+        assertThat(after.reason().lines()).containsExactly(
+                "문항 1 답안 1번째 문장 – AI 답변 인용: AI 답변 #10과 26자 이상 같음",
+                "문항 1 답안 2번째 문장 – AI 답변 인용 \"상권이 바뀌었습니다.\": AI 답변 #12의 표현을 바꿔 썼다고 판정(Haiku)",
+                "문항 1 답안 3번째 문장 – AI 답변 #12에도 있지만 학생이 질문에서 먼저 쓴 표현이라 학생 문장으로 봄");
+        assertThat(after.evidence().get(0).matchingAnswerParagraphs()).containsExactly(1);
+        var none = analyzer.generateDisclosure("e", "p", root, Instant.EPOCH, List.of(), SemanticJudge.STATUS_PENDING);
+        assertThat(none.reason()).contains("분석할 답안 문장이 없습니다.");
+        assertThat(none.reason()).contains("표현을 바꿔 썼는지 판정하는 중");
+    }
+
+    @Test void sentenceTheStudentSaidFirstRecordsTheOverlappingAnswer() {
+        var root = source("축제가 줄어든 까닭은 젊은 인구가 줄고 지자체 예산이 크게 부족해졌기 때문이다.",
+                "축제가 줄어든 까닭은 젊은 인구가 줄고 지자체 예산이 크게 부족해졌기 때문이라고 생각하는데 맞아?",
+                "네, 축제가 줄어든 까닭은 젊은 인구가 줄고 지자체 예산이 크게 부족해졌기 때문이라고 볼 수 있습니다.");
+        var s = only(root);
+        assertThat(s.source()).isEqualTo("DIRECT");
+        assertThat(s.studentFirstConversationId()).isEqualTo(10L);
+    }
+
+    @Test void promptsCarryTheFirstSpeakerRule() {
+        assertThat(SemanticJudgeClient.INSTRUCTIONS).contains("처음 나온 사람", "학생 질문의 내용", "studentQuestions");
+        assertThat(PurposeClassifier.INSTRUCTIONS).contains("REVIEW vs EDIT", "내 답안 검토해줘", "그럼 그걸로 써줘");
+        var item = new SemanticJudgeClient.Item("s1", "문항", "학생 문장", List.of(), List.of("내 생각은 이래"));
+        assertThat(item.studentQuestions()).containsExactly("내 생각은 이래");
+    }
+
+    @Test void shortSentenceIsTheStudentsWhenItsKeyWordsCameFromTheStudentFirst() {
+        // 11/13 운영 사례(박준호): 학생이 "상권 변화로 써줘"라고 먼저 말한 뒤 AI가 같은 말을 답함 → 짧은 답안 문장은 학생 것
+        var s = only(source("우리 지역은 상권이 변했다.",
+                "우리 지역 변화 중에 상권 변화로 써줘",
+                "좋아요. 우리 지역은 상권이 변했다고 쓸 수 있어요."));
+        assertThat(s.source()).isEqualTo("DIRECT");
+        assertThat(AssessmentAnalyzer.coreWords("우리 지역은 상권이 변했다.")).containsExactly("지역", "상권");
+        // 핵심 어휘(유동인구)가 AI 답변에 먼저 나왔으면 그대로 AI입니다.
+        var ai = only(source("우리 지역은 유동인구가 줄었다.",
+                "우리 지역 변화 알려줘",
+                "우리 지역은 유동인구가 줄었다고 볼 수 있어요."));
+        assertThat(ai.source()).isEqualTo("AI");
+    }
+}

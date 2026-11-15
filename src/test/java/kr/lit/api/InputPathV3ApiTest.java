@@ -69,9 +69,12 @@ class InputPathV3ApiTest extends AuthTestSupport {
         process.saveReview(f.id(),f.pid(),job.id(),new ReviewRequest(0,List.of(new LevelOverride(f.qid(),ProcessGradingModels.Criterion.CONTRIBUTION,5,"교사가 핵심 주장과 선택의 근거를 확인했습니다.")),"CONFIRMED_OK","교사가 기록을 검토했습니다."));
         var report=reports.teacherGenerate(f.id(),f.pid());assertThat(report.content().grading().rubricVersion()).isEqualTo(RUBRIC_VERSION);assertThat(report.content().grading().summary()).isEqualTo(V3GradingTestData.SUMMARY);assertThat(report.content().grading().aiRecommendation().cells().get(3).level()).isEqualTo(4);assertThat(report.content().grading().teacherReview().overrides().get(0).level()).isEqualTo(5);
         byte[] hwp=new ReportHwpService().exportReport(report,false);
-        assertThat(kr.dogfoot.hwplib.reader.HWPReader.fromInputStream(new java.io.ByteArrayInputStream(hwp)).getBodyText().getSectionList()).isNotEmpty();
+        var hwpDocument=kr.dogfoot.hwplib.reader.HWPReader.fromInputStream(new java.io.ByteArrayInputStream(hwp));
+        String hwpText=kr.dogfoot.hwplib.tool.textextractor.TextExtractor.extract(hwpDocument,
+                kr.dogfoot.hwplib.tool.textextractor.TextExtractMethod.InsertControlTextBetweenParagraphText);
+        assertThat(hwpText).contains("잘한 점","인용한 기록에서 과제의 조건과 선택 이유를 확인했습니다.","학생이 학교의 조건과 근거를 확인해 최종 방안을 선택했습니다.");
         String previewDirectory=System.getProperty("lit.v3.preview-dir");
         if(previewDirectory!=null){var output=java.nio.file.Path.of(previewDirectory);java.nio.file.Files.createDirectories(output);java.nio.file.Files.write(output.resolve("evaluation-v3.pdf"),pdf.render(report,false));java.nio.file.Files.write(output.resolve("evaluation-v3.hwp"),hwp);java.nio.file.Files.writeString(output.resolve("report.json"),json.writerWithDefaultPrettyPrinter().writeValueAsString(report));}
-        try(var document=org.apache.pdfbox.Loader.loadPDF(pdf.render(report,false))){var text=new org.apache.pdfbox.text.PDFTextStripper().getText(document);assertThat(text).contains("학생은 과제의 해결 방향","가점 근거","확인 필요","개선 방향","입력 경로");}
+        try(var document=org.apache.pdfbox.Loader.loadPDF(pdf.render(report,false))){var text=new org.apache.pdfbox.text.PDFTextStripper().getText(document);assertThat(text).contains("잘한 점","인용한 기록에서 과제의 조건과 선택 이유를 확인했습니다.","학생이 학교의 조건과 근거를 확인해 최종 방안을 선택했습니다.","가점 근거","확인 필요","개선 방향","입력 경로");}
     }
 }

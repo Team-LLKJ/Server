@@ -55,3 +55,14 @@ workspace는 기존 `GET .../workspace`와 같은 구조입니다. 대기 중이
 7. 제출·시간 종료 후 로컬 초안을 서버에 재저장하지 않습니다. 읽기 전용 서버 제출본과 미전송 초안을 구분하고, 자동으로 새 참가자를 생성하거나 토큰을 삭제해 PIN 화면으로 보내지 않습니다.
 
 브라우저 초안 보관·충돌 선택·마지막 문항 복원·이어쓰기 화면은 프런트 구현이 필요합니다. 이 API 배포만으로 Web 화면이나 저장 재시도 동작이 바뀌지는 않습니다. Web 저장소는 이번 작업에서 수정하지 않았습니다.
+
+## 제출한 학생 차단 (2026-11-14)
+
+제출(수동·자동 제출 모두)한 참가자 토큰으로는 평가 화면과 본인 기록을 볼 수 없습니다. 나가기 호출이 실패해도 같습니다.
+
+- 401 `INVALID_PARTICIPANT_TOKEN`("제출한 참가자는 평가 화면과 기록을 다시 볼 수 없습니다."): 문항·답안 조회·저장, workspace, AI 질문·대화 조회, 학습 이벤트, 제출 미리보기·제출본 조회, `/me`·정책 동의, 문항 내용, `POST /api/participation/reconnect`, 토큰을 넣은 `POST /api/participation/join`.
+- 그대로 되는 것: `GET /state`, `POST /heartbeat`, `POST /leave`(응답은 대기실 정보뿐, `screen=SUBMITTED`), 같은 `reviewToken`으로 다시 보낸 `POST /submission`(제출 재시도. 응답에 AI 활용 기록은 없음).
+- 예외: 종료·마감으로 **자동 제출**된 학생은 `lit.evaluation.end-grace-seconds` 유예 시간 동안만 계속 저장할 수 있습니다(기존 동작). 직접 제출한 학생은 바로 막힙니다.
+- 다시 들어오는 순간 마감 처리로 자동 제출되면 `200`, `readOnly=true`, `lobby.screen=SUBMITTED`, `workspace=null`이고 이후 호출은 401입니다.
+- 보고서(`POST /api/evaluations/{id}/reports`, `GET /report`, `/report/pdf`, `/report/hwp`, `/report.hwp`)와 AI 활용 기록(`GET·PUT /api/evaluations/{id}/ai-disclosure`, `/api/student/evaluations/{id}/ai-disclosure`)은 참가자 토큰으로는 403 `TEACHER_ONLY`입니다. 교사 API(`/api/teacher/evaluations/{id}/students/{pid}/...`)만 씁니다.
+

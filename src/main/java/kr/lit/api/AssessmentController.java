@@ -12,6 +12,14 @@ class AssessmentController {
     private final AssessmentService assessment;
     AssessmentController(AssessmentService assessment) { this.assessment=assessment; }
 
+    /** 반 전체 채점 진행(학생별 gradingStatus: QUEUED·GRADING·DONE·FAILED, 예: 채점 완료 24/30). 평가 종료 전에도 볼 수 있습니다. */
+    @GetMapping("/grading-status") GradingQueue.Progress gradingStatus(@PathVariable String id){return assessment.gradingProgress(id);}
+    /** 채점 실패(FAILED) 학생을 다시 채점합니다. */
+    @PostMapping("/participants/{participantId}/grading/retry")
+    GradingQueue.Progress retryGrading(@PathVariable String id,@PathVariable String participantId){return assessment.retryGrading(id,participantId);}
+    /** 판정 호출의 실제 토큰 수(학생·용도·모델별 합계). */
+    @GetMapping("/judge-usage") JudgeUsage.Summary judgeUsage(@PathVariable String id){return assessment.judgeUsage(id);}
+
     @GetMapping("/analysis/definition") Object getAnalysisDefinition(@PathVariable String id){return assessment.getAnalysisDefinition(id);}
     @GetMapping("/submissions")
     Submissions submissions(@PathVariable String id,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="100") int size,
@@ -25,8 +33,8 @@ class AssessmentController {
     }
     @GetMapping("/participants/{participantId}/analysis")
     Analysis analysis(@PathVariable String id,@PathVariable String participantId) { return assessment.analysis(id,participantId); }
-    /** 3단계: 교사의 문장 판정 수정(AI|DIRECT). 비율에 바로 반영된 분석을 돌려줍니다. */
-    @PatchMapping("/participants/{participantId}/sentences/{sentenceId}")
+    /** 3단계: 교사의 문장 출처 확정({"source":"AI"|"DIRECT"}, 예전 이름 label도 받음). 비율에 바로 반영된 분석을 돌려줍니다. */
+    @PatchMapping({"/participants/{participantId}/sentences/{sentenceId}","/participants/{participantId}/sentences/{sentenceId}/source"})
     Analysis labelSentence(@PathVariable String id,@PathVariable String participantId,@PathVariable String sentenceId,@Valid @RequestBody SentenceLabelInput input) {
         return assessment.labelSentence(id,participantId,sentenceId,input);
     }
@@ -43,6 +51,7 @@ class AssessmentController {
 
     @GetMapping("/participants/{participantId}/rubric-scores")
     Scores scores(@PathVariable String id,@PathVariable String participantId) { return assessment.scores(id,participantId); }
+    @io.swagger.v3.oas.annotations.Operation(summary="규칙 기반 루브릭 점수 저장(level 0~4)",description="기존 rubric-scores 화면용 교사 점수입니다. LLM 루브릭 판정(학생 단위 칸)의 교사 확정은 PUT /api/teacher/evaluations/{id}/process-grading/participants/{pid}/runs/{jobId}/review(overrides[].questionId=null)를 씁니다. 삭제된 PATCH .../criteria/{criterionId}/level의 대체가 아닙니다.")
     @PutMapping("/participants/{participantId}/rubric-scores/{criterionId}")
     Scores score(@PathVariable String id,@PathVariable String participantId,@PathVariable int criterionId,@Valid @RequestBody ScoreInput input) {
         return assessment.saveScore(id,participantId,criterionId,input);

@@ -15,7 +15,14 @@ public final class ProcessGradingModels {
     public static final String GLOBAL="GLOBAL";
     public enum Criterion { PURPOSE, SELF_DIRECTION, CRITICAL_REVIEW, CONTRIBUTION, TRANSPARENCY;
         public String displayName(){return switch(this){case PURPOSE->"AI 활용 목적의 적절성";case SELF_DIRECTION->"자기 주도적 사고";case CRITICAL_REVIEW->"AI 답변의 비판적 검토";case CONTRIBUTION->"최종 답안에 대한 학생의 기여";case TRANSPARENCY->"AI 활용 과정의 투명성";};}
-        public int maxScore(){return switch(this){case PURPOSE,TRANSPARENCY->15;case SELF_DIRECTION,CONTRIBUTION->25;case CRITICAL_REVIEW->20;};}
+        /** 배점(합계 100, 2026-11-14): 활용 목적 20, 자기 주도 30, 비판적 검토 20, 학생 기여 30. 투명성은 평가하지 않습니다(0). */
+        public int maxScore(){return switch(this){case PURPOSE,CRITICAL_REVIEW->20;case SELF_DIRECTION,CONTRIBUTION->30;case TRANSPARENCY->0;};}
+        /**
+         * 투명성은 LIT가 질문·답변·답안 반영을 모두 자동 기록하므로 평가하지 않습니다(2026-11-14). 이전 결과를 읽기 위해 값만 남깁니다.
+         */
+        public boolean retired(){return this==TRANSPARENCY;}
+        /** 지금 평가하는 항목(투명성 제외). */
+        public static List<Criterion> active(){return java.util.Arrays.stream(values()).filter(c->!c.retired()).toList();}
     }
     public enum NoAiPolicy { HOLD, NOT_APPLICABLE, USE_RECORDED_EVIDENCE }
     public record QuestionWeight(@NotBlank String questionId,@NotNull @DecimalMin("0.0001") @DecimalMax("100") @Digits(integer=3,fraction=4) BigDecimal weight) {}
@@ -54,34 +61,73 @@ public final class ProcessGradingModels {
     public record AiOutput(Compliance compliance,List<Recommendation> recommendations,String summary) {
         public AiOutput(Compliance compliance,List<Recommendation> recommendations){this(compliance,recommendations,null);}
     }
-    public record Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,
-                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details) {
-        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null);}
+    /**
+     * LLM 루브릭 판정 정보(학생 단위 칸에만). votes: Gemini 회차별 단계(무효 회차 null, "NA"·"HOLD" 가능), haikuLevel: 엇갈렸을 때 Haiku 답,
+     * needsReview: 교사 직접 입력 필요(reviewReason: DISAGREEMENT | NO_VALID_VOTES | GEMINI_CALL_FAILED | INSUFFICIENT_DATA | NO_AI_USE | SAVE_ERROR | PROMPT_INJECTION; 확정됐지만 HAIKU_DECIDED는 Gemini 과반과 차이 크기에 관계없이 Haiku 단계로 확정), runs: 회차별 원래 답(근거 포함, 보정용).
+     */
+    public record JudgeInfo(@io.swagger.v3.oas.annotations.media.Schema(description="Gemini 회차별 단계(1~5 정수, \"NA\", \"HOLD\", 근거 없는 무효 회차는 null)") List<Object> votes,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답(1~5, \"NA\", \"HOLD\"), 아니면 null") Object haikuLevel,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="교사 직접 입력이 필요한지(교사가 확정하면 false)") boolean needsReview,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="판정 사유. NO_VALID_VOTES: 재판정 후에도 유효한 Gemini 표 없음, GEMINI_CALL_FAILED: Gemini 호출 실패, DISAGREEMENT: Haiku에서 확정할 단계를 얻지 못함(교사 입력), HAIKU_DECIDED: 판정이 엇갈려 Haiku 기준으로 정함(과반과 차이 크기에 관계없이, needsReview=false), INSUFFICIENT_DATA: 대화가 너무 적음(모델 호출 안 함), NO_AI_USE: AI 미사용 학생의 자기 주도적 사고(교사 확인, HOLD), SAVE_ERROR: (2026-11-14 이전 결과만) 활용 설명란 저장 오류로 투명성 HOLD, PROMPT_INJECTION: 학생 글에 채점 지시로 보이는 문장(모델 호출 안 함, 전 항목 HOLD)",allowableValues={"DISAGREEMENT","HAIKU_DECIDED","NO_VALID_VOTES","GEMINI_CALL_FAILED","INSUFFICIENT_DATA","NO_AI_USE","SAVE_ERROR","PROMPT_INJECTION"},nullable=true) String reviewReason,
+                            @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","SERVER_RULE"}) String method,List<RubricJudge.Run> runs,
+                            String promptVersion,String geminiModel,String haikuModel,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸는데 Haiku 판정이 없는 이유(NOT_CONFIGURED: Anthropic 키 없음, NO_VERIFIED_EVIDENCE: Haiku 인용을 원문에서 2번 모두 못 찾음, 그 외 호출 오류 코드)",nullable=true) String haikuError,
+                            @io.swagger.v3.oas.annotations.media.Schema(description="reviewReason=PROMPT_INJECTION일 때 학생 글에서 찾은 채점 지시 문장(최대 120자), 아니면 null",nullable=true) String injectionText) {
+        public JudgeInfo(List<Object> votes,Object haikuLevel,boolean needsReview,String reviewReason,String method,List<RubricJudge.Run> runs,String promptVersion,String geminiModel,String haikuModel,String haikuError){
+            this(votes,haikuLevel,needsReview,reviewReason,method,runs,promptVersion,geminiModel,haikuModel,haikuError,null);
+        }
+        /** 교사가 확정한 뒤에는 확인 필요를 풉니다(나머지 기록은 보존). */
+        public JudgeInfo reviewed(){return new JudgeInfo(votes,haikuLevel,false,reviewReason,method,runs,promptVersion,geminiModel,haikuModel,haikuError,injectionText);}
+    }
+    /**
+     * 채점 한 칸. 문항별 채점은 questionId가 문항 id(투명성은 GLOBAL), LLM 루브릭 판정(학생 단위)은 questionId=null이고 항목마다 한 칸입니다.
+     * 학생 단위 칸의 adjustedMaxScore는 NA 재분배 후 배점(정수, NA 칸은 0)이고 score는 그 배점 기준 정수 점수입니다. 문항별 채점은 adjustedMaxScore=null.
+     */
+    public record Cell(@io.swagger.v3.oas.annotations.media.Schema(description="문항 id. 투명성은 GLOBAL, 학생 단위(LLM 루브릭)는 null",nullable=true) String questionId,Criterion criterion,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="단계 1~5(확정 전·HOLD·NA는 null)",nullable=true) Integer level,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="점수. 학생 단위는 adjustedMaxScore 기준 정수(HOLD·NA는 null)",nullable=true) BigDecimal score,
+                       @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"RECOMMENDED","HOLD","NOT_APPLICABLE","TEACHER_REVIEWED"}) String status,String reason,
+                       String unmetNextLevel,List<Condition> conditions,List<Citation> counterEvidence,List<String> limitations,Details details,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="LLM 루브릭 판정 정보(학생 단위 칸에만)",nullable=true) JudgeInfo judge,
+                       @io.swagger.v3.oas.annotations.media.Schema(description="학생 단위: NA 재분배 후 배점(정수, NA 칸은 0). 문항별 채점은 null",nullable=true) Integer adjustedMaxScore) {
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,null,null,null);}
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,null,null);}
+        public Cell(String questionId,Criterion criterion,Integer level,BigDecimal score,String status,String reason,String next,List<Condition> conditions,List<Citation> counter,List<String> limits,Details details,JudgeInfo judge){this(questionId,criterion,level,score,status,reason,next,conditions,counter,limits,details,judge,null);}
+        Cell withScore(BigDecimal score,Integer adjustedMax){return new Cell(questionId,criterion,level,score,status,reason,unmetNextLevel,conditions,counterEvidence,limitations,details,judge,adjustedMax);}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public int maxScore(){return criterion.maxScore();}
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public String criterionName(){return criterion.displayName();}
     }
-    public record PartialScore(BigDecimal assessedScore,BigDecimal assessedMaxScore,BigDecimal heldMaxScore,BigDecimal notApplicableMaxScore) {}
+    /**
+     * 부분 점수. 문항별 채점은 문항 가중치를 곱한 값입니다. 학생 단위(LLM 루브릭)는 모두 정수: NA 재분배 후 배점(adjustedMaxScore) 기준
+     * assessedScore=판정된 칸 점수 합, assessedMaxScore=그 칸들의 배점 합, heldMaxScore=HOLD 칸 배점 합(교사가 채울 때까지 비움),
+     * notApplicableMaxScore=NA 칸의 원래 배점 합입니다.
+     */
+    public record PartialScore(@io.swagger.v3.oas.annotations.media.Schema(description="판정된 칸 점수 합(학생 단위는 정수)") BigDecimal assessedScore,
+                               @io.swagger.v3.oas.annotations.media.Schema(description="판정된 칸의 배점 합(학생 단위는 재분배 배점, 정수)") BigDecimal assessedMaxScore,
+                               @io.swagger.v3.oas.annotations.media.Schema(description="HOLD 칸의 배점 합(교사가 채울 때까지 비움, 재분배하지 않음)") BigDecimal heldMaxScore,
+                               @io.swagger.v3.oas.annotations.media.Schema(description="NA 칸의 원래 배점 합") BigDecimal notApplicableMaxScore) {}
     public record Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations,String summary,PartialScore partialScore) {
         public Result(String status,Compliance compliance,List<Cell> cells,BigDecimal total,List<String> limitations){this(status,compliance,cells,total,limitations,null,null);}
     }
     public record Job(String id,String evaluationId,String participantId,int version,String status,String inputHash,
                       String rubricVersion,String model,Instant createdAt,Instant completedAt,Result result,String errorCode) {}
     /**
-     * 교사 검토 한 칸. 수준(level)이나 점수(score) 중 하나만 보냅니다.
+     * 교사 검토 한 칸. 수준(level)이나 점수(score) 중 하나만 보냅니다. 학생 단위 결과(LLM 루브릭)는 questionId를 null로 보냅니다.
      * score는 그 영역 만점 이하(소수 둘째 자리까지)로, AI 추천 점수를 그대로 덮어씁니다. 이때 칸의 level은 null입니다.
      */
-    public record LevelOverride(@NotBlank String questionId,@NotNull Criterion criterion,@Min(0) @Max(5) Integer level,
-                           @NotBlank @Size(max=2000) String reason,
+    public record LevelOverride(@Size(max=100) String questionId,@NotNull Criterion criterion,@Min(0) @Max(5) Integer level,
+                           @Size(max=2000) String reason,
                            @DecimalMin("0") @DecimalMax("25") @Digits(integer=2,fraction=2) BigDecimal score) {
+        public LevelOverride { reason=reason==null?"":reason.strip(); }
         public LevelOverride(String questionId,Criterion criterion,Integer level,String reason){this(questionId,criterion,level,reason,null);}
         public static LevelOverride ofScore(String questionId,Criterion criterion,BigDecimal score,String reason){return new LevelOverride(questionId,criterion,null,reason,score);}
         @com.fasterxml.jackson.annotation.JsonIgnore public boolean isDirectScore(){return score!=null;}
     }
     public record ReviewRequest(@Min(0) int expectedRevision,@NotNull @Size(max=401) List<@NotNull @Valid LevelOverride> overrides,
-                                @NotBlank @Pattern(regexp="HOLD|CONFIRMED_OK|CONFIRMED_VIOLATION") String complianceDecision,
-                                @NotBlank @Size(max=2000) String complianceReason) {}
+                                @Pattern(regexp="HOLD|CONFIRMED_OK|CONFIRMED_VIOLATION") String complianceDecision,
+                                @Size(max=2000) String complianceReason) {}
     public record ConfirmRequest(@Min(1) int expectedRevision) {}
     public record Review(int revision,String teacherId,Instant reviewedAt,List<LevelOverride> overrides,String complianceDecision,
                          String complianceReason,Result result,boolean confirmed) {}

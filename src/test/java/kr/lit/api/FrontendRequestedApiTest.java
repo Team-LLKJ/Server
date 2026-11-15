@@ -18,7 +18,8 @@ class FrontendRequestedApiTest extends AuthTestSupport {
     JsonNode createTemplate() throws Exception {return ok(body(request(post("/api/teacher/assessments"),teacher),templateInput()));}
     JsonNode add(String id) throws Exception {return ok(body(request(post("/api/teacher/assessments/"+id+"/classes"),teacher),Map.of("className","1반")));}
     JsonNode start(String id,String c) throws Exception {
-        ok(body(request(post("/api/teacher/assessments/"+id+"/classes/"+c+"/lobby"),teacher),Map.of("expiresInMinutes",60)));
+        var lobby=ok(body(request(post("/api/teacher/assessments/"+id+"/classes/"+c+"/lobby"),teacher),Map.of("expiresInMinutes",60)));
+        evaluations.join(lobby.path("pin").asText(),"대기 학생",null);
         return ok(body(request(post("/api/teacher/assessments/"+id+"/classes/"+c+"/start"),teacher),Map.of("expiresInMinutes",40)));}
     @Test void frontendTitleAndAntiCheatArraysRoundTripAndReadyStateIsExplicit() throws Exception {
         var t=createTemplate();assertThat(t.path("criteria").get(0).asText()).isEqualTo("근거의 적절성");assertThat(t.path("antiCheat").get(1).asText()).isEqualTo("PRINT_BLOCK");
@@ -114,8 +115,12 @@ class FrontendRequestedApiTest extends AuthTestSupport {
         as(teacher);evaluations.end(e.id());mvc.perform(body(request(post(url),teacher),Map.of("additionalMinutes",10))).andExpect(status().isConflict());
     }
     @Test void studentsAndSubmissionsExposeWarningCountsAndLastReceivedEventTime() throws Exception {
-        var t=createTemplate();String id=t.path("id").asText(),c=add(id).path("classId").asText();var started=start(id,c);as(teacher);
-        var p=evaluations.join(started.path("pin").asText(),"학생",null);var occurred=Instant.now().minusSeconds(60);
+        var t=createTemplate();String id=t.path("id").asText(),c=add(id).path("classId").asText();
+        String root="/api/teacher/assessments/"+id+"/classes/"+c;
+        var lobby=ok(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",60)));
+        var p=evaluations.join(lobby.path("pin").asText(),"학생",null);
+        ok(body(request(post(root+"/start"),teacher),Map.of("expiresInMinutes",40)));
+        var occurred=Instant.now().minusSeconds(60);
         mvc.perform(body(post("/api/student/evaluations/"+c+"/events").header("X-Participant-Token",p.participantToken()),Map.of("type","WINDOW_LEAVE","occurredAt",occurred))).andExpect(status().isCreated());
         mvc.perform(body(post("/api/student/evaluations/"+c+"/events").header("X-Participant-Token",p.participantToken()),Map.of("type","SHORTCUT_CAPTURE","occurredAt",occurred))).andExpect(status().isCreated());
         var students=ok(request(get("/api/teacher/evaluations/"+c+"/students"),teacher));var row=students.path("items").get(0);

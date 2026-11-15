@@ -15,7 +15,8 @@ public class EvaluationService {
  private final String baseUrl;
  private final WorkService work;
  private final SecureRandom random=new SecureRandom();
- public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl,WorkService work){this.db=db;this.baseUrl=baseUrl;this.work=work;}
+ private final kr.lit.auth.ParticipantAccess access;
+ public EvaluationService(JdbcTemplate db,@Value("${lit.join-base-url}") String baseUrl,WorkService work,kr.lit.auth.ParticipantAccess access){this.db=db;this.baseUrl=baseUrl;this.work=work;this.access=access;}
  public record Evaluation(String id,String title,String pin,String state,Instant expiresAt,String assessmentId,String className){}
  public record EvaluationPage(List<Evaluation> items,int page,int size,long totalElements,long totalPages){}
  public record Participant(String id,String nickname,String presence){}
@@ -23,9 +24,10 @@ public class EvaluationService {
  public record Created(String id,String title,String pin,String state,Instant expiresAt,String joinUrl,String qrUrl){}
  public record Joined(String participantId,String participantToken,Lobby lobby){}
  private Failure fail(HttpStatus status,String code,String message){return new Failure(status,code,message);}
- private Evaluation read(String id){
-        kr.lit.auth.AssessmentAccess.beforeEvaluation(db,id);
-  var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class)==null?null:r.getObject("expires_at",OffsetDateTime.class).toInstant(),r.getString("assessment_id"),r.getString("class_name")),id);
+ private Evaluation read(String id){return read(id,true);}
+ private Evaluation read(String id,boolean lock){
+  kr.lit.auth.AssessmentAccess.checkEvaluationAccess(db,id,lock);
+  var rows=db.query("SELECT * FROM evaluations WHERE id=?"+(lock?" FOR UPDATE":""),(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class)==null?null:r.getObject("expires_at",OffsetDateTime.class).toInstant(),r.getString("assessment_id"),r.getString("class_name")),id);
   if(rows.isEmpty())throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
   return rows.get(0);
  }
@@ -69,9 +71,10 @@ public class EvaluationService {
  }
  public Evaluation details(String id){return read(id);}
  public Evaluation verify(String pin){var e=byPin(pin);available(e);return e;}
- public Lobby lobby(String id){return lobby(read(id));}
+ @Transactional(readOnly=true)
+ public Lobby lobby(String id){return lobby(read(id,false));}
  private Lobby lobby(Evaluation e){
-  var people=db.query("SELECT * FROM participants WHERE evaluation_id=? AND active=TRUE ORDER BY last_seen,id",(r,n)->new Participant(r.getString("id"),r.getString("nickname"),r.getObject("last_seen",OffsetDateTime.class).toInstant().isBefore(Instant.now().minusSeconds(30))?"DISCONNECTED":"CONNECTED"),e.id());
+  var people=db.query("SELECT id,nickname,last_seen FROM participants WHERE evaluation_id=? AND active=TRUE AND expelled_at IS NULL ORDER BY last_seen,id",(r,n)->new Participant(r.getString("id"),r.getString("nickname"),r.getObject("last_seen",OffsetDateTime.class).toInstant().isBefore(Instant.now().minusSeconds(30))?"DISCONNECTED":"CONNECTED"),e.id());
   String screen=e.state().equals("ENDED")?"ENDED":e.expiresAt()!=null&&!e.expiresAt().isAfter(Instant.now())?"EXPIRED":e.state().equals("STARTED")?"SOLVING":"WAITING";
   var ends=db.queryForObject("SELECT ends_at FROM evaluations WHERE id=?",OffsetDateTime.class,e.id());
   Instant endsAt=ends==null?null:ends.toInstant();
@@ -80,20 +83,22 @@ public class EvaluationService {
  public Joined join(String pin,String nickname,String token){
   var e=byPin(pin);available(e);
   if(token!=null&&!token.isBlank()) {
-   var guest=new kr.lit.auth.ParticipantAccess(db).authenticateReconnect(e.id(),token);
+   var guest=access.authenticateReconnect(e.id(),token);
    db.update("UPDATE participants SET active=TRUE,last_seen=CURRENT_TIMESTAMP WHERE id=? AND expelled_at IS NULL",guest.participantId());
    return new Joined(guest.participantId(),token,personalLobby(e,guest.participantId()));
   }
   if(!e.state().equals("WAITING")&&e.assessmentId()==null)throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작된 평가에는 새로 참여할 수 없습니다.");
   String name=nickname==null?"":nickname.strip();
   if(name.isBlank()||name.codePointCount(0,name.length())>20)throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임은 1~20자여야 합니다.");
+  if(name.indexOf('<')>=0||name.indexOf('>')>=0||name.codePoints().anyMatch(Character::isISOControl))
+   throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임에는 꺾쇠나 제어 문자를 사용할 수 없습니다.");
   String id=UUID.randomUUID().toString();byte[] bytes=new byte[32];random.nextBytes(bytes);String secret=HexFormat.of().formatHex(bytes);
   try{db.update("INSERT INTO participants(id,evaluation_id,nickname,token,active,last_seen,token_hashed) VALUES (?,?,?,?,TRUE,CURRENT_TIMESTAMP,TRUE)",id,e.id(),name,kr.lit.auth.AuthService.hash(secret));}
   catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"NICKNAME_TAKEN","사용 중인 닉네임입니다.");}
   return new Joined(id,secret,lobby(e));
  }
  public Lobby participant(String id,String token,boolean leave){
-  var e=read(id);var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+  var e=read(id);var guest=access.authenticateLobby(id,token);
   if(e.state().equals("STARTED")) {work.finishEvaluation(id,true);e=read(id);}
   db.update("UPDATE participants SET active=?,last_seen=CURRENT_TIMESTAMP WHERE id=?",!leave,guest.participantId());
   return personalLobby(e,guest.participantId());
@@ -105,8 +110,7 @@ public class EvaluationService {
  }
  public Lobby start(String id){var e=read(id);ClassSnapshots.requireStandalone(db,id);available(e);
   if(!e.state().equals("WAITING"))throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","이미 시작된 평가입니다.");
-  int count=db.queryForObject("SELECT COUNT(*) FROM participants WHERE evaluation_id=? AND active=TRUE AND last_seen>=?",Integer.class,id,OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(30));
-  if(count==0)throw fail(HttpStatus.CONFLICT,"NO_PARTICIPANTS","연결된 참가자가 없습니다.");
+  requireConnectedParticipant(id);
   int minutes=db.queryForObject("SELECT duration_minutes FROM evaluations WHERE id=?",Integer.class,id);
   var started=OffsetDateTime.now(ZoneOffset.UTC);var ends=started.plusMinutes(minutes);
   db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=? WHERE id=?",started,ends,ends,id);return lobby(read(id));
@@ -122,6 +126,12 @@ public class EvaluationService {
   var deadline=OffsetDateTime.ofInstant(effective,ZoneOffset.UTC);
   db.update("UPDATE evaluations SET ends_at=?,expires_at=?,duration_minutes=duration_minutes+? WHERE id=?",deadline.plusMinutes(additionalMinutes),deadline.plusMinutes(additionalMinutes),additionalMinutes,id);
   return lobby(read(id));
+ }
+ private void requireConnectedParticipant(String id) {
+  boolean hasParticipant=db.queryForObject(
+    "SELECT EXISTS(SELECT 1 FROM participants WHERE evaluation_id=? AND active=TRUE AND expelled_at IS NULL AND last_seen>=?)",
+    Boolean.class,id,OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(30));
+  if(!hasParticipant)throw fail(HttpStatus.CONFLICT,"NO_PARTICIPANTS","연결된 참가자가 없습니다.");
  }
  void openClassLobby(String id,int minutes) {
   var e=read(id);
@@ -145,6 +155,7 @@ public class EvaluationService {
   if(e.pin()==null)throw fail(HttpStatus.CONFLICT,"CLASS_LOBBY_REQUIRED","먼저 대기실을 열어 학생에게 PIN을 안내해주세요.");
   available(e);
   if(minutes<1||minutes>1440)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","풀이 시간은1~1440분이어야 합니다.");
+  requireConnectedParticipant(id);
   var now=OffsetDateTime.now(ZoneOffset.UTC);var end=now.plusMinutes(minutes);
   db.update("UPDATE evaluations SET state='STARTED',started_at=?,ends_at=?,expires_at=?,duration_minutes=? WHERE id=?",now,end,end,minutes,id);
  }
@@ -171,7 +182,7 @@ public class EvaluationService {
  void deleteFromAssessment(String id){
   var e=read(id);
   if(e.state().equals("STARTED")&&e.expiresAt().isAfter(Instant.now()))throw fail(HttpStatus.CONFLICT,"EVALUATION_IN_PROGRESS","진행 중인 평가는 종료한 뒤 삭제해주세요.");
-  for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
+  for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","rubric_labels","rubric_judgments","rubric_runs","judge_usage","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures",
     "usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
    db.update("DELETE FROM "+table+" WHERE evaluation_id=?",id);
   db.update("DELETE FROM answers WHERE participant_id IN (SELECT id FROM participants WHERE evaluation_id=?)",id);

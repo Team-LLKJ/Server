@@ -41,11 +41,13 @@ public final class TemplateModels {
                        JsonNode antiCheat,List<QuestionInput> questions,int durationMinutes,int revision,
                        int questionCount,int classCount,List<ClassView> classes,Instant createdAt,Instant updatedAt,Owner owner,String role,int collaboratorCount) {
         @com.fasterxml.jackson.annotation.JsonProperty public String myRole() {return role;}
+        @com.fasterxml.jackson.annotation.JsonProperty("isOwner") public boolean ownsAssessment() {return "OWNER".equals(role);}
         @com.fasterxml.jackson.annotation.JsonProperty public boolean shared() {return collaboratorCount>0;}
     }
     public record Summary(String id,String title,int questionCount,int classCount,List<ClassView> classes,
                           int revision,Instant updatedAt,Owner owner,String role,AiPolicy aiPolicy,String guidelinesSummary,int collaboratorCount) {
         @com.fasterxml.jackson.annotation.JsonProperty public String myRole() {return role;}
+        @com.fasterxml.jackson.annotation.JsonProperty("isOwner") public boolean ownsAssessment() {return "OWNER".equals(role);}
         @com.fasterxml.jackson.annotation.JsonProperty public boolean shared() {return collaboratorCount>0;}
     }
     public record Page(List<Summary> items,int page,int size,long totalElements,long totalPages,String scope) {}

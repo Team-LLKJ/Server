@@ -31,25 +31,25 @@ class CompletedContractApiTest extends AuthTestSupport {
                     .andExpect(status().isCreated()).andExpect(jsonPath("details.warning").value(true));
         mvc.perform(request(get("/api/teacher/evaluations/"+e.id()+"/students"),teacher)).andExpect(jsonPath("items[0].warningCount").value(3));
     }
-    @Test void submittedStudentCanReadReportsAfterLeaveWithoutRestoringWriteAccess() throws Exception {
+    @Test void submittedStudentCannotReadReportsOrWorkAfterLeave() throws Exception {
         as(teacher);var e=evaluations.create("제출 후 리포트",60);var config=work.configure(e.id(),new Configure(AiPolicy.HINT_ONLY,List.of(new QuestionInput(1,"문항","문제"))));
         as(teacher);var p=evaluations.join(e.pin(),"학생",null);evaluations.start(e.id());
         var preview=work.review(e.id(),p.participantToken());work.submit(e.id(),p.participantToken(),preview.reviewToken());evaluations.participant(e.id(),p.participantToken(),true);
         String base="/api/evaluations/"+e.id();
-        mvc.perform(get(base+"/report/hwp").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(content().contentType("application/x-hwp"));
-        mvc.perform(post(base+"/reports").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk());
-        mvc.perform(get(base+"/report").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk());
-        mvc.perform(get(base+"/report/hwp").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(content().contentType("application/x-hwp"));
-        mvc.perform(get(base+"/report/pdf").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(content().contentType("application/pdf"));
+        // 보고서는 교사만(2026-11-14): 참가자 토큰은 403
+        mvc.perform(get(base+"/report/hwp").header("X-Participant-Token",p.participantToken())).andExpect(status().isForbidden());
+        mvc.perform(post(base+"/reports").header("X-Participant-Token",p.participantToken())).andExpect(status().isForbidden());
+        mvc.perform(get(base+"/report").header("X-Participant-Token",p.participantToken())).andExpect(status().isForbidden());
+        mvc.perform(get(base+"/report/pdf").header("X-Participant-Token",p.participantToken())).andExpect(status().isForbidden());
         mvc.perform(get(base+"/questions").header("X-Participant-Token",p.participantToken())).andExpect(status().isUnauthorized());
         mvc.perform(body(put(base+"/questions/"+config.questions().get(0).id()+"/answer").header("X-Participant-Token",p.participantToken()),new SaveAnswer("금지",0,AnswerSource.DIRECT,null))).andExpect(status().isUnauthorized());
         assertThat(db.queryForObject("SELECT active FROM participants WHERE id=?",Boolean.class,p.participantId())).isFalse();
         as(teacher);var other=evaluations.create("타 평가",60);
-        mvc.perform(get("/api/evaluations/"+other.id()+"/report").header("X-Participant-Token",p.participantToken())).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/evaluations/"+other.id()+"/questions").header("X-Participant-Token",p.participantToken())).andExpect(status().isUnauthorized());
     }
     @Test void inactiveUnsubmittedStudentCannotAccessReports() throws Exception {
         as(teacher);var e=evaluations.create("미제출",60);var p=evaluations.join(e.pin(),"학생",null);evaluations.participant(e.id(),p.participantToken(),true);
-        mvc.perform(post("/api/evaluations/"+e.id()+"/reports").header("X-Participant-Token",p.participantToken())).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/evaluations/"+e.id()+"/reports").header("X-Participant-Token",p.participantToken())).andExpect(status().isForbidden());
     }
     @Test void missingProtectedPathAndWrongMethodHaveDistinctStableCodes() throws Exception {
         mvc.perform(request(get("/api/teacher/unknown-route"),teacher)).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("NOT_FOUND"));
@@ -59,10 +59,10 @@ class CompletedContractApiTest extends AuthTestSupport {
     }
     @Test void processCellsExposeDisplayNameAndMaxScoreWithoutChangingPersistedModel() throws Exception {
         var cell=new ProcessGradingModels.Cell("q",ProcessGradingModels.Criterion.PURPOSE,3,new BigDecimal("11.25"),"DONE","근거","다음 단계",List.of(),List.of(),List.of());
-        var encoded=json.valueToTree(cell);assertThat(encoded.path("maxScore").asInt()).isEqualTo(15);assertThat(encoded.path("criterionName").asText()).isEqualTo("AI 활용 목적의 적절성");
+        var encoded=json.valueToTree(cell);assertThat(encoded.path("maxScore").asInt()).isEqualTo(20);assertThat(encoded.path("criterionName").asText()).isEqualTo("AI 활용 목적의 적절성");
         assertThat(json.treeToValue(encoded,ProcessGradingModels.Cell.class)).isEqualTo(cell);
         as(teacher);var e=evaluations.create("척도",60);
         mvc.perform(request(get("/api/teacher/evaluations/"+e.id()+"/process-grading/rubric"),teacher)).andExpect(status().isOk())
-                .andExpect(jsonPath("criteria[0].criterion").value("PURPOSE")).andExpect(jsonPath("criteria[0].name").value("AI 활용 목적의 적절성")).andExpect(jsonPath("criteria[0].maxScore").value(15));
+                .andExpect(jsonPath("criteria[0].criterion").value("PURPOSE")).andExpect(jsonPath("criteria[0].name").value("AI 활용 목적의 적절성")).andExpect(jsonPath("criteria[0].maxScore").value(20)).andExpect(jsonPath("criteria.length()").value(4));
     }
 }

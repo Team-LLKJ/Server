@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.*;
 import org.jsoup.Jsoup;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,6 +12,10 @@ import static kr.lit.api.ProcessGradingModels.*;
 
 @Repository
 public class ProcessGradingRepository {
+    /** 제출 때 서버가 자동으로 만든 AI 사용 기록(학생이 쓴 설명란과 구분). 점수에는 쓰지 않습니다(투명성 기준 삭제, 2026-11-14). */
+    public static final String KIND_AUTO_DISCLOSURE="AUTO_DISCLOSURE";
+    /** 활용 설명란(자동 기록) 저장 오류. text=errorCode. */
+    public static final String KIND_DISCLOSURE_ERROR="DISCLOSURE_ERROR";
     private final JdbcTemplate db;private final ObjectMapper json;private final PurposeClassifier purposes;
     public ProcessGradingRepository(JdbcTemplate db,ObjectMapper json,PurposeClassifier purposes){this.db=db;this.json=json;this.purposes=purposes;}
     public String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception ex){throw new IllegalStateException("Cannot serialize process grading",ex);}}
@@ -18,10 +23,10 @@ public class ProcessGradingRepository {
     public Optional<Policy> getPolicy(String id){return db.queryForList("SELECT policy_json FROM process_grading_policies WHERE evaluation_id=?",String.class,id).stream().findFirst().map(s->decode(s,Policy.class));}
     public List<String> getQuestionIds(String id){return db.queryForList("SELECT id FROM questions WHERE evaluation_id=? ORDER BY position,id",String.class,id);}
     public String getEvaluationState(String id){return db.queryForObject("SELECT state FROM evaluations WHERE id=? FOR UPDATE",String.class,id);}
-    public void savePolicy(String id,Policy policy){db.update("MERGE INTO process_grading_policies(evaluation_id,policy_json) KEY(evaluation_id) VALUES (?,?)",id,encode(policy));}
+    public void savePolicy(String id,Policy policy){DatabaseUpsert.save(db,"process_grading_policies","evaluation_id,policy_json","evaluation_id","?,?",id,encode(policy));}
     public String queueSubmission(String id,String pid) {
         // 호출자는 평가 행을 잠근 제출 트랜잭션입니다. 제출 시점의 모든 입력을 별도 보존합니다.
-        var rows=db.queryForList("SELECT s.snapshot,s.review_token,e.title FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.evaluation_id=? AND s.participant_id=?",id,pid);
+        var rows=db.queryForList("SELECT s.snapshot,s.review_token,e.title,e.evaluation_content FROM submissions s JOIN evaluations e ON e.id=s.evaluation_id WHERE s.evaluation_id=? AND s.participant_id=?",id,pid);
         if(rows.isEmpty())throw new IllegalArgumentException("SUBMISSION_REQUIRED");
         var row=rows.get(0);JsonNode snapshot;
         try{snapshot=json.readTree((String)row.get("SNAPSHOT"));}catch(Exception ex){throw new IllegalStateException(ex);}
@@ -50,7 +55,11 @@ public class ProcessGradingRepository {
         for(var e:snapshot.path("learningEvents"))if(WorkModels.ClientEventType.warningNames().contains(e.path("type").asText()))
             sources.add(new Source("warning:"+e.path("id").asText(),e.path("questionId").isNull()?GLOBAL:e.path("questionId").asText(),"WARNING",e.path("type").asText()+" (브라우저 신고·참고용)",e.path("createdAt").asText(null),null));
         if(snapshot.hasNonNull("aiDisclosure")) {
-            var disclosure=snapshot.path("aiDisclosure");if(!"SYSTEM_GENERATED".equals(disclosure.path("source").asText()))for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,"DISCLOSURE",disclosure.path(field).asText()));
+            var disclosure=snapshot.path("aiDisclosure");boolean auto="SYSTEM_GENERATED".equals(disclosure.path("source").asText());
+            // 자동 기록은 학생 근거(DISCLOSURE)와 구분해 AUTO_DISCLOSURE로 넣습니다.
+            for(String field:List.of("tools","usedParts","reason"))sources.add(new Source("disclosure:"+switch(field){case "tools"->"TOOLS";case "usedParts"->"USED_PARTS";default->"REASON";},GLOBAL,auto?KIND_AUTO_DISCLOSURE:"DISCLOSURE",disclosure.path(field).asText()));
+            if("FAILED".equals(disclosure.path("status").asText())||disclosure.hasNonNull("errorCode"))
+                sources.add(new Source("disclosure:ERROR",GLOBAL,KIND_DISCLOSURE_ERROR,disclosure.path("errorCode").asText("DISCLOSURE_SAVE_ERROR")));
         }else {
         var disclosures=db.queryForList("SELECT tools,used_parts,reason FROM ai_disclosures WHERE participant_id=?",pid);
         if(!disclosures.isEmpty())for(String field:List.of("TOOLS","USED_PARTS","REASON"))sources.add(new Source("disclosure:"+field,GLOBAL,"DISCLOSURE",Objects.toString(disclosures.get(0).get(field),"")));
@@ -62,22 +71,57 @@ public class ProcessGradingRepository {
         var paths=new InputPathAnalyzer().analyzePaths(snapshot);
         if(paths.status().equals("PARTIAL"))limitations.add("일부 답안 입력 경로를 확인할 편집 이력이 없습니다.");
         if(sources.stream().noneMatch(s->s.kind().equals("DISCLOSURE")&&!s.text().isBlank()))limitations.add("학생이 작성한 별도 활용 설명이 없습니다. 자동 생성 설명은 학생 설명과 구분합니다.");
-        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights(),old.excludedCriteria())).orElse(null);
+        String snapshotAiPolicy=snapshot.path("aiPolicy").asText();
+        var policy=getPolicy(id).map(old->new Policy(old.version(),RUBRIC_VERSION,old.taskGoal(),old.allowedRules(),old.noAiPolicy(),old.questionWeights(),old.excludedCriteria())).orElseGet(()->getDefaultPolicy(ids,(String)row.get("TITLE"),(String)row.get("EVALUATION_CONTENT"),snapshotAiPolicy));
         var input=new Input(id,pid,(String)row.get("REVIEW_TOKEN"),(String)row.get("TITLE"),snapshot.path("aiPolicy").asText(),policy,ids,List.copyOf(sources),
                 List.copyOf(limitations),new AnalysisScope(List.copyOf(ids),java.util.stream.StreamSupport.stream(snapshot.path("answers").spliterator(),false).map(a->new AnswerVersion(a.path("question").path("id").asText(),a.path("answer").path("version").asInt())).toList(),java.util.stream.StreamSupport.stream(snapshot.path("conversations").spliterator(),false).map(t->t.path("id").asLong()).toList(),List.copyOf(limitations)),paths,new PurposeUsageAnalyzer().analyzeUsage(snapshot));
         return insertJob(input);
+    }
+    public Optional<Policy> getDefaultPolicy(String id) {
+        var questionIds=getQuestionIds(id);
+        return db.query("""
+                SELECT e.title,e.evaluation_content,COALESCE(s.ai_policy,'DISABLED') ai_policy
+                  FROM evaluations e LEFT JOIN evaluation_settings s ON s.evaluation_id=e.id
+                 WHERE e.id=?
+                """,(r,n)->getDefaultPolicy(questionIds,r.getString("title"),r.getString("evaluation_content"),r.getString("ai_policy")),id)
+                .stream().filter(Objects::nonNull).findFirst();
+    }
+    private Policy getDefaultPolicy(List<String> questionIds,String title,String guidelines,String aiPolicy) {
+        if (questionIds.isEmpty()) return null;
+        String goal=guidelines==null?"":plain(guidelines).strip();
+        String rules=switch (aiPolicy) {
+            case "DISABLED" -> "AI 질문을 사용할 수 없습니다.";
+            case "HINT_ONLY" -> "개념 설명과 풀이 힌트를 요청할 수 있습니다.";
+            default -> "평가 안내에 따라 AI를 사용하고 제출 답안에 활용한 내용을 검토하세요.";
+        };
+        int units=1_000_000;
+        int base=units/questionIds.size();
+        int remainder=units%questionIds.size();
+        var weights=new ArrayList<QuestionWeight>();
+        for (int i=0;i<questionIds.size();i++) {
+            weights.add(new QuestionWeight(questionIds.get(i),java.math.BigDecimal.valueOf(base+(i<remainder?1:0),4)));
+        }
+        return new Policy(0,RUBRIC_VERSION,goal.isBlank()?title:goal,rules,NoAiPolicy.HOLD,List.copyOf(weights));
     }
     private String plain(String text){return Jsoup.parseBodyFragment(text).wholeText();}
     public String insertJob(Input input) {
         String data=encode(input),hash=AuthService.hash(data),job=UUID.randomUUID().toString();
         int version=db.queryForObject("SELECT COALESCE(MAX(version),0)+1 FROM process_grading_jobs WHERE participant_id=?",Integer.class,input.participantId());
+        // 다시 제출하면 아직 시작하지 않은 이전 작업은 채점하지 않습니다(마지막 제출본만 채점·확정).
+        db.update("UPDATE process_grading_jobs SET status='SUPERSEDED',error_code='NEWER_SUBMISSION',completed_at=CURRENT_TIMESTAMP WHERE participant_id=? AND status='PENDING'",input.participantId());
         db.update("INSERT INTO process_grading_jobs(id,evaluation_id,participant_id,version,status,input_hash,input_json,rubric_version,created_at) VALUES (?,?,?,?,'PENDING',?,?,?,CURRENT_TIMESTAMP)",job,input.evaluationId(),input.participantId(),version,hash,data,RUBRIC_VERSION);
         return job;
     }
     public Input getInput(String job){return decode(db.queryForObject("SELECT input_json FROM process_grading_jobs WHERE id=?",String.class,job),Input.class);}
     public List<String> getPendingJobs(){return db.queryForList("SELECT id FROM process_grading_jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10",String.class);}
+    public record PendingJob(String id,String participantId,java.time.Instant createdAt) {}
+    /** 제출 순서대로 대기 작업(학생마다 마지막 제출본 하나). */
+    public List<PendingJob> getPendingJobRows(){return db.query("SELECT pending.id,pending.participant_id,pending.created_at FROM process_grading_jobs pending "+
+            "WHERE pending.status='PENDING' AND NOT EXISTS (SELECT 1 FROM process_grading_jobs running WHERE running.participant_id=pending.participant_id AND running.status='RUNNING') "+
+            "ORDER BY pending.created_at,pending.id LIMIT 20",
+            (r,n)->new PendingJob(r.getString(1),r.getString(2),r.getTimestamp(3).toInstant()));}
     public boolean claimJob(String id){return db.update("UPDATE process_grading_jobs SET status='RUNNING',started_at=CURRENT_TIMESTAMP,heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'",id)==1;}
-    public void recoverJobs(){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND COALESCE(heartbeat_at,started_at)<DATEADD('MINUTE',-5,CURRENT_TIMESTAMP)");}
+    public void recoverJobs(){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND COALESCE(heartbeat_at,started_at)<(CURRENT_TIMESTAMP - INTERVAL '5' MINUTE)");}
     public void touchJob(String id){db.update("UPDATE process_grading_jobs SET heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",id);}
     public void completeJob(String id,String model,Result result){db.update("UPDATE process_grading_jobs SET status=?,model=?,result_json=?,completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",result.status(),model,encode(result),id);}
     public void failJob(String id,String code){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code=?,completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='RUNNING'",code,id);}

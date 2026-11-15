@@ -31,7 +31,7 @@ class CollaborationApiTest extends AuthTestSupport {
     String base(String id) {return "/api/teacher/assessments/"+id;}
     String eval(String id) {return "/api/teacher/evaluations/"+id;}
     EvaluationService.Joined participant(Fixture f) {
-        as(f.editor());templates.openLobby(f.id(),f.classId(),60);var c=templates.start(f.id(),f.classId(),45);var p=evaluations.join(c.pin(),"참가 학생",null);
+        as(f.editor());var c=templates.openLobby(f.id(),f.classId(),60);var p=evaluations.join(c.pin(),"참가 학생",null);templates.start(f.id(),f.classId(),45);
         var q=work.configuration(f.classId()).questions().get(0).id();
         work.save(f.classId(),p.participantToken(),q,new SaveAnswer("내가 작성한 근거입니다.",0,AnswerSource.DIRECT,null));
         return p;
@@ -40,8 +40,8 @@ class CollaborationApiTest extends AuthTestSupport {
     long notices(String uid,String type,String assessmentId) {return db.queryForObject("SELECT COUNT(*) FROM notifications WHERE user_id=? AND notification_type=? AND assessment_id=?",Long.class,uid,type,assessmentId);}
     @Test void shareReturnsTeacherAndListsMineAndSharedWithOwnerRoleAndClassSummary() throws Exception {
         var f=fixture();
-        var owner=ok(request(get(base(f.id())),teacher));assertThat(owner.path("role").asText()).isEqualTo("OWNER");assertThat(owner.path("owner").path("teacherId").asText()).isEqualTo(teacher.user().id());
-        var detail=ok(request(get(base(f.id())),f.editor()));assertThat(detail.path("role").asText()).isEqualTo("EDITOR");assertThat(detail.path("classes").get(0).path("classId").asText()).isEqualTo(f.classId());
+        var owner=ok(request(get(base(f.id())),teacher));assertThat(owner.path("role").asText()).isEqualTo("OWNER");assertThat(owner.path("isOwner").asBoolean()).isTrue();assertThat(owner.path("owner").path("teacherId").asText()).isEqualTo(teacher.user().id());
+        var detail=ok(request(get(base(f.id())),f.editor()));assertThat(detail.path("role").asText()).isEqualTo("EDITOR");assertThat(detail.path("isOwner").isBoolean()).isTrue();assertThat(detail.path("isOwner").asBoolean()).isFalse();assertThat(detail.path("classes").get(0).path("classId").asText()).isEqualTo(f.classId());
         var mine=ok(request(get("/api/teacher/assessments"),teacher));assertThat(mine.path("scope").asText()).isEqualTo("mine");
         var editorMine=ok(request(get("/api/teacher/assessments"),f.editor()));assertThat(editorMine.path("totalElements").asInt()).isZero();
         var shared=ok(request(get("/api/teacher/assessments?scope=shared"),f.editor()));assertThat(shared.path("totalElements").asInt()).isEqualTo(1);
@@ -107,7 +107,7 @@ class CollaborationApiTest extends AuthTestSupport {
         var editor=newTeacher();as(editor);var ns=new NotificationService(db);ns.saveSettings(false,false);as(teacher);var t=templates.create(input("알림 설정"));
         ok(body(request(post(base(t.id())+"/collaborators"),teacher),Map.of("email",editor.user().email())));
         assertThat(notices(editor.user().id(),"ASSESSMENT_SHARED",t.id())).isEqualTo(1);
-        as(teacher);var c=templates.addClass(t.id(),"1반");templates.openLobby(t.id(),c.classId(),60);var s=templates.start(t.id(),c.classId(),45);var p=evaluations.join(s.pin(),"학생",null);
+        as(teacher);var c=templates.addClass(t.id(),"1반");var s=templates.openLobby(t.id(),c.classId(),60);var p=evaluations.join(s.pin(),"학생",null);templates.start(t.id(),c.classId(),45);
         var review=work.review(c.classId(),p.participantToken());work.submit(c.classId(),p.participantToken(),review.reviewToken());
         assertThat(notices(teacher.user().id(),"SUBMISSION",t.id())).isEqualTo(1);assertThat(notices(editor.user().id(),"SUBMISSION",t.id())).isZero();
     }
@@ -127,8 +127,8 @@ class CollaborationApiTest extends AuthTestSupport {
         mvc.perform(request(get("/api/notifications/unread-count"),f.editor())).andExpect(status().isOk()).andExpect(jsonPath("unreadCount").value(0));
         assertThat(ok(request(get("/api/notifications"),f.editor())).path("items").size()).isZero();
         mvc.perform(request(get(root+"/students"),teacher)).andExpect(status().isOk());
-        // 학생 참가 자격과 계정 로그인 자체는 공유 해제의 영향을 받지 않습니다.
-        mvc.perform(get("/api/student/evaluations/"+f.classId()+"/workspace").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk());
+        // 학생 참가 자격은 공유 해제의 영향을 받지 않습니다(제출한 학생이라 상태 확인만 됩니다).
+        mvc.perform(get("/api/student/evaluations/"+f.classId()+"/state").header("X-Participant-Token",p.participantToken())).andExpect(status().isOk()).andExpect(jsonPath("screen").value("SUBMITTED"));
     }
     @Test void reSharingCreatesNewNoticeAndDeletionCleansMembersAndShareNotices() throws Exception {
         var f=fixture();mvc.perform(request(delete(base(f.id())+"/collaborators/"+f.editor().user().id()),teacher)).andExpect(status().isNoContent());

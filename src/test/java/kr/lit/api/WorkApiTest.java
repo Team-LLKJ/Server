@@ -72,9 +72,9 @@ class WorkApiTest extends AuthTestSupport {
         var waiting=fixture(AiPolicy.DISABLED,false);
         mvc.perform(student(get(answerPath(waiting)),waiting)).andExpect(status().isConflict());
         var review=work.review(f.id(),f.token());work.submit(f.id(),f.token(),review.reviewToken());
-        assertThat(ok(student(get(answerPath(f)),f))).isEqualTo(cleared);
-        mvc.perform(student(payload(put(answerPath(f)),direct("제출 후 수정",2)),f))
-                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("ALREADY_SUBMITTED"));
+        mvc.perform(student(get(answerPath(f)),f)).andExpect(status().isUnauthorized());
+        mvc.perform(student(payload(put(answerPath(f)),direct("제출 후 수정",2)),f)).andExpect(status().isUnauthorized());
+        assertThat(submissionByToken(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).isEmpty();
     }
     @Test void fullAnswerConversationAndFinalSubmissionFlow() throws Exception {
         var f=fixture(AiPolicy.HINT_ONLY,true);
@@ -104,16 +104,19 @@ class WorkApiTest extends AuthTestSupport {
         var repeated=ok(student(payload(post(root(f)+"/submission"),confirm),f));
         assertThat(repeated).isEqualTo(result);
         assertThat(result.at("/snapshot/answers/0/answer/content").asText()).isEqualTo("최종 답안");
-        mvc.perform(student(payload(put(answerPath(f)),direct("수정 불가",3)),f)).andExpect(status().isConflict()).andExpect(jsonPath("code").value("ALREADY_SUBMITTED"));
-        mvc.perform(student(payload(post(aiPath(f)),new Ask("after-submit","질문")),f)).andExpect(status().isConflict());
-        mvc.perform(student(get(root(f)+"/questions"),f)).andExpect(jsonPath("readOnly").value(true)).andExpect(jsonPath("status").value("SUBMITTED"));
+        assertThat(result.path("snapshot").has("aiDisclosure")).isFalse(); // AI 활용 기록은 교사 전용
+        // 제출한 학생은 평가 화면·본인 기록을 다시 볼 수 없습니다(2026-11-14). 상태 확인·나가기만 됩니다.
+        for(var blocked:List.of(put(answerPath(f)),get(answerPath(f)),post(aiPath(f)),get(root(f)+"/questions"),get("/api/student/evaluations/"+f.id()+"/workspace"),get(root(f)+"/conversations"),
+                get(root(f)+"/learning-events"),get(root(f)+"/submission"),get(root(f)+"/submission-preview")))
+            mvc.perform(student(blocked.contentType("application/json").content("{}"),f)).andExpect(status().isUnauthorized()).andExpect(jsonPath("code").value("INVALID_PARTICIPANT_TOKEN"));
         mvc.perform(student(get(root(f)+"/state"),f)).andExpect(jsonPath("screen").value("SUBMITTED"));
-        mvc.perform(student(get(root(f)+"/conversations"),f)).andExpect(jsonPath("$[0].questionText").value(ask.text()));
-        var events=ok(student(get(root(f)+"/learning-events"),f));
-        assertThat(events.findValuesAsText("type")).contains("ANSWER_SAVED","AI_REQUESTED","AI_COMPLETED","SUBMITTED");
+        as(teacher);var events=work.teacherEvents(f.id(),f.participantId(),0,100);
+        assertThat(events.stream().map(Event::type)).contains("ANSWER_SAVED","AI_REQUESTED","AI_COMPLETED","SUBMITTED");
         assertThat(events.toString()).contains("AI_REFERENCED","처음 답안","최종 답안");
         evaluations.end(f.id());
-        assertThat(ok(student(get(root(f)+"/submission"),f))).isEqualTo(result);
+        mvc.perform(student(get(root(f)+"/submission"),f)).andExpect(status().isUnauthorized());
+        mvc.perform(student(post(root(f)+"/leave"),f)).andExpect(status().isOk());
+        mvc.perform(student(get(root(f)+"/questions"),f)).andExpect(status().isUnauthorized()); // 나가기 뒤에도
     }
     @Test void blankAnswersAreFlaggedButConfirmationCanSubmitThem() throws Exception {
         var f=fixture(AiPolicy.DISABLED,true);
@@ -194,12 +197,14 @@ class WorkApiTest extends AuthTestSupport {
         assertThat(failed.state()).isEqualTo("FAILED");
         assertThat(work.learningEvents(f.id(),f.token(),0,100).stream().map(Event::type)).contains("AI_FAILED");
         evaluations.end(f.id());
-        mvc.perform(student(payload(put(answerPath(f)),direct("답안",0)),f)).andExpect(status().isConflict());
-        mvc.perform(student(get(root(f)+"/questions"),f)).andExpect(status().isOk()).andExpect(jsonPath("readOnly").value(true));
+        // 종료로 자동 제출된 학생도 평가 화면을 다시 볼 수 없습니다(유예 시간 0).
+        mvc.perform(student(payload(put(answerPath(f)),direct("답안",0)),f)).andExpect(status().isUnauthorized());
+        mvc.perform(student(get(root(f)+"/questions"),f)).andExpect(status().isUnauthorized());
         var expired=fixture(AiPolicy.FULL,true);
         db.update("UPDATE evaluations SET expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP),ends_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",expired.id());
         mvc.perform(student(payload(put(answerPath(expired)),direct("답안",0)),expired)).andExpect(status().isGone());
-        mvc.perform(student(get(root(expired)+"/questions"),expired)).andExpect(jsonPath("status").value("SUBMITTED"));
+        mvc.perform(student(get(root(expired)+"/questions"),expired)).andExpect(status().isUnauthorized()); // 마감 자동 제출 뒤
+        mvc.perform(student(get(root(expired)+"/state"),expired)).andExpect(status().isOk()).andExpect(jsonPath("screen").value("SUBMITTED"));
     }
     @Test void conversationsUseStableIdCursor() throws Exception {
         var f=fixture(AiPolicy.FULL,true);

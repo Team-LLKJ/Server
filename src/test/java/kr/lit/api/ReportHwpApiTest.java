@@ -49,8 +49,8 @@ class ReportHwpApiTest extends AuthTestSupport {
         assertThat(extractText(bytes)).contains("AI 활용 학습 보고서","한글 리포트 평가","학생 한글","분모를 같게","한글 셀 | 두 번째 셀","마지막 답안","교사의 검토 근거","성장 과정 확인","키워드 기반 분류","활동 및 경고 기록","문항 번호","문항 2","[미작성]")
                 .doesNotContain("대화원문비공개표식","<table>","<p>");
         mvc.perform(request(get(teacherPath(f).replace("/students/","/participants/")),teacher)).andExpect(status().isOk());
-        byte[] student=mvc.perform(get(studentPath(f)).header("X-Participant-Token",f.token())).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
-        assertThat(extractText(student)).isEqualTo(extractText(bytes));
+        // 학생 보고서 내려받기는 없앴습니다(2026-11-14, 교사 전용).
+        mvc.perform(get(studentPath(f)).header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("TEACHER_ONLY"));
         String qa=System.getProperty("lit.hwp.qa-dir");
         if(qa!=null){Files.createDirectories(Path.of(qa));Files.write(Path.of(qa,"lit-report-sample.hwp"),bytes);}
     }
@@ -97,7 +97,7 @@ class ReportHwpApiTest extends AuthTestSupport {
         assertThat(extractText(old)).contains("미채점","분모를 같게").doesNotContain("두 번째 버전 의견","라이브 답안 변경 표식","대화원문비공개표식");
         byte[] latest=mvc.perform(request(get(teacherPath(f)),teacher)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         assertThat(extractText(latest)).contains("두 번째 버전 의견");
-        byte[] raw=mvc.perform(get(studentPath(f)).param("version","1").param("includeConversations","true").header("X-Participant-Token",f.token()))
+        byte[] raw=mvc.perform(request(get(teacherPath(f)).param("version","1").param("includeConversations","true"),teacher))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         assertThat(extractText(raw)).contains("대화원문비공개표식","부록. AI 대화 기록");
         as(teacher);assertThat(reports.versions(f.id(),f.pid())).hasSize(2);assertThat(first.version()).isEqualTo(1);
@@ -106,14 +106,12 @@ class ReportHwpApiTest extends AuthTestSupport {
         var f=createFixture(true);reports.teacherGenerate(f.id(),f.pid());var other=newTeacher();
         mvc.perform(get(teacherPath(f))).andExpect(status().isUnauthorized());
         mvc.perform(request(get(teacherPath(f)),other)).andExpect(status().isNotFound());
-        mvc.perform(get(studentPath(f))).andExpect(status().isUnauthorized());
+        mvc.perform(get(studentPath(f))).andExpect(status().isForbidden());
         var foreign=createFixture(false);
-        mvc.perform(get(studentPath(f)).header("X-Participant-Token",foreign.token())).andExpect(status().isUnauthorized());
+        mvc.perform(get(studentPath(f)).header("X-Participant-Token",foreign.token())).andExpect(status().isForbidden());
         mvc.perform(request(get(teacherPath(foreign)),teacher)).andExpect(status().isNotFound()).andExpect(jsonPath("code").value("REPORT_NOT_FOUND"));
-        mvc.perform(get(studentPath(foreign)).header("X-Participant-Token",foreign.token())).andExpect(status().isNotFound());
         mvc.perform(request(get(teacherPath(f)).param("version","0"),teacher)).andExpect(status().isBadRequest());
         mvc.perform(request(get(teacherPath(f)).param("version","999"),teacher)).andExpect(status().isNotFound());
-        mvc.perform(get(studentPath(f)).param("version","-1").header("X-Participant-Token",f.token())).andExpect(status().isBadRequest());
     }
     @Test void hwpAliasesAndLongAnswersPreserveTextAndDoNotCreateNewReportVersions() throws Exception {
         var f=createFixture(false);
@@ -123,7 +121,7 @@ class ReportHwpApiTest extends AuthTestSupport {
         String path=teacherPath(f).replace("/report/hwp","/report.hwp");
         byte[] bytes=mvc.perform(request(get(path),teacher)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         assertThat(extractText(bytes)).contains("긴 한글 답안","마지막문장표식");
-        mvc.perform(get(studentPath(f).replace("/report/hwp","/report.hwp")).header("X-Participant-Token",f.token())).andExpect(status().isOk());
+        mvc.perform(get(studentPath(f).replace("/report/hwp","/report.hwp")).header("X-Participant-Token",f.token())).andExpect(status().isForbidden());
         as(teacher);assertThat(reports.versions(f.id(),f.pid())).hasSize(1);
         assertThat(report.version()).isEqualTo(1);
     }

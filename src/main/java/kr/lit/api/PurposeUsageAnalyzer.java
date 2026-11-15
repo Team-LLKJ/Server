@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /**
  * AI 사용 방법(질문 용도) 분석. 질문 하나에 주된 용도 하나만 매기고, 비율은 "질문 몇 개 중 몇 개"입니다. 점수가 아닙니다.
- * 용도는 스냅샷 대화에 붙은 purposeClassification(교사 확정 > LLM: Haiku 3회 일치, 불일치는 Gemini 임시 용도)을 쓰고,
+ * 용도는 스냅샷 대화에 붙은 purposeClassification(교사 확정 > LLM: Gemini 3회 일치, 불일치는 Haiku 임시 용도)을 쓰고,
  * 아직 분류 전이거나 실패한 질문은 키워드 규칙으로 대체해 method에 표시합니다. AssessmentAnalyzer.classify와 같은 결과를 씁니다.
  */
 public class PurposeUsageAnalyzer {
@@ -14,14 +14,12 @@ public class PurposeUsageAnalyzer {
         UNDERSTAND("이해·조사"), PLAN("아이디어·구성"), REVIEW("비판적 검토"), EDIT("표현 수정"), DRAFT("답안 생성"), OTHER("기타"), UNDECIDED("판단 보류");
         public final String label;
         Purpose(String label){this.label=label;}
-        /** 비율(usage)에 들어가는 5개 항목. OTHER는 otherCount, UNDECIDED는 비율에서 뺍니다. */
-        public boolean counted(){return this!=OTHER&&this!=UNDECIDED;}
         public static Optional<Purpose> parse(String value) {
             try { return value==null||value.isBlank()?Optional.empty():Optional.of(valueOf(value.strip())); }
             catch(IllegalArgumentException ex) { return Optional.empty(); }
         }
     }
-    public static final String METHOD_LLM="LLM_HAIKU_X3",METHOD_LLM_GEMINI="LLM_HAIKU_X3_GEMINI",METHOD_TEACHER="TEACHER",METHOD_KEYWORD="KEYWORD_FALLBACK";
+    public static final String METHOD_LLM="LLM_GEMINI_X3",METHOD_LLM_HAIKU="LLM_GEMINI_X3_HAIKU",METHOD_TEACHER="TEACHER",METHOD_KEYWORD="KEYWORD_FALLBACK";
     /** 키워드 대체 규칙(우선순위 순서대로 첫 일치). LLM 분류가 없거나 실패한 질문에만 씁니다. */
     private static final List<Map.Entry<Purpose,Pattern>> KEYWORDS=List.of(
         Map.entry(Purpose.DRAFT,Pattern.compile("답안|정답|대신|작성해|써\\s*줘|써줘|풀어\\s*줘|완성해|만들어\\s*줘|이어\\s*(써|쓰)|덧붙|붙여\\s*줘|늘려\\s*줘|추가해\\s*줘")),
@@ -36,15 +34,40 @@ public class PurposeUsageAnalyzer {
     }
 
     /**
-     * 질문별 결과. purpose는 최종 용도(교사 확정 > LLM 확정·임시 > 키워드), votes는 Haiku 3회 답, geminiPurpose는 불일치 때 Gemini 답.
+     * 질문별 결과. purpose는 최종 용도(교사 확정 > LLM 확정·임시 > 키워드), votes는 Gemini 3회 답, haikuPurpose는 불일치 때 Haiku 답.
      * purposes·weightPerPurpose는 이전 응답과의 호환용(항상 [purpose], 1.0).
      */
-    public record Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String geminiPurpose,
-                           boolean needsReview,String teacherPurpose,String method,List<Purpose> purposes,double weightPerPurpose) {}
+    public record Question(long conversationId,String questionId,String quote,Purpose purpose,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="Gemini 3회 답(용도 값)") List<String> votes,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="Gemini가 엇갈렸을 때 Haiku 답, 아니면 null",allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String haikuPurpose,
+                           boolean needsReview,@io.swagger.v3.oas.annotations.media.Schema(allowableValues={"UNDERSTAND","PLAN","REVIEW","EDIT","DRAFT","OTHER"},nullable=true) String teacherPurpose,
+                           @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"LLM_GEMINI_X3","LLM_GEMINI_X3_HAIKU","TEACHER","KEYWORD_FALLBACK"}) String method,List<Purpose> purposes,double weightPerPurpose,
+                           String reason,List<String> cues,List<RubricImpact> rubricImpacts,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="답안 생성(DRAFT) 요청에 AI가 실제로 답안을 써 줬는지. 거절했으면 false, DRAFT가 아니면 null",nullable=true) Boolean aiComplied) {
+        public Question(long conversationId,String questionId,String quote,Purpose purpose,List<String> votes,String haikuPurpose,boolean needsReview,String teacherPurpose,
+                        String method,List<Purpose> purposes,double weightPerPurpose,String reason,List<String> cues,List<RubricImpact> rubricImpacts) {
+            this(conversationId,questionId,quote,purpose,votes,haikuPurpose,needsReview,teacherPurpose,method,purposes,weightPerPurpose,reason,cues,rubricImpacts,null);
+        }
+        public Question {
+            cues=cues==null?List.of():List.copyOf(cues);
+            rubricImpacts=rubricImpacts==null?List.of():List.copyOf(rubricImpacts);
+        }
+    }
+    private static final java.util.regex.Pattern REFUSAL=java.util.regex.Pattern.compile(
+            "(대신|직접|전부|통째로)\\s*(써|작성해|작성하여|만들어)\\s*(줄|드릴|드리기)\\s*(수|는)\\s*(없|어렵)|작성해\\s*드릴\\s*수\\s*없|써\\s*드릴\\s*수\\s*없"
+            +"|(답안|답|글)을?\\s*(대신|직접)\\s*(써|작성)\\s*(줄|드릴)\\s*수\\s*없|힌트(만|를)\\s*(드릴|줄|제공)|스스로\\s*(작성|써\\s*보)");
+    /** AI 답변이 답안 대신 쓰기를 거절했는지(LIT 내장 AI의 힌트만 허용 정책 등). 앞부분 400자로 봅니다. */
+    public static boolean isRefusal(String answer) {
+        if(answer==null||answer.isBlank()) return true;
+        String head=answer.length()>400?answer.substring(0,400):answer;
+        return REFUSAL.matcher(head).find();
+    }
+    public record RubricImpact(AssessmentModels.Indicator criterion,String effect,String reason) {}
+
     public record Group(Purpose purpose,String name,double percentage,int count,List<Question> representativeQuestions) {}
     /**
-     * usage: 5개 항목 비율(확정+임시 용도, OTHER·UNDECIDED 제외). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
-     * undecidedCount: Haiku 세 답이 모두 다르고 Gemini도 실패한 질문 수. pendingCount: 아직 LLM 분류 전이라 키워드로 대체한 질문 수.
+     * usage: 전체 질문 기준 용도별 비율(OTHER·UNDECIDED 포함). reviewCount: 교사 확인 필요 질문 수. otherCount: 기타 질문 수.
+     * undecidedCount: Gemini 세 답이 모두 다르고 Haiku도 실패한 질문 수. pendingCount: 아직 LLM 분류 전이라 키워드로 대체한 질문 수.
      */
     public record View(String method,String status,int questionCount,int missingRecords,List<Group> usage,List<Question> questions,List<String> limitations,
                        int reviewCount,int otherCount,int undecidedCount,int pendingCount) {}
@@ -63,28 +86,96 @@ public class PurposeUsageAnalyzer {
             else method=c.path("method").asText(METHOD_LLM);
             var votes=new ArrayList<String>();for(var v:c.path("votes"))votes.add(v.asText());
             String teacher=c.path("teacherPurpose").isTextual()?c.path("teacherPurpose").asText():null;
-            questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("geminiPurpose").isTextual()?c.path("geminiPurpose").asText():null,
-                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0));
+            // 답안 생성 요청은 AI가 실제로 답안을 써 줬는지(aiComplied)를 함께 남깁니다. 거절했으면 요약에 "요청했지만 AI가 거절"로 씁니다.
+            Boolean complied=purpose==Purpose.DRAFT?"COMPLETED".equals(turn.path("state").asText())&&!isRefusal(turn.path("answerText").asText("")):null;
+            String reason=teacher==null&&c.path("reason").isTextual()?c.path("reason").asText():getReason(purpose,method,text);
+            if(Boolean.FALSE.equals(complied)) reason="답안 작성을 요청했지만 AI가 거절했습니다. "+reason;
+            questions.add(new Question(id,turn.path("questionId").asText(),text,purpose,List.copyOf(votes),c.path("haikuPurpose").isTextual()?c.path("haikuPurpose").asText():null,
+                    teacher==null&&c.path("needsReview").asBoolean(false),teacher,method,List.of(purpose),1.0,reason,
+                    teacher==null&&c.path("cues").isArray()?getStoredCues(c.path("cues"),text):getCues(purpose,text),List.of(),complied));
             methods.add(method);
             if(!"COMPLETED".equals(turn.path("state").asText()))missing++;
         }
-        var counted=questions.stream().filter(q->q.purpose().counted()).toList();
-        var counts=new EnumMap<Purpose,Integer>(Purpose.class);for(var q:counted)counts.merge(q.purpose(),1,Integer::sum);
-        var tenths=percentTenths(counts,counted.size());
+        var counts=new EnumMap<Purpose,Integer>(Purpose.class);
+        for(var question:questions) counts.merge(question.purpose(),1,Integer::sum);
+        var tenths=percentTenths(counts,questions.size());
         var groups=Arrays.stream(Purpose.values()).filter(counts::containsKey).map(p->new Group(p,p.label,tenths.get(p)/10.0,counts.get(p),
-                counted.stream().filter(q->q.purpose()==p).limit(3).toList())).toList();
+                questions.stream().filter(q->q.purpose()==p).limit(3).toList())).toList();
         int review=(int)questions.stream().filter(Question::needsReview).count();
-        int other=(int)questions.stream().filter(q->q.purpose()==Purpose.OTHER).count();
-        int undecided=(int)questions.stream().filter(q->q.purpose()==Purpose.UNDECIDED).count();
+        int other=counts.getOrDefault(Purpose.OTHER,0);
+        int undecided=counts.getOrDefault(Purpose.UNDECIDED,0);
         String method=methods.isEmpty()?METHOD_KEYWORD:methods.size()==1?methods.iterator().next():"MIXED";
         var limitations=new ArrayList<String>();
         limitations.add("질문 하나에 주된 용도 하나만 매긴 비율입니다(질문 몇 개 중 몇 개). 점수가 아닙니다.");
-        if(review>0)limitations.add("Haiku 세 번의 분류가 엇갈린 질문 "+review+"개는 임시 용도로 계산했으며 교사 확인이 필요합니다.");
-        if(undecided>0)limitations.add("용도를 정하지 못한 질문 "+undecided+"개는 비율에서 뺐습니다.");
+        if(review>0)limitations.add("Gemini 세 번의 분류가 엇갈린 질문 "+review+"개는 임시 용도로 계산했으며 교사 확인이 필요합니다.");
+        if(undecided>0)limitations.add("용도를 정하지 못한 질문 "+undecided+"개는 판단 보류로 표시합니다.");
         if(methods.contains(METHOD_KEYWORD))limitations.add("LLM 분류 전이거나 실패한 질문은 키워드 규칙으로 대체했습니다(method=KEYWORD_FALLBACK).");
         return new View(method,missing>0?"PARTIAL":questions.isEmpty()?"NO_RECORDS":"READY",questions.size(),missing,groups,List.copyOf(questions),
                 List.copyOf(limitations),review,other,undecided,pending);
     }
+    private List<String> getStoredCues(JsonNode cues,String text) {
+        var out=new LinkedHashSet<String>();
+        for (var cue:cues) if (cue.isTextual()&&!cue.asText().isBlank()&&text.contains(cue.asText())) out.add(cue.asText());
+        return List.copyOf(out);
+    }
+
+    private List<String> getCues(Purpose purpose,String text) {
+        return KEYWORDS.stream().filter(rule->rule.getKey()==purpose).findFirst()
+                .map(rule->rule.getValue().matcher(text).results().map(java.util.regex.MatchResult::group).distinct().limit(5).toList())
+                .orElse(List.of());
+    }
+
+    private String getReason(Purpose purpose,String method,String text) {
+        if (METHOD_TEACHER.equals(method)) return "교사가 이 질문의 용도를 "+purpose.label+"으로 확정했습니다.";
+        if (purpose==Purpose.UNDECIDED) return "모델 판정이 엇갈려 질문의 용도를 확인해야 합니다.";
+        var cues=getCues(purpose,text);
+        if (METHOD_KEYWORD.equals(method)&&!cues.isEmpty()) return "질문의 ‘"+cues.get(0)+"’ 표현이 "+purpose.label+" 분류 규칙에 해당합니다.";
+        if (METHOD_KEYWORD.equals(method)) return "기록된 질문에서 다섯 가지 주요 용도에 해당하는 표현을 찾지 못했습니다.";
+        return "앞선 대화와 질문을 검토한 모델이 이 질문을 "+purpose.label+" 용도로 분류했습니다.";
+    }
+
+    public static View addRubricImpacts(View view,AssessmentModels.Analysis analysis) {
+        if (view==null || analysis==null || analysis.indicators()==null) return view;
+        var byConversation=new HashMap<Long,List<RubricImpact>>();
+        for (var indicator:analysis.indicators()) {
+            if (indicator.evidence()==null) continue;
+            for (var evidence:indicator.evidence()) {
+                if (evidence.conversationId()==null || !"USER".equals(evidence.messageRole())
+                        || evidence.type()==null || evidence.reason()==null) continue;
+                byConversation.computeIfAbsent(evidence.conversationId(),id->new ArrayList<>())
+                        .add(new RubricImpact(indicator.indicator(),evidence.type(),evidence.reason()));
+            }
+        }
+        // 답안에 이 대화의 AI 답변을 쓴 문장이 있는지(거절된 답안 생성 요청의 감점 여부).
+        var usedConversations=new HashSet<Long>();
+        if(analysis.sentences()!=null) for(var s:analysis.sentences()) if(AssessmentAnalyzer.SENTENCE_AI.equals(s.source())&&s.conversationId()!=null) usedConversations.add(s.conversationId());
+        var questions=view.questions().stream().map(q->{
+            var impacts=getRubricImpacts(byConversation.getOrDefault(q.conversationId(),List.of()));
+            if(Boolean.FALSE.equals(q.aiComplied())&&!usedConversations.contains(q.conversationId()))
+                impacts=impacts.stream().map(i->i.criterion()==AssessmentModels.Indicator.PURPOSE&&"DEDUCTION".equals(i.effect())
+                        ?new RubricImpact(i.criterion(),"NONE","답안 작성을 요청했지만 AI가 거절했고 그 내용이 답안에 없어 활용 목적 감점 근거로 보지 않습니다."):i).toList();
+            return new Question(q.conversationId(),q.questionId(),q.quote(),q.purpose(),
+                q.votes(),q.haikuPurpose(),q.needsReview(),q.teacherPurpose(),q.method(),q.purposes(),q.weightPerPurpose(),
+                q.reason(),q.cues(),impacts,q.aiComplied());}).toList();
+        var indexed=new HashMap<Long,Question>();
+        questions.forEach(q->indexed.put(q.conversationId(),q));
+        var groups=view.usage().stream().map(g->new Group(g.purpose(),g.name(),g.percentage(),g.count(),
+                g.representativeQuestions().stream().map(q->indexed.getOrDefault(q.conversationId(),q)).toList())).toList();
+        return new View(view.method(),view.status(),view.questionCount(),view.missingRecords(),groups,questions,view.limitations(),
+                view.reviewCount(),view.otherCount(),view.undecidedCount(),view.pendingCount());
+    }
+
+    private static List<RubricImpact> getRubricImpacts(List<RubricImpact> observed) {
+        var impacts=new ArrayList<>(observed);
+        for (var criterion:ProcessGradingModels.Criterion.active()) {
+            var indicator=AssessmentModels.Indicator.valueOf(criterion.name());
+            if (observed.stream().noneMatch(impact->impact.criterion()==indicator)) {
+                impacts.add(new RubricImpact(indicator,"NONE","이 질문이 해당 기준에 개별 반영된 근거를 확인할 수 없습니다."));
+            }
+        }
+        return List.copyOf(impacts);
+    }
+
     /** 소수 첫째 자리 비율(1/10%) — 합이 정확히 100%가 되도록 최대 나머지 방식으로 배분합니다. */
     private static Map<Purpose,Integer> percentTenths(Map<Purpose,Integer> counts,int total) {
         var units=new EnumMap<Purpose,Integer>(Purpose.class);if(total==0)return units;int assigned=0;

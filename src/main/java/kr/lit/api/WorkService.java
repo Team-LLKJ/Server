@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.*;
 import org.springframework.http.HttpStatus;
@@ -24,8 +25,11 @@ public class WorkService {
     private final jakarta.validation.Validator validator;
     private final ProcessGradingRepository processGrading;
     private final ParticipantSessionService sessions;
+    private final org.springframework.context.ApplicationEventPublisher events;
     public WorkService(JdbcTemplate db, ObjectMapper json, NotificationService notifications,
-                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions,AutomaticDisclosureService automaticDisclosure) {
+                       @org.springframework.beans.factory.annotation.Value("${lit.evaluation.end-grace-seconds:0}") int endGraceSeconds,jakarta.validation.Validator validator,ProcessGradingRepository processGrading,ParticipantSessionService sessions,AutomaticDisclosureService automaticDisclosure,
+                       org.springframework.context.ApplicationEventPublisher events) {
+        this.events=events;
         this.automaticDisclosure=automaticDisclosure;
         this.db=db; this.json=json; this.notifications=notifications; this.endGraceSeconds=Math.max(0,endGraceSeconds);this.validator=validator;this.processGrading=processGrading;this.sessions=sessions;
     }
@@ -54,7 +58,13 @@ public class WorkService {
     }
     private Context authenticate(String id,String token) {
         var e=evaluation(id);
-        var guest=new kr.lit.auth.ParticipantAccess(db).authenticate(id,token);
+        var guest=new kr.lit.auth.ParticipantAccess(db,endGraceSeconds).authenticate(id,token);
+        return new Context(id,guest.participantId(),e.state(),e.expiresAt());
+    }
+    /** 제출 요청의 재시도(같은 reviewToken)는 제출한 뒤에도 같은 응답을 받게 합니다. 그 밖의 조회는 막습니다. */
+    private Context authenticateSubmit(String id,String token) {
+        var e=evaluation(id);
+        var guest=new kr.lit.auth.ParticipantAccess(db,endGraceSeconds).authenticateLobby(id,token);
         return new Context(id,guest.participantId(),e.state(),e.expiresAt());
     }
 
@@ -113,7 +123,7 @@ public class WorkService {
         var antiCheat=config.antiCheat()==null?null:CommonSettingsRules.antiCheat(json,config.antiCheat());
         db.update("DELETE FROM questions WHERE evaluation_id=?",id);
         for(var q:config.questions()) db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());
-        db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",id,resolved.name());
+        DatabaseUpsert.save(db,"evaluation_settings","evaluation_id,ai_policy","evaluation_id","?,?",id,resolved.name());
         if(config.guidelines()!=null) {
             db.update("UPDATE evaluations SET evaluation_content=? WHERE id=?",Guidelines.clean(config.guidelines()),id);
         }
@@ -212,7 +222,7 @@ public class WorkService {
             }catch(IllegalArgumentException invalid){throw failure(HttpStatus.BAD_REQUEST,invalid.getMessage(),"편집 이력의 구간·버전·결과 텍스트·AI 인용을 확인해주세요.");}
         }
         var timestamp=OffsetDateTime.now(ZoneOffset.UTC);
-        db.update("MERGE INTO answers(participant_id,question_id,content,version,updated_at) KEY(participant_id,question_id) VALUES (?,?,?,?,?)",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
+        DatabaseUpsert.save(db,"answers","participant_id,question_id,content,version,updated_at","participant_id,question_id","?,?,?,?,?",c.participantId(),questionId,safeContent,old.version()+1,timestamp);
         var change=new LinkedHashMap<String,Object>();
         change.put("previousContent",old.content());change.put("content",safeContent);
         change.put("previousVersion",old.version());change.put("version",old.version()+1);
@@ -249,11 +259,12 @@ public class WorkService {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8))); }
         catch(NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }
-    /** 제출 직후 분석을 예약합니다. GradingAnalysisJob이 처리하며 조회 시에도 즉시 계산됩니다. */
+    /** 제출과 함께 분석 작업을 저장하고 커밋 후 실행을 요청합니다. */
     void requestAnalysis(String evaluationId,String participantId) {
-        processGrading.queueSubmission(evaluationId,participantId);
-        db.update("MERGE INTO grading_analyses(participant_id,evaluation_id,analysis_status,requested_at) KEY(participant_id) VALUES (?,?,'PENDING',?)",
+        String jobId=processGrading.queueSubmission(evaluationId,participantId);
+        DatabaseUpsert.save(db,"grading_analyses","participant_id,evaluation_id,analysis_status,requested_at","participant_id","?,?,'PENDING',?",
                 participantId,evaluationId,OffsetDateTime.now(ZoneOffset.UTC));
+        events.publishEvent(new SubmissionAnalysisDispatcher.Request(evaluationId,participantId,jobId));
     }
     private String nickname(String participantId) {
         return db.queryForObject("SELECT nickname FROM participants WHERE id=?",String.class,participantId);
@@ -291,13 +302,6 @@ public class WorkService {
     }
     private DisclosureView snapshotDisclosure(Context c) {
         return automaticDisclosure.getDisclosure(c.evaluationId(),c.participantId());
-    }
-    public DisclosureView disclosure(String id,String token) {
-        var c=authenticate(id,token);return snapshotDisclosure(c);
-    }
-    /** Compatibility endpoint: client input is deliberately ignored. */
-    public DisclosureView saveDisclosure(String id,String token,Disclosure input) {
-        return disclosure(id,token);
     }
     private ReviewContent finalizeDisclosure(Context c,ReviewContent content){
         var disclosure=automaticDisclosure.generateDisclosure(c.evaluationId(),c.participantId(),json.valueToTree(content));
@@ -344,11 +348,11 @@ public class WorkService {
         var c=authenticate(id,token);editable(c);return review(c);
     }
     public Submission submit(String id,String token,String reviewToken) {
-        var c=authenticate(id,token);
+        var c=authenticateSubmit(id,token);
         if(submitted(c)) {
             String previous=db.queryForObject("SELECT review_token FROM submissions WHERE participant_id=?",String.class,c.participantId());
             if(!Objects.equals(previous,reviewToken)) throw failure(HttpStatus.CONFLICT,"ALREADY_SUBMITTED","이미 제출한 평가입니다.");
-            return submission(c);
+            return studentView(submission(c));
         }
         editable(c);var review=review(c);
         if(!review.answerValidationErrors().isEmpty())throw failure(HttpStatus.BAD_REQUEST,"ANSWER_LENGTH_INVALID","문항별 최소·최대 글자 수를 확인해주세요.");
@@ -360,7 +364,12 @@ public class WorkService {
         requestAnalysis(id,c.participantId());
         notifications.notifyOwner(id,NotificationService.Type.SUBMISSION,"답안 제출",nickname(c.participantId())+" 학생이 답안을 제출했습니다.",
                 c.participantId(),"submission:"+c.participantId());
-        return submission(c);
+        return studentView(submission(c));
+    }
+    /** 학생에게 주는 제출 응답에는 AI 활용 기록(교사 전용)을 넣지 않습니다. */
+    private Submission studentView(Submission s) {
+        if(s.snapshot() instanceof com.fasterxml.jackson.databind.node.ObjectNode node){var copy=node.deepCopy();copy.remove("aiDisclosure");return new Submission(s.status(),s.submittedAt(),copy,s.submissionMode());}
+        return s;
     }
     private Submission submission(Context c) {
         var records=db.query("SELECT * FROM submissions WHERE participant_id=?",(r,n)->
@@ -453,10 +462,10 @@ public class WorkService {
     }
     public void expirePending() {
         // Recover persisted requests left pending by a server crash; never resend them automatically.
-        var ids=db.queryForList("SELECT DISTINCT evaluation_id FROM ai_turns WHERE state='PENDING' AND created_at<DATEADD('SECOND',-120,CURRENT_TIMESTAMP)",String.class);
+        var ids=db.queryForList("SELECT DISTINCT evaluation_id FROM ai_turns WHERE state='PENDING' AND created_at<(CURRENT_TIMESTAMP - INTERVAL '120' SECOND)",String.class);
         for(String id:ids) {
             evaluation(id);
-            var stale=db.query("SELECT * FROM ai_turns WHERE evaluation_id=? AND state='PENDING' AND created_at<DATEADD('SECOND',-120,CURRENT_TIMESTAMP)",this::turn,id);
+            var stale=db.query("SELECT * FROM ai_turns WHERE evaluation_id=? AND state='PENDING' AND created_at<(CURRENT_TIMESTAMP - INTERVAL '120' SECOND)",this::turn,id);
             for(var t:stale) {
                 String person=db.queryForObject("SELECT participant_id FROM ai_turns WHERE id=?",String.class,t.id());
                 db.update("UPDATE ai_turns SET state='FAILED',error_code='AI_REQUEST_ABANDONED',completed_at=CURRENT_TIMESTAMP WHERE id=?",t.id());

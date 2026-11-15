@@ -14,8 +14,9 @@ import java.time.Instant;
 public class EvaluationContentService {
     private final JdbcTemplate db;
     private final EvaluationService evaluations;
-    public EvaluationContentService(JdbcTemplate db,EvaluationService evaluations) {
-        this.db=db;this.evaluations=evaluations;
+    private final ParticipantAccess access;
+    public EvaluationContentService(JdbcTemplate db,EvaluationService evaluations,ParticipantAccess access) {
+        this.db=db;this.evaluations=evaluations;this.access=access;
     }
     public record Content(String evaluationId,String evaluationContent) {}
 
@@ -39,7 +40,7 @@ public class EvaluationContentService {
         return read(id);
     }
     public Content student(String id,String token) {
-        new ParticipantAccess(db).authenticate(id,token);
+        access.authenticate(id,token);
         return read(id);
     }
 }

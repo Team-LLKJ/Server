@@ -28,7 +28,7 @@ class TemplateApiTest extends AuthTestSupport {
     String add(String id,String name) throws Exception {
         return ok(body(request(post("/api/teacher/assessments/"+id+"/classes"),teacher),Map.of("className",name))).path("classId").asText();
     }
-    ClassView startClass(String id,String c) {as(teacher);templates.openLobby(id,c,60);return templates.start(id,c,60);}
+    ClassView startClass(String id,String c) {as(teacher);var lobby=templates.openLobby(id,c,60);evaluations.join(lobby.pin(),"대기 학생",null);return templates.start(id,c,60);}
     @Test void classLobbyWaitsForExplicitStartAndExistingStudentApisKeepWorking() throws Exception {
         var t=createTemplate();String c=add(t.id(),"1반");
         as(teacher);var waiting=templates.classes(t.id()).get(0);
@@ -45,6 +45,9 @@ class TemplateApiTest extends AuthTestSupport {
         mvc.perform(get("/api/participation/verify").param("pin",pin)).andExpect(status().isOk())
                 .andExpect(jsonPath("id").value(c)).andExpect(jsonPath("pin").value(pin));
         mvc.perform(request(get(lobby.path("qrUrl").asText()),teacher)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+        mvc.perform(body(request(post(root+"/start"),teacher),Map.of("expiresInMinutes",45)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("NO_PARTICIPANTS"));
+        assertThat(ok(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",60)))).isEqualTo(lobby);
         var p=ok(body(request(post("/api/participation/join"),null),Map.of("pin",pin,"nickname","학생")));
         String token=p.path("participantToken").asText();
         assertThat(p.at("/lobby/screen").asText()).isEqualTo("WAITING");
@@ -72,6 +75,8 @@ class TemplateApiTest extends AuthTestSupport {
         mvc.perform(body(request(post(root+"/lobby"),teacher),Map.of("expiresInMinutes",0))).andExpect(status().isBadRequest());
         as(teacher);var lobby=templates.openLobby(t.id(),c,60);var participant=evaluations.join(lobby.pin(),"복귀 학생",null);
         evaluations.participant(c,participant.participantToken(),true);
+        mvc.perform(body(request(post(root+"/start"),teacher),Map.of("expiresInMinutes",45)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("NO_PARTICIPANTS"));
         var joined=evaluations.join(lobby.pin(),null,participant.participantToken());assertThat(joined.participantId()).isEqualTo(participant.participantId());
         assertThat(joined.lobby().screen()).isEqualTo("WAITING");
         mvc.perform(request(post(root+"/end"),teacher)).andExpect(status().isConflict());
@@ -87,7 +92,9 @@ class TemplateApiTest extends AuthTestSupport {
         Callable<ClassView> open=()->{as(teacher);try{gate.await();return templates.openLobby(t.id(),c,60);}finally{clear();}};
         try {
             var one=pool.submit(open);var two=pool.submit(open);gate.countDown();
-            assertThat(one.get(10,TimeUnit.SECONDS).pin()).isEqualTo(two.get(10,TimeUnit.SECONDS).pin());
+            var lobby=one.get(10,TimeUnit.SECONDS);
+            assertThat(lobby.pin()).isEqualTo(two.get(10,TimeUnit.SECONDS).pin());
+            evaluations.join(lobby.pin(),"대기 학생",null);
             Callable<Boolean> start=()->{as(teacher);try{templates.start(t.id(),c,45);return true;}catch(ApiError.Failure failure){return false;}finally{clear();}};
             var first=pool.submit(start);var second=pool.submit(start);
             assertThat(List.of(first.get(10,TimeUnit.SECONDS),second.get(10,TimeUnit.SECONDS))).containsExactlyInAnyOrder(true,false);
@@ -115,8 +122,10 @@ class TemplateApiTest extends AuthTestSupport {
         String third=add(t.id(),"3반");assertThat(work.configuration(third).questions().get(0).maxChars()).isEqualTo(10);
     }
     @Test void listCountsAndSubmissionAreIsolatedPerClass() throws Exception {
-        var t=createTemplate();String one=add(t.id(),"1반"),two=add(t.id(),"2반");var a=startClass(t.id(),one);var b=startClass(t.id(),two);
+        var t=createTemplate();String one=add(t.id(),"1반"),two=add(t.id(),"2반");as(teacher);
+        var a=templates.openLobby(t.id(),one,60);var b=templates.openLobby(t.id(),two,60);
         var p=evaluations.join(a.pin(),"같은 닉네임",null);var other=evaluations.join(b.pin(),"같은 닉네임",null);
+        templates.start(t.id(),one,60);templates.start(t.id(),two,60);
         var review=work.review(one,p.participantToken());work.submit(one,p.participantToken(),review.reviewToken());
         assertThatThrownBy(()->work.workspace(two,p.participantToken())).isInstanceOf(ApiError.Failure.class);
         var list=ok(request(get("/api/teacher/assessments"),teacher));JsonNode row=null;
@@ -188,14 +197,32 @@ class TemplateApiTest extends AuthTestSupport {
         }finally{executor.shutdownNow();}
     }
     @Test void racingTemplateEditAndStartProduceACompleteSnapshot() throws Exception {
-        var t=createTemplate();String c=add(t.id(),"1반");as(teacher);templates.openLobby(t.id(),c,60);var executor=Executors.newFixedThreadPool(2);var gate=new CountDownLatch(1);
+        var template=createTemplate();
+        String classId=add(template.id(),"1반");
+        as(teacher);
+        var lobby=templates.openLobby(template.id(),classId,60);
+        evaluations.join(lobby.pin(),"대기 학생",null);
+        var originalQuestion=work.configuration(classId).questions().get(0);
+        var executor=Executors.newFixedThreadPool(2);
+        var gate=new CountDownLatch(1);
         try {
-            var a=executor.submit(()->{as(teacher);try{gate.await();return templates.start(t.id(),c,60);}finally{clear();}});
-            var b=executor.submit(()->{as(teacher);try{gate.await();return templates.update(t.id(),input("새 틀",3,30));}finally{clear();}});
-            gate.countDown();a.get(10,TimeUnit.SECONDS);b.get(10,TimeUnit.SECONDS);as(teacher);
-            var view=templates.classes(t.id()).get(0);var config=work.configuration(c);
-            assertThat(view.state()).isEqualTo("STARTED");assertThat(config.questions()).hasSize(1);
-            assertThat(config.questions().get(0).minChars()).isEqualTo(view.templateRevision()==1?null:3);
+            var start=executor.submit(()->{as(teacher);try{gate.await();return templates.start(template.id(),classId,60);}finally{clear();}});
+            var edit=executor.submit(()->{as(teacher);try{gate.await();return templates.update(template.id(),input("새 틀",3,30));}finally{clear();}});
+            gate.countDown();
+            var started=start.get(10,TimeUnit.SECONDS);
+            int expectedTemplateRevision=template.revision()+1;
+            try {
+                edit.get(10,TimeUnit.SECONDS);
+            } catch(ExecutionException ex) {
+                assertThat(ex.getCause()).isInstanceOfSatisfying(ApiError.Failure.class,
+                        failure->assertThat(failure.code).isEqualTo("CLASS_SNAPSHOT_LOCKED"));
+                expectedTemplateRevision=template.revision();
+            }
+            as(teacher);
+            assertThat(started.state()).isEqualTo("STARTED");
+            assertThat(started.templateRevision()).isEqualTo(lobby.templateRevision());
+            assertThat(templates.detail(template.id()).revision()).isEqualTo(expectedTemplateRevision);
+            assertThat(work.configuration(classId).questions()).containsExactly(originalQuestion);
         }finally{executor.shutdownNow();}
     }
 }

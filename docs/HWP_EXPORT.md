@@ -7,7 +7,7 @@
 | 대상 | 메서드 | 경로 | 인증 |
 |---|---|---|---|
 | 담당 교사 | GET | `/api/teacher/evaluations/{id}/students/{participantId}/report/hwp` | `Authorization: Bearer ...` |
-| 해당 학생 | GET | `/api/evaluations/{id}/report/hwp` | `X-Participant-Token: ...` |
+| (없앰) 해당 학생 | GET | `/api/evaluations/{id}/report/hwp` | 403 `TEACHER_ONLY` (2026-11-14) |
 
 각 `/report/hwp` 경로 대신 `/report.hwp`도 지원합니다.
 
@@ -29,7 +29,7 @@ Cache-Control: no-store
 ## 리포트 준비·버전
 
 1. 학생이 답안을 최종 제출합니다(자동 제출도 포함).
-2. 기존 `POST /api/evaluations/{id}/reports` 또는 교사용 `POST /api/teacher/evaluations/{id}/students/{participantId}/reports`로 리포트를 생성합니다. 기존 백그라운드 생성 결과도 사용할 수 있습니다.
+2. 교사용 `POST /api/teacher/evaluations/{id}/students/{participantId}/reports`로 리포트를 생성합니다. 기존 백그라운드 생성 결과도 사용할 수 있습니다.
 3. HWP GET을 호출합니다. GET은 새 리포트·분석·버전을 만들지 않습니다. 생성된 리포트가 없으면404입니다.
 4. 교사 검토를 갱신한 경우 새 리포트를 생성한 뒤 해당 버전을 다운로드합니다.
 

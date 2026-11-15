@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/lit}
+    username: ${DATABASE_USER:lit}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      schema-locations: classpath:schema-postgresql.sql

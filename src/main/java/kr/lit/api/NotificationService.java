@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import kr.lit.auth.AccountAccess;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -113,7 +114,7 @@ public class NotificationService {
     public Settings saveSettings(Boolean notify,Boolean sound) {
         String userId=me();db.queryForList("SELECT id FROM app_users WHERE id=? FOR UPDATE",String.class,userId);var current=settings();
         boolean n=notify==null?current.notifyEnabled():notify,s=sound==null?current.sound():sound;
-        db.update("MERGE INTO user_settings(user_id,notify,sound,updated_at) KEY(user_id) VALUES (?,?,?,?)",userId,n,s,OffsetDateTime.now(ZoneOffset.UTC));
+        DatabaseUpsert.save(db,"user_settings","user_id,notify,sound,updated_at","user_id","?,?,?,?",userId,n,s,OffsetDateTime.now(ZoneOffset.UTC));
         return settings();
     }
 }

@@ -1,4 +1,6 @@
 package kr.lit.auth;
+
+import kr.lit.db.DatabaseUpsert;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import java.time.OffsetDateTime;
@@ -12,7 +14,7 @@ public class EmailChangeRepository {
     public boolean existsEmail(String email) {return db.queryForObject("SELECT COUNT(*) FROM app_users WHERE email=?",Integer.class,email)>0;}
     public List<Map<String,Object>> getChallenge(String userId) {return db.queryForList("SELECT * FROM email_change_verifications WHERE user_id=?",userId);}
     public void saveChallenge(String userId,String email,String codeHash,String passwordHash,OffsetDateTime now) {
-        db.update("MERGE INTO email_change_verifications(user_id,email,code_hash,password_hash,last_sent_at,expires_at,attempts) KEY(user_id) VALUES (?,?,?,?,?,?,0)",userId,email,codeHash,passwordHash,now,now.plusMinutes(10));
+        DatabaseUpsert.save(db,"email_change_verifications","user_id,email,code_hash,password_hash,last_sent_at,expires_at,attempts","user_id","?,?,?,?,?,?,0",userId,email,codeHash,passwordHash,now,now.plusMinutes(10));
     }
     public void incrementAttempts(String userId) {db.update("UPDATE email_change_verifications SET attempts=attempts+1 WHERE user_id=?",userId);}
     public void updateEmail(String userId,String email,OffsetDateTime now) {db.update("UPDATE app_users SET email=?,updated_at=? WHERE id=?",email,now,userId);}

@@ -20,8 +20,9 @@ class ProcessGradingEngineTest {
     }
     AiOutput output(Input input,int... levels) {
         var recommendations=new ArrayList<Recommendation>();
-        for(String q:input.questionIds())for(var c:Criterion.values())if(c!=Criterion.TRANSPARENCY)recommendations.add(recommend(q,c,levels[c.ordinal()]));
-        recommendations.add(recommend(GLOBAL,Criterion.TRANSPARENCY,levels[4]));
+        // 투명성은 2026-11-14 삭제(levels[4]는 이전 모델 답처럼 들어와도 무시되는지 확인용)
+        for(String q:input.questionIds())for(var c:Criterion.active())recommendations.add(recommend(q,c,levels[c.ordinal()]));
+        if(levels.length>4)recommendations.add(recommend(GLOBAL,Criterion.TRANSPARENCY,levels[4]));
         return new AiOutput(new Compliance("CHECK","교사 검토",List.of(new Citation("question:q1","학생이 구체적인")),List.of()),recommendations);
     }
     Recommendation recommend(String q,Criterion c,int level) {
@@ -31,12 +32,12 @@ class ProcessGradingEngineTest {
     @Test void calculatesSeventyExactlyAndDoesNotDeductForCompliance() {
         var in=input(1);var result=engine.evaluate(in,output(in,4,4,3,4,4));
         assertThat(result.total()).isEqualByComparingTo("70.00");assertThat(result.compliance().status()).isEqualTo("CHECK");
-        assertThat(result.cells().get(1).score()).isEqualByComparingTo("18.75");
+        assertThat(result.cells().get(1).score()).isEqualByComparingTo("22.5");
         assertThat(engine.evaluate(in,output(in,4,4,4,4,4)).total()).isEqualByComparingTo("75.00");
     }
-    @Test void appliesQuestionWeightsAndCountsTransparencyOnlyOnce() {
+    @Test void appliesQuestionWeightsWithoutTransparency() {
         var in=input(2);var result=engine.evaluate(in,output(in,5,5,5,5,5));
-        assertThat(result.cells()).hasSize(9);assertThat(result.total()).isEqualByComparingTo("100.00");
+        assertThat(result.cells()).hasSize(8);assertThat(result.total()).isEqualByComparingTo("100.00");
     }
     @Test void fabricatedQuotesForeignQuestionAndMissingConditionsHoldTotalRatherThanZero() {
         var in=input(2);var valid=output(in,4,4,4,4,4);
@@ -50,22 +51,22 @@ class ProcessGradingEngineTest {
         var in=input(1);var valid=output(in,1,1,1,1,1);
         assertThat(engine.evaluate(in,valid).total()).isEqualByComparingTo("0.00");
         var held=engine.hold(in,"누락");assertThat(held.total()).isNull();
-        var overrides=Arrays.stream(Criterion.values()).map(c->new LevelOverride(c==Criterion.TRANSPARENCY?GLOBAL:"q1",c,4,"교사가 행동을 확인함")).toList();
+        var overrides=Criterion.active().stream().map(c->new LevelOverride("q1",c,4,"교사가 행동을 확인함")).toList();
         assertThat(engine.applyReview(in,held,overrides).total()).isEqualByComparingTo("75.00");
     }
     @Test void teacherCanOverrideAiScoreWithDirectScore() {
         var in=input(1);var ai=engine.evaluate(in,output(in,4,4,4,4,4));assertThat(ai.total()).isEqualByComparingTo("75.00");
-        var reviewed=engine.applyReview(in,ai,List.of(LevelOverride.ofScore("q1",Criterion.CONTRIBUTION,new java.math.BigDecimal("22.5"),"핵심 판단을 직접 확인함")));
+        var reviewed=engine.applyReview(in,ai,List.of(LevelOverride.ofScore("q1",Criterion.CONTRIBUTION,new java.math.BigDecimal("30"),"핵심 판단을 직접 확인함")));
         var cell=reviewed.cells().stream().filter(c->c.criterion()==Criterion.CONTRIBUTION).findFirst().orElseThrow();
-        assertThat(cell.level()).isNull();assertThat(cell.score()).isEqualByComparingTo("22.50");assertThat(cell.status()).isEqualTo("TEACHER_REVIEWED");assertThat(cell.reason()).isEqualTo("핵심 판단을 직접 확인함");
-        assertThat(reviewed.total()).isEqualByComparingTo("78.75");
+        assertThat(cell.level()).isNull();assertThat(cell.score()).isEqualByComparingTo("30.00");assertThat(cell.status()).isEqualTo("TEACHER_REVIEWED");assertThat(cell.reason()).isEqualTo("핵심 판단을 직접 확인함");
+        assertThat(reviewed.total()).isEqualByComparingTo("82.50");
         var held=engine.hold(in,"누락");
-        var all=Arrays.stream(Criterion.values()).map(c->LevelOverride.ofScore(c==Criterion.TRANSPARENCY?GLOBAL:"q1",c,java.math.BigDecimal.valueOf(c.maxScore()),"만점 확인")).toList();
+        var all=Criterion.active().stream().map(c->LevelOverride.ofScore("q1",c,java.math.BigDecimal.valueOf(c.maxScore()),"만점 확인")).toList();
         assertThat(engine.applyReview(in,held,all).total()).isEqualByComparingTo("100.00");
     }
     @Test void rejectsInvalidDirectScores() {
         var in=input(1);var ai=engine.evaluate(in,output(in,4,4,4,4,4));
-        for(var bad:List.of(LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("15.01"),"만점 초과"),
+        for(var bad:List.of(LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("20.01"),"만점 초과"),
                 LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("-1"),"음수"),
                 LevelOverride.ofScore("q1",Criterion.PURPOSE,new java.math.BigDecimal("3.333"),"소수 셋째 자리"),
                 new LevelOverride("q1",Criterion.PURPOSE,4,"수준과 점수 동시",java.math.BigDecimal.TEN),
@@ -87,7 +88,7 @@ class ProcessGradingEngineTest {
         assertThatThrownBy(()->engine.applyReview(in,engine.hold(in,"不足"),List.of(new LevelOverride("q1",Criterion.PURPOSE,0,"invalid")))).hasMessage("INVALID_OVERRIDE");
         var oldPolicy=new Policy(1,LEGACY_RUBRIC_VERSION,"goal","rules",NoAiPolicy.HOLD,in.policy().questionWeights());
         var old=new Input(in.evaluationId(),in.participantId(),in.submissionHash(),in.title(),in.aiPolicy(),oldPolicy,in.questionIds(),in.sources(),in.limitations());
-        var overrides=Arrays.stream(Criterion.values()).map(c->new LevelOverride(c==Criterion.TRANSPARENCY?GLOBAL:"q1",c,3,"기존 기록 검토")).toList();
+        var overrides=Criterion.active().stream().map(c->new LevelOverride("q1",c,3,"기존 기록 검토")).toList();
         assertThat(engine.applyReview(old,engine.hold(old,"legacy"),overrides).total()).isEqualByComparingTo("75");
         assertThatThrownBy(()->engine.applyReview(old,engine.hold(old,"legacy"),List.of(new LevelOverride("q1",Criterion.PURPOSE,5,"invalid")))).hasMessage("INVALID_OVERRIDE");
     }
