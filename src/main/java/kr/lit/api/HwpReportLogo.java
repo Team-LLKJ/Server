@@ -2,6 +2,7 @@ package kr.lit.api;
 
 import kr.dogfoot.hwplib.object.HWPFile;
 import kr.dogfoot.hwplib.object.bodytext.paragraph.Paragraph;
+import kr.dogfoot.hwplib.object.bodytext.paragraph.text.HWPChar;
 import kr.dogfoot.hwplib.object.bodytext.paragraph.text.HWPCharNormal;
 import kr.dogfoot.hwplib.object.bodytext.control.gso.*;
 import kr.dogfoot.hwplib.object.bodytext.control.gso.shapecomponent.ShapeComponentNormal;
@@ -19,8 +20,13 @@ final class HwpReportLogo {
         int index=file.getBinData().getEmbeddedBinaryDataList().size()+1;
         file.getBinData().addNewEmbeddedBinaryData("Bin"+String.format("%04X",index)+".png",ReportBrand.getLogoBytes(),BinDataCompress.ByStorageDefault);
         var data=new BinData();data.getProperty().setType(BinDataType.Embedding);data.getProperty().setCompress(BinDataCompress.ByStorageDefault);data.getProperty().setState(BinDataState.NotAccess);data.setBinDataID(index);data.setExtensionForEmbedding("png");file.getDocInfo().getBinDataList().add(data);
-        var chars=paragraph.getText().getCharList();chars.remove(chars.size()-1);int at=chars.size()-titleLength;
-        paragraph.getText().addExtendCharForGSO();var marker=chars.remove(chars.size()-1);chars.add(at,marker);chars.add(new HWPCharNormal(13));
+        // 그림 글자는 제목 바로 앞에 둡니다. addExtendCharForGSO는 문단 끝 글자(13)를 다시 붙이므로 끝 글자를 지우고 그림 글자만 골라 옮깁니다.
+        var chars=paragraph.getText().getCharList();
+        paragraph.getText().addExtendCharForGSO();
+        chars.removeIf(c->c.getCode()==13);
+        HWPChar marker=null;for(int i=chars.size()-1;i>=0;i--)if(chars.get(i).getCode()==11){marker=chars.remove(i);break;}
+        if(marker==null)throw new IllegalStateException("HWP logo marker missing");
+        chars.add(chars.size()-titleLength,marker);chars.add(new HWPCharNormal(13));
         var image=(ControlRectangle)paragraph.addNewGsoControl(GsoControlType.Rectangle);
         var header=image.getHeader();var property=header.getProperty();
         property.setLikeWord(true);property.setApplyLineSpace(true);property.setVertRelTo(VertRelTo.Para);property.setHorzRelTo(HorzRelTo.Para);property.setVertRelativeArrange(RelativeArrange.TopOrLeft);property.setHorzRelativeArrange(RelativeArrange.TopOrLeft);property.setWidthCriterion(WidthCriterion.Absolute);property.setHeightCriterion(HeightCriterion.Absolute);property.setAllowOverlap(false);property.setTextFlowMethod(TextFlowMethod.FitWithText);property.setTextHorzArrange(TextHorzArrange.BothSides);property.setObjectNumberSort(ObjectNumberSort.Figure);

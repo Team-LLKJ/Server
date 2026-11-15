@@ -119,10 +119,11 @@ final class HwpReportWriter {
         anchor.getText().addExtendCharForTable();chars.add(new HWPCharNormal(13));
         var control=(ControlTable)anchor.addNewControl(ControlType.Table);
         var header=control.getHeader();var prop=header.getProperty();
-        prop.setLikeWord(true);prop.setApplyLineSpace(false);prop.setVertRelTo(VertRelTo.Para);prop.setHorzRelTo(HorzRelTo.Para);
+        // 글자처럼 취급한 표는 한글에서 쪽을 넘겨 나뉘지 않아 쪽 끝에 큰 빈칸이 생깁니다. 본문 위치에 자리를 차지하는 표로 두고 쪽 경계에서 나눕니다.
+        prop.setLikeWord(false);prop.setApplyLineSpace(false);prop.setVertRelTo(VertRelTo.Para);prop.setHorzRelTo(HorzRelTo.Para);
         prop.setVertRelativeArrange(RelativeArrange.TopOrLeft);prop.setHorzRelativeArrange(RelativeArrange.TopOrLeft);
         prop.setWidthCriterion(WidthCriterion.Absolute);prop.setHeightCriterion(HeightCriterion.Absolute);
-        prop.setAllowOverlap(false);prop.setTextFlowMethod(TextFlowMethod.FitWithText);prop.setTextHorzArrange(TextHorzArrange.BothSides);prop.setObjectNumberSort(ObjectNumberSort.Table);
+        prop.setAllowOverlap(false);prop.setTextFlowMethod(TextFlowMethod.TakePlace);prop.setTextHorzArrange(TextHorzArrange.BothSides);prop.setObjectNumberSort(ObjectNumberSort.Table);
         header.setWidth(WIDTH);header.setHeight(rows.size()*2400L);header.setOutterMarginBottom(500);
         var table=control.getTable();table.setRowCount(rows.size());table.setColumnCount(widths.length);
         table.getProperty().setDivideAtPageBoundary(DivideAtPageBoundary.Divide);table.getProperty().setAutoRepeatTitleRow(firstRowHeader);
