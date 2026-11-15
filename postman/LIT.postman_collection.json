@@ -1077,6 +1077,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/auth/refresh",
+            "description": "같은 갱신 요청을 10초 이내 다시 보내면 유효한 직후 토큰 쌍을 반환합니다. 이후에는 401 REFRESH_TOKEN_REUSED입니다.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{teacherRefreshToken}}\"\n}",

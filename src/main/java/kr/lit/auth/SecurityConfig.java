@@ -97,7 +97,7 @@ public class SecurityConfig {
                 chain.doFilter(req,res);return;
             }
             // Participation endpoints are public and do not consume account credentials.
-            if(path.startsWith("/api/participation/")) {chain.doFilter(req,res);return;}
+            if(path.startsWith("/api/participation/")||(path.equals("/api/auth/refresh")&&req.getMethod().equals("POST"))) {chain.doFilter(req,res);return;}
             String header=req.getHeader("Authorization");
             if(header!=null) {
                 if(!header.matches("Bearer [A-Za-z0-9_-]{43}")) {error(res,json,401,"INVALID_ACCESS_TOKEN","유효하지 않은 로그인 토큰입니다.");return;}

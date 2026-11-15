@@ -24,9 +24,10 @@ public class EvaluationService {
  public record Created(String id,String title,String pin,String state,Instant expiresAt,String joinUrl,String qrUrl){}
  public record Joined(String participantId,String participantToken,Lobby lobby){}
  private Failure fail(HttpStatus status,String code,String message){return new Failure(status,code,message);}
- private Evaluation read(String id){
-        kr.lit.auth.AssessmentAccess.beforeEvaluation(db,id);
-  var rows=db.query("SELECT * FROM evaluations WHERE id=? FOR UPDATE",(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class)==null?null:r.getObject("expires_at",OffsetDateTime.class).toInstant(),r.getString("assessment_id"),r.getString("class_name")),id);
+ private Evaluation read(String id){return read(id,true);}
+ private Evaluation read(String id,boolean lock){
+  kr.lit.auth.AssessmentAccess.checkEvaluationAccess(db,id,lock);
+  var rows=db.query("SELECT * FROM evaluations WHERE id=?"+(lock?" FOR UPDATE":""),(r,n)->new Evaluation(r.getString("id"),r.getString("title"),r.getString("pin"),r.getString("state"),r.getObject("expires_at",OffsetDateTime.class)==null?null:r.getObject("expires_at",OffsetDateTime.class).toInstant(),r.getString("assessment_id"),r.getString("class_name")),id);
   if(rows.isEmpty())throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
   return rows.get(0);
  }
@@ -70,9 +71,10 @@ public class EvaluationService {
  }
  public Evaluation details(String id){return read(id);}
  public Evaluation verify(String pin){var e=byPin(pin);available(e);return e;}
- public Lobby lobby(String id){return lobby(read(id));}
+ @Transactional(readOnly=true)
+ public Lobby lobby(String id){return lobby(read(id,false));}
  private Lobby lobby(Evaluation e){
-  var people=db.query("SELECT * FROM participants WHERE evaluation_id=? AND active=TRUE ORDER BY last_seen,id",(r,n)->new Participant(r.getString("id"),r.getString("nickname"),r.getObject("last_seen",OffsetDateTime.class).toInstant().isBefore(Instant.now().minusSeconds(30))?"DISCONNECTED":"CONNECTED"),e.id());
+  var people=db.query("SELECT id,nickname,last_seen FROM participants WHERE evaluation_id=? AND active=TRUE AND expelled_at IS NULL ORDER BY last_seen,id",(r,n)->new Participant(r.getString("id"),r.getString("nickname"),r.getObject("last_seen",OffsetDateTime.class).toInstant().isBefore(Instant.now().minusSeconds(30))?"DISCONNECTED":"CONNECTED"),e.id());
   String screen=e.state().equals("ENDED")?"ENDED":e.expiresAt()!=null&&!e.expiresAt().isAfter(Instant.now())?"EXPIRED":e.state().equals("STARTED")?"SOLVING":"WAITING";
   var ends=db.queryForObject("SELECT ends_at FROM evaluations WHERE id=?",OffsetDateTime.class,e.id());
   Instant endsAt=ends==null?null:ends.toInstant();
