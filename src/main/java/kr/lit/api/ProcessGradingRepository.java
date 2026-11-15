@@ -77,6 +77,15 @@ public class ProcessGradingRepository {
                 List.copyOf(limitations),new AnalysisScope(List.copyOf(ids),java.util.stream.StreamSupport.stream(snapshot.path("answers").spliterator(),false).map(a->new AnswerVersion(a.path("question").path("id").asText(),a.path("answer").path("version").asInt())).toList(),java.util.stream.StreamSupport.stream(snapshot.path("conversations").spliterator(),false).map(t->t.path("id").asLong()).toList(),List.copyOf(limitations)),paths,new PurposeUsageAnalyzer().analyzeUsage(snapshot));
         return insertJob(input);
     }
+    public Optional<Policy> getDefaultPolicy(String id) {
+        var questionIds=getQuestionIds(id);
+        return db.query("""
+                SELECT e.title,e.evaluation_content,COALESCE(s.ai_policy,'DISABLED') ai_policy
+                  FROM evaluations e LEFT JOIN evaluation_settings s ON s.evaluation_id=e.id
+                 WHERE e.id=?
+                """,(r,n)->getDefaultPolicy(questionIds,r.getString("title"),r.getString("evaluation_content"),r.getString("ai_policy")),id)
+                .stream().filter(Objects::nonNull).findFirst();
+    }
     private Policy getDefaultPolicy(List<String> questionIds,String title,String guidelines,String aiPolicy) {
         if (questionIds.isEmpty()) return null;
         String goal=guidelines==null?"":plain(guidelines).strip();

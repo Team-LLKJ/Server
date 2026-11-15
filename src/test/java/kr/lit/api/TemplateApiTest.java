@@ -197,14 +197,32 @@ class TemplateApiTest extends AuthTestSupport {
         }finally{executor.shutdownNow();}
     }
     @Test void racingTemplateEditAndStartProduceACompleteSnapshot() throws Exception {
-        var t=createTemplate();String c=add(t.id(),"1반");as(teacher);var lobby=templates.openLobby(t.id(),c,60);evaluations.join(lobby.pin(),"대기 학생",null);var executor=Executors.newFixedThreadPool(2);var gate=new CountDownLatch(1);
+        var template=createTemplate();
+        String classId=add(template.id(),"1반");
+        as(teacher);
+        var lobby=templates.openLobby(template.id(),classId,60);
+        evaluations.join(lobby.pin(),"대기 학생",null);
+        var originalQuestion=work.configuration(classId).questions().get(0);
+        var executor=Executors.newFixedThreadPool(2);
+        var gate=new CountDownLatch(1);
         try {
-            var a=executor.submit(()->{as(teacher);try{gate.await();return templates.start(t.id(),c,60);}finally{clear();}});
-            var b=executor.submit(()->{as(teacher);try{gate.await();return templates.update(t.id(),input("새 틀",3,30));}finally{clear();}});
-            gate.countDown();a.get(10,TimeUnit.SECONDS);b.get(10,TimeUnit.SECONDS);as(teacher);
-            var view=templates.classes(t.id()).get(0);var config=work.configuration(c);
-            assertThat(view.state()).isEqualTo("STARTED");assertThat(config.questions()).hasSize(1);
-            assertThat(config.questions().get(0).minChars()).isEqualTo(view.templateRevision()==1?null:3);
+            var start=executor.submit(()->{as(teacher);try{gate.await();return templates.start(template.id(),classId,60);}finally{clear();}});
+            var edit=executor.submit(()->{as(teacher);try{gate.await();return templates.update(template.id(),input("새 틀",3,30));}finally{clear();}});
+            gate.countDown();
+            var started=start.get(10,TimeUnit.SECONDS);
+            int expectedTemplateRevision=template.revision()+1;
+            try {
+                edit.get(10,TimeUnit.SECONDS);
+            } catch(ExecutionException ex) {
+                assertThat(ex.getCause()).isInstanceOfSatisfying(ApiError.Failure.class,
+                        failure->assertThat(failure.code).isEqualTo("CLASS_SNAPSHOT_LOCKED"));
+                expectedTemplateRevision=template.revision();
+            }
+            as(teacher);
+            assertThat(started.state()).isEqualTo("STARTED");
+            assertThat(started.templateRevision()).isEqualTo(lobby.templateRevision());
+            assertThat(templates.detail(template.id()).revision()).isEqualTo(expectedTemplateRevision);
+            assertThat(work.configuration(classId).questions()).containsExactly(originalQuestion);
         }finally{executor.shutdownNow();}
     }
 }

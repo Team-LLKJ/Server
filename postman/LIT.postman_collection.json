@@ -2869,6 +2869,7 @@
           "name": "2 사전 정책 확인",
           "request": {
             "method": "GET",
+            "description": "저장된 정책이 없고 문항이 설정되어 있으면 서버 기본 정책(version=0)을 반환합니다.",
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/policy",
             "header": [
               {

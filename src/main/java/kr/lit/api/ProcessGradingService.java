@@ -23,7 +23,7 @@ public class ProcessGradingService {
             return Map.of("rubricVersion",RUBRIC_VERSION,"provisional",true,"levels",List.of(new AssessmentModels.Level(1,"매우 못함"),new AssessmentModels.Level(2,"못함"),new AssessmentModels.Level(3,"보통"),new AssessmentModels.Level(4,"잘함"),new AssessmentModels.Level(5,"매우 잘함")),"scoreFormula","maxScore * (level - 1) / 4","criteria",Criterion.active().stream().map(c->Map.of("criterion",c.name(),"name",c.displayName(),"maxScore",c.maxScore())).toList(),"criteriaMarkdown",new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
         }catch(java.io.IOException ex){throw new IllegalStateException(ex);}
     }
-    public Policy getPolicy(String id){requireTeacher(id);return repository.getPolicy(id).orElseThrow(()->fail(HttpStatus.NOT_FOUND,"PROCESS_POLICY_NOT_FOUND","평가 전 사전 정책이 필요합니다."));}
+    public Policy getPolicy(String id){requireTeacher(id);return repository.getPolicy(id).or(()->repository.getDefaultPolicy(id)).orElseThrow(()->fail(HttpStatus.NOT_FOUND,"PROCESS_POLICY_NOT_FOUND","기본 정책을 만들 평가 문항이 없습니다."));}
     public Policy savePolicy(String id,PolicyRequest request) {
         requireTeacher(id);
         if(!repository.getEvaluationState(id).equals("WAITING"))throw fail(HttpStatus.CONFLICT,"PROCESS_POLICY_LOCKED","평가 시작 후에는 사전 정책을 바꿀 수 없습니다.");
