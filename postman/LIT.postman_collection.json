@@ -1890,7 +1890,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/analysis"
+            "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/analysis",
+            "description": "가점·감점 kind, requiredRecords, 문장 sourceStatus와 closestAiSentence를 제공합니다."
           }
         },
         {
@@ -2380,7 +2381,8 @@
                 "value": "Bearer {{teacherAccessToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}"
+            "url": "{{baseUrl}}/api/teacher/assessments/{{assessmentId}}",
+            "description": "상세 응답에 호출자의 isOwner를 제공합니다."
           }
         },
         {

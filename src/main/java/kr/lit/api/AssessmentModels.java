@@ -35,6 +35,8 @@ public final class AssessmentModels {
     public record Compliance(ComplianceResult result,List<String> reasons) {}
     public record ReasonEvidence(Long conversationId,String quote) {}
     public record Reason(String type,String text,@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Double scoreDelta,List<ReasonEvidence> evidence) {
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String kind(){return "CREDIT".equals(type)?"ADD":"DEDUCTION".equals(type)?"DEDUCT":null;}
         public Reason { evidence=evidence==null?List.of():List.copyOf(evidence); }
         public Reason(String type,String text,Double scoreDelta) { this(type,text,scoreDelta,List.of()); }
     }
@@ -87,6 +89,9 @@ public final class AssessmentModels {
         /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public String closestAiSentence(){return aiAnswerMatch!=null?aiAnswerMatch.text():semantic==null?null:semantic.closestCandidateText();}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"AI","DIRECT","UNCERTAIN"})
+        public String sourceStatus(){return needsReview&&teacherLabel==null?"UNCERTAIN":source;}
         /** 교사가 확정한 출처(AI|DIRECT, 확정 전 null). */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"AI","DIRECT"},nullable=true)
@@ -126,9 +131,17 @@ public final class AssessmentModels {
     }
     public record Signals(int aiQuestions,int completedResponses,int pasteEvents,int aiCopyEvents,int warningEvents,
                           boolean disclosedTools,boolean disclosedUsedParts,boolean disclosedReason,boolean aiUsed) {}
+    public record RequiredRecord(String name,boolean done) {}
     public record Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,
                            Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,
                            List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition,List<Sentence> sentences,String semanticStatus) {
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public List<RequiredRecord> requiredRecords(){
+            if(signals==null)return List.of();
+            return List.of(new RequiredRecord("사용 AI 도구",signals.disclosedTools()),
+                    new RequiredRecord("질문 기록",signals.aiQuestions()>0),
+                    new RequiredRecord("답안 활용 부분",signals.disclosedUsedParts()));
+        }
         /** 교사 확인이 필요한 문장 수. */
         @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
         public int reviewCount(){return sentences==null?0:(int)sentences.stream().filter(Sentence::needsReview).count();}

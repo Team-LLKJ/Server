@@ -146,7 +146,7 @@ AI가 정한 점수를 수준(level) 대신 점수로 바로 덮어쓸 수 있�
 {"expectedRevision":1}
 ```
 
-POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revision이 일치하고 총점이 존재하며 규정 판단이 HOLD가 아닐 때만 성공합니다. 보류 항목이 있으면409 PROCESS_CONFIRMATION_HELD, 오래된 분석/제출본은409 PROCESS_RESULT_STALE입니다. 확정도 이력 revision을 하나 추가합니다. 학생 제출본은 변경하지 않습니다. 규정 위반으로 확정해도 역량 점수를 자동 감점하지 않습니다.
+POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revision이 일치하고 총점이 존재할 때 성공합니다. 보류 항목이 있으면409 PROCESS_CONFIRMATION_HELD, 오래된 분석/제출본은409 PROCESS_RESULT_STALE입니다. 확정도 이력 revision을 하나 추가합니다. 학생 제출본은 변경하지 않습니다. 규정 위반으로 확정해도 역량 점수를 자동 감점하지 않습니다.
 
 ## 운영·검증
 
@@ -181,4 +181,4 @@ POST confirm은 최신 분석 버전·현재 제출 해시·최신 검토 revisi
 
 새 PDF·HWP 보고서는 같은 요약을 출력합니다. 학생 단위 결과는 교사 확정 후 보고서에 포함되며 저장된 이전 보고서 버전은 당시 내용을 유지합니다.
 
-학생 단위 루브릭 검토에서는 `complianceDecision`과 `complianceReason`을 생략할 수 있습니다. 점수 검토가 끝나면 규정 준수 판단이 HOLD인 상태로 확정할 수 있습니다. 문항별 채점은 기존 규정 준수 판단을 요구합니다. `overrides[].reason`은 선택 입력입니다.
+학생 단위 루브릭 검토에서는 `complianceDecision`과 `complianceReason`을 생략할 수 있습니다. 점수 검토가 끝나면 규정 준수 판단이 HOLD인 상태로 확정할 수 있습니다. 문항별 채점에서도 규정 준수 판단은 선택입니다. `overrides[].reason`은 선택 입력입니다.
