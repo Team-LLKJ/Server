@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class ProcessGradingApiTest extends AuthTestSupport {
+    @Autowired TemplateService templates;
     @Autowired ProcessGradingService service;
     @Autowired ProcessGradingRepository repository;
     @Autowired ProcessGradingWorker worker;
@@ -87,6 +88,29 @@ class ProcessGradingApiTest extends AuthTestSupport {
         var configured=fixture(true,true);var pending=latest(configured);
         when(ai.recommendLevels(any())).thenThrow(new ProcessGradingAiClient.GradingFailure("GRADING_AI_TIMEOUT"));worker.processJob(pending.id());
         assertThat(latest(configured).status()).isEqualTo("FAILED");assertThat(latest(configured).result()).isNull();
+    }
+    @Test void classHasServerPolicyBeforeStartAndUsesItForSubmission() throws Exception {
+        as(teacher);
+        var template=templates.create(new TemplateModels.Input("자동 정책","<p>평가 안내</p>",AiPolicy.HINT_ONLY,
+                List.of(new AssessmentModels.CriterionInput("근거",100,"설명",null,AssessmentModels.Indicator.MANUAL)),
+                json.createObjectNode(),List.of(new QuestionInput(1,"첫 문항","문제"),new QuestionInput(2,"둘째 문항","문제")),60));
+        var room=templates.addClass(template.id(),"1반");
+        var path="/api/teacher/evaluations/"+room.classId()+"/process-grading/policy";
+        var response=ok(request(get(path),teacher));
+        var policy=json.treeToValue(response,Policy.class);
+        assertThat(policy.version()).isZero();
+        assertThat(policy.taskGoal()).isEqualTo("평가 안내");
+        assertThat(policy.allowedRules()).isEqualTo("개념 설명과 풀이 힌트를 요청할 수 있습니다.");
+        assertThat(policy.questionWeights()).hasSize(2).allSatisfy(weight->assertThat(weight.weight()).isEqualByComparingTo("50"));
+        as(teacher);
+        var lobby=templates.openLobby(template.id(),room.classId(),60);
+        var student=evaluations.join(lobby.pin(),"학생",null);
+        templates.start(template.id(),room.classId(),60);
+        var preview=work.review(room.classId(),student.participantToken());
+        work.submit(room.classId(),student.participantToken(),preview.reviewToken());
+        var job=repository.getJobs(room.classId(),student.participantId()).get(0);
+        assertThat(repository.getInput(job.id()).policy()).usingRecursiveComparison()
+                .withComparatorForType(BigDecimal::compareTo,BigDecimal.class).isEqualTo(policy);
     }
     @Test void policyMustCoverEveryQuestionBeforeStartAndRemainVersionChecked() throws Exception {
         as(teacher);var e=evaluations.create("정책 검증",60);var q=work.configure(e.id(),new Configure(AiPolicy.FULL,List.of(new QuestionInput(1,"문항","문제")))).questions().get(0).id();
