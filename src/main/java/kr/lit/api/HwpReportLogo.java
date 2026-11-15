@@ -16,9 +16,21 @@ import kr.dogfoot.hwplib.object.bodytext.control.gso.shapecomponent.shadowinfo.S
 /** 원본 PNG를 HWP 내부에 포함하고 제목 앞에 글자처럼 배치합니다. */
 final class HwpReportLogo {
     private HwpReportLogo() {}
+    private static volatile byte[] whiteLogo;
+    /** 일부 한글 뷰어(한컴독스 등)는 PNG 투명 배경을 검게 그리므로 흰 배경에 합친 로고를 넣습니다. */
+    static byte[] whiteLogo() {
+        if(whiteLogo!=null)return whiteLogo;
+        try {
+            var source=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(ReportBrand.getLogoBytes()));
+            var flat=new java.awt.image.BufferedImage(source.getWidth(),source.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);
+            var g=flat.createGraphics();g.setColor(java.awt.Color.WHITE);g.fillRect(0,0,flat.getWidth(),flat.getHeight());g.drawImage(source,0,0,null);g.dispose();
+            var out=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(flat,"png",out);
+            return whiteLogo=out.toByteArray();
+        } catch(java.io.IOException ex){throw new java.io.UncheckedIOException(ex);}
+    }
     static void addLogo(HWPFile file,Paragraph paragraph,int titleLength) {
         int index=file.getBinData().getEmbeddedBinaryDataList().size()+1;
-        file.getBinData().addNewEmbeddedBinaryData("Bin"+String.format("%04X",index)+".png",ReportBrand.getLogoBytes(),BinDataCompress.ByStorageDefault);
+        file.getBinData().addNewEmbeddedBinaryData("Bin"+String.format("%04X",index)+".png",whiteLogo(),BinDataCompress.ByStorageDefault);
         var data=new BinData();data.getProperty().setType(BinDataType.Embedding);data.getProperty().setCompress(BinDataCompress.ByStorageDefault);data.getProperty().setState(BinDataState.NotAccess);data.setBinDataID(index);data.setExtensionForEmbedding("png");file.getDocInfo().getBinDataList().add(data);
         // 그림 글자는 제목 바로 앞에 둡니다. addExtendCharForGSO는 문단 끝 글자(13)를 다시 붙이므로 끝 글자를 지우고 그림 글자만 골라 옮깁니다.
         var chars=paragraph.getText().getCharList();
