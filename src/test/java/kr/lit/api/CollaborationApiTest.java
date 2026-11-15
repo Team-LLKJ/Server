@@ -40,8 +40,8 @@ class CollaborationApiTest extends AuthTestSupport {
     long notices(String uid,String type,String assessmentId) {return db.queryForObject("SELECT COUNT(*) FROM notifications WHERE user_id=? AND notification_type=? AND assessment_id=?",Long.class,uid,type,assessmentId);}
     @Test void shareReturnsTeacherAndListsMineAndSharedWithOwnerRoleAndClassSummary() throws Exception {
         var f=fixture();
-        var owner=ok(request(get(base(f.id())),teacher));assertThat(owner.path("role").asText()).isEqualTo("OWNER");assertThat(owner.path("owner").path("teacherId").asText()).isEqualTo(teacher.user().id());
-        var detail=ok(request(get(base(f.id())),f.editor()));assertThat(detail.path("role").asText()).isEqualTo("EDITOR");assertThat(detail.path("classes").get(0).path("classId").asText()).isEqualTo(f.classId());
+        var owner=ok(request(get(base(f.id())),teacher));assertThat(owner.path("role").asText()).isEqualTo("OWNER");assertThat(owner.path("isOwner").asBoolean()).isTrue();assertThat(owner.path("owner").path("teacherId").asText()).isEqualTo(teacher.user().id());
+        var detail=ok(request(get(base(f.id())),f.editor()));assertThat(detail.path("role").asText()).isEqualTo("EDITOR");assertThat(detail.path("isOwner").isBoolean()).isTrue();assertThat(detail.path("isOwner").asBoolean()).isFalse();assertThat(detail.path("classes").get(0).path("classId").asText()).isEqualTo(f.classId());
         var mine=ok(request(get("/api/teacher/assessments"),teacher));assertThat(mine.path("scope").asText()).isEqualTo("mine");
         var editorMine=ok(request(get("/api/teacher/assessments"),f.editor()));assertThat(editorMine.path("totalElements").asInt()).isZero();
         var shared=ok(request(get("/api/teacher/assessments?scope=shared"),f.editor()));assertThat(shared.path("totalElements").asInt()).isEqualTo(1);

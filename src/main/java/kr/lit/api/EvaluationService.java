@@ -90,6 +90,8 @@ public class EvaluationService {
   if(!e.state().equals("WAITING")&&e.assessmentId()==null)throw fail(HttpStatus.CONFLICT,"ALREADY_STARTED","시작된 평가에는 새로 참여할 수 없습니다.");
   String name=nickname==null?"":nickname.strip();
   if(name.isBlank()||name.codePointCount(0,name.length())>20)throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임은 1~20자여야 합니다.");
+  if(name.indexOf('<')>=0||name.indexOf('>')>=0||name.codePoints().anyMatch(Character::isISOControl))
+   throw fail(HttpStatus.BAD_REQUEST,"INVALID_NICKNAME","닉네임에는 꺾쇠나 제어 문자를 사용할 수 없습니다.");
   String id=UUID.randomUUID().toString();byte[] bytes=new byte[32];random.nextBytes(bytes);String secret=HexFormat.of().formatHex(bytes);
   try{db.update("INSERT INTO participants(id,evaluation_id,nickname,token,active,last_seen,token_hashed) VALUES (?,?,?,?,TRUE,CURRENT_TIMESTAMP,TRUE)",id,e.id(),name,kr.lit.auth.AuthService.hash(secret));}
   catch(org.springframework.dao.DuplicateKeyException ex){throw fail(HttpStatus.CONFLICT,"NICKNAME_TAKEN","사용 중인 닉네임입니다.");}

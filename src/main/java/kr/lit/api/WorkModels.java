@@ -20,9 +20,12 @@ public final class WorkModels {
         }
     }
     public enum AnswerSource { DIRECT, AI_REFERENCED, AI_USED }
-    public record QuestionInput(@Min(1) int position, @NotBlank @Size(max=200) String title,
+    public record QuestionInput(@Min(1) int position, @Size(max=200) String title,
                                 @NotBlank @Size(max=10000) String content,@Min(1) @Max(99999) Integer minChars,
                                 @Min(1) @Max(99999) Integer maxChars) {
+        public QuestionInput {
+            title=title==null||title.isBlank()?"문항 "+position:title.strip();
+        }
         public QuestionInput(int position,String title,String content) {this(position,title,content,null,null);}
     }
     public record Configure(AiPolicy aiPolicy,
