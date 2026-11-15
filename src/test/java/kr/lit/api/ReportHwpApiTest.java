@@ -64,7 +64,7 @@ class ReportHwpApiTest extends AuthTestSupport {
         int charId=(int)title.getCharShape().getPositonShapeIdPairList().get(0).getShapeId();
         var titleShape=document.getDocInfo().getCharShapeList().get(charId);
         assertThat(titleShape.getBaseSize()).isEqualTo(1800);
-        assertThat(titleShape.getProperty().isBold()).isTrue();
+        assertThat(titleShape.getProperty().isBold()).isFalse(); // PDF 미리보기처럼 보통 굵기
         assertThat(document.getBinData().getEmbeddedBinaryDataList()).hasSize(1);
         assertThat(document.getDocInfo().getBinDataList().get(0).getExtensionForEmbedding()).isEqualTo("png");
         assertThat(document.getDocInfo().getParaShapeList().get(title.getHeader().getParaShapeId()).getProperty1().getAlignment())

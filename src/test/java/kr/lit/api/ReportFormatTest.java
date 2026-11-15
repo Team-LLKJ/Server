@@ -29,7 +29,7 @@ class ReportFormatTest {
         var report=sample(true);String pdfText;
         try(var pdf=Loader.loadPDF(new ReportPdf().render(report,false))){pdfText=new PDFTextStripper().getText(pdf);boolean logo=false;for(var name:pdf.getPage(0).getResources().getXObjectNames())if(pdf.getPage(0).getResources().getXObject(name) instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image){assertThat(image.getWidth()).isEqualTo(1774);assertThat(image.getHeight()).isEqualTo(887);logo=true;}assertThat(logo).isTrue();}
         var hwp=HWPReader.fromInputStream(new ByteArrayInputStream(new ReportHwpService().exportReport(report,false)));
-        assertThat(hwp.getBinData().getEmbeddedBinaryDataList().get(0).getData()).isEqualTo(ReportBrand.getLogoBytes());
+        assertThat(hwp.getBinData().getEmbeddedBinaryDataList().get(0).getData()).isEqualTo(HwpReportLogo.whiteLogo()); // 투명 배경을 검게 그리는 뷰어가 있어 흰 배경으로 합친 로고
         String hwpText=TextExtractor.extract(hwp,TextExtractMethod.InsertControlTextBetweenParagraphText);
         String qa=System.getProperty("lit.report-format.qa-dir");
         if(qa!=null){var dir=java.nio.file.Path.of(qa);java.nio.file.Files.createDirectories(dir);byte[] bytes=new ReportPdf().render(report,false);java.nio.file.Files.write(dir.resolve("report-template.pdf"),bytes);java.nio.file.Files.write(dir.resolve("report-template.hwp"),new ReportHwpService().exportReport(report,false));try(var pdf=Loader.loadPDF(bytes)){var renderer=new org.apache.pdfbox.rendering.PDFRenderer(pdf);for(int page=0;page<pdf.getNumberOfPages();page++)javax.imageio.ImageIO.write(renderer.renderImageWithDPI(page,100),"PNG",dir.resolve("report-template-page-"+(page+1)+".png").toFile());}}
