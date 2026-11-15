@@ -48,7 +48,7 @@
 - `/api/teacher/evaluations` 생성·설정·조회·시작·종료·학생 기록 조회는 로그인한 교사 및 평가 소유권을 검사.
 - Access Token 2시간, Refresh Token 최초 로그인 기준 최대14일의 opaque 난수 토큰. JWT가 아니며 DB에는 해시만 저장.
 - 신규 로그인·갱신 시 발급하는 Access Token부터 적용하며, 기존 토큰의 만료 시간은 유지합니다. Refresh Token 만료까지 2시간 미만이면 Access Token도 해당 시각에 만료됩니다.
-- 갱신 Body: `{"refreshToken":"발급받은 토큰"}`. 갱신 시 두 토큰 모두 교체, 이전 토큰 폐기. 이미 사용한 Refresh Token 재사용 시 해당 로그인 세션 계열 전체 폐기.
+- 갱신 Body: `{"refreshToken":"발급받은 토큰"}`. 갱신 시 두 토큰을 교체합니다. 교체 후 10초 이내에 같은 요청이 다시 오면 현재 유효한 직후 토큰 쌍을 반환합니다. 그 이후 사용한 Refresh Token에는 401 `REFRESH_TOKEN_REUSED`를 반환하며, 발급된 새 세션은 유효합니다. 갱신은 요청 본문의 Refresh Token을 검사합니다.
 - 로그아웃은 현재 세션 계열만 폐기. 로그인 실패5회 시 계정15분 제한.
 - 학생 참가자 토큰으로 수업 생성이나 교사 API 호출 불가.
 
@@ -116,3 +116,5 @@ X-Participant-Token: {participantToken}
 기존 DB의 사용자·평가·답안 기록은 삭제하지 않습니다. 소유자가 없는 평가를 새 교사에게 자동 귀속하지 않습니다.
 
 이메일 인증 상세 오류와 요청·응답: [EMAIL_SIGNUP.md](EMAIL_SIGNUP.md).
+
+`GET /api/auth/me`는 계정 토큰이 없으면 401 `AUTH_REQUIRED`, 토큰이 만료됐거나 유효하지 않으면 401 `INVALID_ACCESS_TOKEN`을 JSON `code`, `message`로 반환합니다. 학생 참여 API는 참가 토큰을 사용합니다.
