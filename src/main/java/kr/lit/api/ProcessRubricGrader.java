@@ -58,7 +58,7 @@ public class ProcessRubricGrader {
 
     /** 학생 한 명의 다섯 항목을 판정해 학생 단위 결과를 만듭니다. 모델 호출 실패는 해당 항목만 HOLD로 둡니다. */
     public Result grade(Input input,Runnable heartbeat) {
-        try(var ignored=usage.open(input.evaluationId(),input.participantId(),JudgeUsage.Task.RUBRIC)) {
+        try(var ignored=usage.open(input.evaluationId(),input.participantId(),JudgeUsage.Task.RUBRIC,heartbeat)) {
             var record=judge.buildRecord(input,context(input));
             var excluded=input.policy()==null?List.<Criterion>of():input.policy().excludedCriteria();
             var cells=new ArrayList<Cell>();int confirmed=0,review=0,na=0;

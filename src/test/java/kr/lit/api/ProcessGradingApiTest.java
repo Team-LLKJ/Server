@@ -42,6 +42,27 @@ class ProcessGradingApiTest extends AuthTestSupport {
         var disclosure=input.sources().stream().filter(s->s.kind().equals("FINAL_ANSWER")).findFirst().orElseThrow();
         return V3GradingTestData.explain(input,new AiOutput(new Compliance("CHECK","교사 확인",List.of(new Citation(disclosure.id(),disclosure.text())),List.of()),recommendations));
     }
+    @Test void recoversStaleJobsAndKeepsJobsWithRecentHeartbeats() {
+        var stale=fixture(true,false);
+        var active=fixture(true,false);
+        var staleJob=latest(stale);
+        var activeJob=latest(active);
+        assertThat(repository.claimJob(staleJob.id())).isTrue();
+        assertThat(repository.claimJob(activeJob.id())).isTrue();
+        var sixMinutesAgo=java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(6);
+        db.update("UPDATE process_grading_jobs SET heartbeat_at=? WHERE id=?",sixMinutesAgo,staleJob.id());
+        db.update("UPDATE process_grading_jobs SET started_at=? WHERE id=?",sixMinutesAgo,activeJob.id());
+
+        repository.recoverJobs();
+
+        var failed=latest(stale);
+        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(failed.errorCode()).isEqualTo("WORKER_INTERRUPTED");
+        assertThat(failed.completedAt()).isNotNull();
+        assertThat(latest(active).status()).isEqualTo("RUNNING");
+        repository.failJob(activeJob.id(),"TEST_CLEANUP");
+    }
+
     @Test void submissionFreezesInputsAndWorkerPublishesSeventyFiveWithVersionedReview() throws Exception {
         var f=fixture(true,true);var job=latest(f);var input=repository.getInput(job.id());
         assertThat(input.policy().version()).isEqualTo(1);assertThat(input.sources()).anyMatch(s->s.kind().equals("ANSWER_CHANGE"));

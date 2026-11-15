@@ -4,10 +4,18 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import static kr.lit.api.ProcessGradingModels.*;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import jakarta.annotation.PreDestroy;
 
 @Component
 public class ProcessGradingWorker {
+    private static final int PARALLEL_JOBS=2;
+    private final Map<String,String> activeJobs=new ConcurrentHashMap<>();
+    private final java.util.concurrent.ExecutorService workers=Executors.newFixedThreadPool(PARALLEL_JOBS,
+            new org.springframework.scheduling.concurrent.CustomizableThreadFactory("process-grading-"));
     private final ProcessGradingRepository repository;private final ProcessGradingAiClient ai;private final ProcessGradingEngine engine;private final ProcessRubricGrader rubric;private final AutomaticDisclosureService disclosures;
     public ProcessGradingWorker(ProcessGradingRepository repository,ProcessGradingAiClient ai,ProcessGradingEngine engine,ProcessRubricGrader rubric,AutomaticDisclosureService disclosures){this.repository=repository;this.ai=ai;this.engine=engine;this.rubric=rubric;this.disclosures=disclosures;}
     /**
@@ -18,10 +26,22 @@ public class ProcessGradingWorker {
     public void analyzePending() {
         repository.recoverJobs();
         for(var pending:repository.getPendingJobRows()) {
-            if(rubric.isActive()&&!rubric.ready(pending.participantId(),pending.createdAt())) continue;
-            processJob(pending.id());
+            if(activeJobs.size()>=PARALLEL_JOBS)break;
+            if(rubric.isActive()&&!rubric.ready(pending.participantId(),pending.createdAt()))continue;
+            if(activeJobs.putIfAbsent(pending.participantId(),pending.id())!=null)continue;
+            try {
+                workers.execute(()->{
+                    try{processJob(pending.id());}
+                    finally{activeJobs.remove(pending.participantId(),pending.id());}
+                });
+            } catch(RejectedExecutionException ex) {
+                activeJobs.remove(pending.participantId(),pending.id());
+                if(!workers.isShutdown())throw ex;
+                break;
+            }
         }
     }
+    @PreDestroy void stopWorkers(){workers.shutdownNow();}
     /**
      * 재분석해도 교사가 고친 항목은 덮어쓰지 않습니다. 같은 학생의 바로 앞 분석에 교사 검토가 있으면 그 보정(overrides)을 새 결과에 다시 적용한
      * 검토 초안(확정 안 됨)을 저장합니다. 문항·항목 구조가 달라 적용할 수 없으면 건너뜁니다. 확정은 교사가 새 결과를 보고 다시 합니다.

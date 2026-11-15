@@ -116,7 +116,9 @@ public class ProcessGradingRepository {
     public List<String> getPendingJobs(){return db.queryForList("SELECT id FROM process_grading_jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10",String.class);}
     public record PendingJob(String id,String participantId,java.time.Instant createdAt) {}
     /** 제출 순서대로 대기 작업(학생마다 마지막 제출본 하나). */
-    public List<PendingJob> getPendingJobRows(){return db.query("SELECT id,participant_id,created_at FROM process_grading_jobs WHERE status='PENDING' ORDER BY created_at LIMIT 20",
+    public List<PendingJob> getPendingJobRows(){return db.query("SELECT pending.id,pending.participant_id,pending.created_at FROM process_grading_jobs pending "+
+            "WHERE pending.status='PENDING' AND NOT EXISTS (SELECT 1 FROM process_grading_jobs running WHERE running.participant_id=pending.participant_id AND running.status='RUNNING') "+
+            "ORDER BY pending.created_at,pending.id LIMIT 20",
             (r,n)->new PendingJob(r.getString(1),r.getString(2),r.getTimestamp(3).toInstant()));}
     public boolean claimJob(String id){return db.update("UPDATE process_grading_jobs SET status='RUNNING',started_at=CURRENT_TIMESTAMP,heartbeat_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'",id)==1;}
     public void recoverJobs(){db.update("UPDATE process_grading_jobs SET status='FAILED',error_code='WORKER_INTERRUPTED',completed_at=CURRENT_TIMESTAMP WHERE status='RUNNING' AND COALESCE(heartbeat_at,started_at)<(CURRENT_TIMESTAMP - INTERVAL '5' MINUTE)");}
