@@ -3453,7 +3453,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/process-grading/participants/{{participantId}}/analysis",
-            "description": "summary는 strengths·weaknesses·checks 객체이며 같은 결과를 PDF·HWP에 사용합니다. 이전 텍스트는 summaryText입니다. judge.reviewReason의 NO_VALID_VOTES와 GEMINI_CALL_FAILED는 해당 기준의 교사 확인을 뜻합니다. docs/PROCESS_GRADING.md 참고."
+            "description": "summary는 strengths·weaknesses·checks 객체이며 같은 결과를 PDF·HWP에 사용합니다. 이전 텍스트는 summaryText입니다. judge.reviewReason의 NO_VALID_VOTES와 GEMINI_CALL_FAILED는 해당 기준의 교사 확인을 뜻합니다. HAIKU_DECIDED는 Gemini 과반과 단계 차이에 관계없이 Haiku 단계로 확정했다는 뜻입니다. docs/PROCESS_GRADING.md 참고."
           }
         }
       ]
