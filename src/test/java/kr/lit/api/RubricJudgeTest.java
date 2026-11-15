@@ -116,11 +116,15 @@ class RubricJudgeTest {
         var close=judge.judge(record,CRITICAL_REVIEW,20);
         assertThat(close.level()).isEqualTo(5);assertThat(close.needsReview()).isFalse();assertThat(close.reviewReason()).isEqualTo("HAIKU_DECIDED");
         assertThat(close.votes()).containsExactly(4,4,3);assertThat(close.haikuLevel()).isEqualTo(5);assertThat(close.evidence()).extracting(RubricJudge.Evidence::src).containsExactly("ANS");
-        // 2단계 이상 차이 → 교사 직접 입력
-        gemini(4,4,3);when(client.callAnthropic(anyString(),anyString(),isNull())).thenReturn(answer(2,"ANS","출처를 확인하지 못해 뺐다"));
-        var disagreed=judge.judge(record,CRITICAL_REVIEW,20);
-        assertThat(disagreed.level()).isNull();assertThat(disagreed.score()).isNull();assertThat(disagreed.needsReview()).isTrue();
-        assertThat(disagreed.reviewReason()).isEqualTo("DISAGREEMENT");assertThat(disagreed.votes()).containsExactly(4,4,3);assertThat(disagreed.haikuLevel()).isEqualTo(2);
+        gemini(4,3,4);
+        when(client.callAnthropic(anyString(),anyString(),isNull())).thenReturn(answer(2,"ANS","출처를 확인하지 못해 뺐다"));
+        var disagreed=judge.judge(record,SELF_DIRECTION,30);
+        assertThat(disagreed.level()).isEqualTo(2);
+        assertThat(disagreed.score()).isEqualByComparingTo("7.5");
+        assertThat(disagreed.needsReview()).isFalse();
+        assertThat(disagreed.reviewReason()).isEqualTo("HAIKU_DECIDED");
+        assertThat(disagreed.votes()).containsExactly(4,3,4);
+        assertThat(disagreed.haikuLevel()).isEqualTo(2);
 
         gemini(4,4,3);when(client.callAnthropic(anyString(),anyString(),isNull())).thenThrow(new JudgeFailure("JUDGE_ANTHROPIC_HTTP_529"));
         var failed=judge.judge(record,CRITICAL_REVIEW,20);

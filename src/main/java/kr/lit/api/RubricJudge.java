@@ -20,7 +20,7 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
  *   <li>각 답의 evidence.quote가 원문에 그대로 있는지 서버가 확인합니다(공백·문장부호 빼고 비교). 없는 인용은 버리고,
  *       남은 근거가 없는 단계 답은 그 회차를 무효로 봅니다.</li>
  *   <li>3번이 모두 같으면 확정. 엇갈리면 Haiku를 1번 같은 프롬프트로 부릅니다(Gemini 답은 알려 주지 않음).
- *       과반(유효한 답 2개 이상이 같음)이 있으면 Haiku가 같을 때 확정, 다르면 교사 직접 입력(DISAGREEMENT).
+ *       과반(유효한 답 2개 이상이 같음)과 Haiku 단계가 다르면 차이와 관계없이 Haiku 단계로 확정합니다.
  *       과반이 없으면(유효한 답 1개 이하이거나 모두 다름) Haiku 단계로 확정합니다. Haiku도 무효·실패면 DISAGREEMENT(2026-11-12 변경).</li>
  *   <li>특수 경우는 모델 전에 서버가 정합니다: AI 대화 0개면 자기 주도적 사고는 교사 확인(HOLD·NO_AI_USE), 나머지는 NA.
  *       AI를 썼지만 학생 질문이 너무 적으면(기본 2개 이하) INSUFFICIENT_DATA.</li>
@@ -29,7 +29,7 @@ import static kr.lit.api.SemanticJudgeClient.JudgeFailure;
  */
 @Component
 public class RubricJudge {
-    public static final String PROMPT_VERSION="RUBRIC_GEMINI_X3_HAIKU_V7";
+    public static final String PROMPT_VERSION="RUBRIC_GEMINI_X3_HAIKU_V8";
     public static final String STATUS_OK="OK",STATUS_NA="NA",STATUS_HOLD="HOLD";
     public static final String REASON_DISAGREEMENT="DISAGREEMENT",REASON_INSUFFICIENT="INSUFFICIENT_DATA",REASON_NO_AI_USE="NO_AI_USE",REASON_SAVE_ERROR="SAVE_ERROR",REASON_PROMPT_INJECTION="PROMPT_INJECTION",REASON_HAIKU_DECIDED="HAIKU_DECIDED";
     public static final String REASON_NO_VALID_VOTES="NO_VALID_VOTES", REASON_GEMINI_CALL_FAILED="GEMINI_CALL_FAILED";
@@ -313,8 +313,8 @@ public class RubricJudge {
         }
         // 과반이 없으면(유효한 Gemini 답 1개 이하이거나 모두 다름) Haiku 단계로 확정합니다(2026-11-12 변경).
         if(majority==null&&haikuLevel!=null) return finish(indicator,maxScore,haikuLevel,votes,haikuLevel,false,null,METHOD_GEMINI_HAIKU,runs,haiku);
-        // 과반과 Haiku가 1단계만 다르면 Haiku 단계로 확정합니다(HAIKU_DECIDED, 2026-11-14 변경). 2단계 이상이면 교사 직접 입력.
-        if(majority instanceof Integer m&&haikuLevel instanceof Integer h&&Math.abs(m-h)==1)
+        // 과반과 Haiku가 다르면 차이와 관계없이 유효한 Haiku 단계를 확정합니다.
+        if(majority!=null&&haikuLevel instanceof Integer h)
             return finish(indicator,maxScore,h,votes,haikuLevel,false,REASON_HAIKU_DECIDED,METHOD_GEMINI_HAIKU,runs,haiku);
         return new Judgment(indicator,STATUS_OK,null,null,votes,haikuLevel,true,REASON_DISAGREEMENT,List.of(),"","",haiku==null?METHOD_GEMINI:METHOD_GEMINI_HAIKU,
                 List.copyOf(runs),PROMPT_VERSION,client.rubricModel(),client.anthropicModel(),haikuError);

@@ -178,7 +178,7 @@ class ProcessRubricApiTest extends AuthTestSupport {
     }
     @Test void holdIsNotRedistributedButNaIs() throws Exception {
         gemini.put("AI 활용 목적의 적절성",List.of("NA"));                       // 모델이 해당 없음 → 배점 재분배
-        gemini.put("AI 답변의 비판적 검토",List.of(4,4,3));haiku.put("AI 답변의 비판적 검토",2); // 과반(4)과 Haiku(2)가 2단계 차이 → HOLD(재분배 안 함)
+        gemini.put("AI 답변의 비판적 검토",List.of(4,4,3));haiku.put("AI 답변의 비판적 검토",0); // Haiku 응답에 유효한 단계가 없어 HOLD
         var f=endWithAutoSubmission(QUESTIONS);
         var job=latest(f);worker.processJob(job.id());job=latest(f);
         var r=job.result();
