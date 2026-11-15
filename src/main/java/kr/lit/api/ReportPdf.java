@@ -3,7 +3,6 @@ package kr.lit.api;
 import org.apache.pdfbox.pdmodel.*;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.*;
-import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.springframework.stereotype.Component;
 import java.io.*;
 import java.util.*;
@@ -40,7 +39,6 @@ public class ReportPdf {
   return body.wholeText();
  }
  private static final class Writer implements AutoCloseable {
-  private static final float MEDIUM_STROKE=0.18f, BOLD_STROKE=0.40f;
   private static final float LEFT=45.35f, TOP=51.02f, BOTTOM=51.02f, WIDTH=504.58f;
   private final PDDocument doc;private final PDFont font;private PDPageContentStream stream;private float y;private int page;
   Writer(PDDocument doc,PDFont font)throws IOException{this.doc=doc;this.font=font;newPage();}
@@ -51,23 +49,15 @@ public class ReportPdf {
   private void ensureSpace(float height)throws IOException{if(y-height<BOTTOM)newPage();}
   void addHeader(String title,String date)throws IOException {
    var logo=org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject.createFromByteArray(doc,ReportBrand.getLogoBytes(),"LIT logo");
-   stream.drawImage(logo,LEFT,y-32,64,32);draw(title,LEFT+80,y-18,18,0.1f,0.1f,0.1f,BOLD_STROKE);y-=36;
+   stream.drawImage(logo,LEFT,y-32,64,32);draw(title,LEFT+80,y-18,18,0.1f,0.1f,0.1f);y-=36;
    draw(date,LEFT+80,y,9,0.4f,0.4f,0.4f);y-=15;rule(0,123f/255f,1,1.3f);y-=14;
   }
   private void rule(float r,float g,float b,float width)throws IOException{stream.setStrokingColor(r,g,b);stream.setLineWidth(width);stream.moveTo(LEFT,y);stream.lineTo(LEFT+WIDTH,y);stream.stroke();}
   void addText(String value,String style)throws IOException {
-   boolean heading=style.equals("heading"), question=style.equals("question");
-   boolean subtitle=style.equals("subtitle"), note=style.equals("note");
-   int size=heading||subtitle?12:note?9:11;
-   float stroke=heading||question?BOLD_STROKE:subtitle?MEDIUM_STROKE:0;
-   float color=note?0.4f:0.12f;
+   boolean heading=style.equals("heading"), question=style.equals("question");int size=heading?12:style.equals("note")?9:11;
    if(heading){ensureSpace(75);y-=14;}
    else if(question){ensureSpace(65);y-=9;}
-   for(String line:wrap(value,size,WIDTH)) {
-    ensureSpace(size*1.55f);
-    draw(line,LEFT,y-size,size,color,color,color,stroke);
-    y-=size*1.55f;
-   }
+   for(String line:wrap(value,size,WIDTH)) {ensureSpace(size*1.55f);draw(line,LEFT,y-size,size,style.equals("note")?0.4f:0.12f,style.equals("note")?0.4f:0.12f,style.equals("note")?0.4f:0.12f);y-=size*1.55f;}
    y-=5;if(heading){rule(0,123f/255f,1,0.5f);y-=7;}
   }
   void addTable(ReportLayout.Table table)throws IOException {
@@ -109,24 +99,7 @@ public class ReportPdf {
     }lines.add(line.toString());
    }return lines;
   }
-  private void draw(String text,float x,float baseline,int size,float r,float g,float b)throws IOException {
-   draw(text,x,baseline,size,r,g,b,0);
-  }
-  private void draw(String text,float x,float baseline,int size,float r,float g,float b,float stroke)throws IOException {
-   if(stroke>0){
-    stream.saveGraphicsState();
-    stream.setStrokingColor(r,g,b);
-    stream.setLineWidth(stroke);
-   }
-   stream.setNonStrokingColor(r,g,b);
-   stream.beginText();
-   if(stroke>0)stream.setRenderingMode(RenderingMode.FILL_STROKE);
-   stream.setFont(font,size);
-   stream.newLineAtOffset(x,baseline);
-   stream.showText(text);
-   stream.endText();
-   if(stroke>0)stream.restoreGraphicsState();
-  }
+  private void draw(String text,float x,float baseline,int size,float r,float g,float b)throws IOException{stream.setNonStrokingColor(r,g,b);stream.beginText();stream.setFont(font,size);stream.newLineAtOffset(x,baseline);stream.showText(text);stream.endText();}
   public void close()throws IOException{if(stream!=null)stream.close();}
  }
 }
