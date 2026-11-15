@@ -397,3 +397,5 @@ Authorize에서 `TeacherAccessToken`에는 로그인 응답의 `accessToken`만,
 
 
 문항이 있는 평가에 저장된 과정 채점 정책이 없으면 서버가 평가 안내, AI 정책별 허용 규칙, 균등 문항 배점으로 기본 정책을 제공합니다. 과정 채점 화면의 구조화 요약은 새 PDF·HWP에도 사용합니다. 기본 사전 정책, 학생 단위 교사 검토, 질문·답안 근거 필드는 [과정 채점](docs/PROCESS_GRADING.md) 및 [AI 활용 분석](docs/AI_GRADING.md) 명세를 참고하세요.
+
+소유자 여부, 닉네임 검증, 문항 제목 기본값, AI 분석 구조화 필드는 [프런트 연동 계약](docs/FRONTEND_INTEGRATION_REFERENCE.md#백엔드-계약)을 참고하세요.

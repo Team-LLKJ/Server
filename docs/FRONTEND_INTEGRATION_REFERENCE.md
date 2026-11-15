@@ -179,3 +179,17 @@ Authorization: Bearer <accessToken>
 ## 7. 시트 전체 원문 파일
 
 함께 제공하는 `full-api-spec.md`와 `full-api-spec.json`은4개 탭의 모든 채워진 행을 행 번호와 함께 내보낸 원문입니다. 요청·응답 예시/공통 규칙/오류 코드 탭을 요약으로 대체하지 않았습니다. 행별 개발·배포 상태를 구분하세요. 이 문서의 새 기능도 현재 운영에 적용됐다는 뜻은 아닙니다.
+
+## 백엔드 계약
+
+- 수행평가 상세와 목록의 `isOwner`는 호출자의 소유 여부입니다.
+- 참가 닉네임은 1~20자입니다. 꺾쇠나 제어 문자는 400 `INVALID_NICKNAME`으로 거절합니다.
+- 문항 `title`이 비어 있으면 `문항 {position}`으로 채웁니다.
+- AI 활용 분석의 `indicators[].reasons[].kind`는 `ADD` 또는 `DEDUCT`입니다. `requiredRecords[]`는 `{name,done}`을 제공합니다.
+- `sentences[].sourceStatus`는 `AI`, `DIRECT`, `UNCERTAIN`입니다. `closestAiSentence`는 비교 근거가 없으면 null입니다.
+- `POST /api/teacher/evaluations/{id}/extend`는 `{additionalMinutes}`(1~600)를 받고 갱신된 로비의 `endsAt`을 반환합니다.
+- 학생 정책 확인은 `POST /api/student/evaluations/{id}/policy-acceptance`에 `X-Participant-Token`과 `{policyVersion}`을 보냅니다. `workspace`의 `policyAccepted`와 `policyVersion`으로 확인 상태를 조회합니다.
+- 새 루브릭 기준은 AI 활용 목적 20점, 자기 주도적 사고 30점, 비판적 검토 20점, 학생 기여 30점입니다. 과정 채점 결과의 `criterionName`과 `maxScore`를 사용하세요.
+- HWP를 버전 지정 없이 조회하면 제출 기록이 있고 저장 보고서가 없는 경우 생성합니다. 저장 버전을 지정하면 해당 버전을 조회합니다.
+- 교사 가입은 약관 동의 버전 필드를 요구합니다. 반 대기실은 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`로 엽니다. 학생 복귀는 `POST /api/participation/reconnect`를 사용합니다.
+- 교사 SSE는 `GET /api/teacher/evaluations/{id}/live-events`이며 Bearer 인증이 필요합니다. 루브릭 모델 표는 교사 판정 근거 확인에 사용할 수 있습니다.
