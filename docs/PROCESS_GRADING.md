@@ -70,7 +70,7 @@ AI 기록이 관측되지 않았을 때의 교사 사전 정책:
 - 문항 비율과 제출 문항 불일치: HOLD/QUESTION_WEIGHTS_OUTDATED.
 - 입력이 UTF-8 512KiB 초과: 기록을 몰래 잘라 평가하지 않고 HOLD/INPUT_TOO_LARGE_NO_TRUNCATION.
 - 외부 호출 실패: FAILED와 errorCode. 점수 결과는 null이며 사용자가 재분석할 수 있습니다.
-- RUNNING 상태로5분 넘게 남은 작업: FAILED/WORKER_INTERRUPTED로 전환 후 명시적 재분석 가능.
+- 채점 작업은 최대 2건을 처리합니다. 대기열 확인과 복구는 모델 호출과 별도로 진행합니다. RUNNING 작업의 마지막 heartbeat가 5분을 넘으면 FAILED/WORKER_INTERRUPTED로 전환되어 다시 분석할 수 있습니다. 루브릭 모델 호출과 재시도 사이에 heartbeat를 갱신합니다.
 - 종료 후 선택적 유예 저장으로 제출본이 바뀌면 새 분석을 예약하고 이전 제출본의 새 확정은 차단합니다.
 
 ## 3. AI 출력과 서버 검증
