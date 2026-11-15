@@ -137,8 +137,8 @@ class ProcessGradingApiTest extends AuthTestSupport {
         String path=root(f)+"/"+job.id();
         mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(0,List.of(),"CONFIRMED_OK","검토"))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(1))).andExpect(status().isConflict());
-        var override=new LevelOverride(f.question(),Criterion.PURPOSE,4,"교사가 실제 근거를 확인했습니다.");
-        mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(1,List.of(override),"CONFIRMED_OK","검토 완료"))).andExpect(status().isOk());
+        var override=new LevelOverride(f.question(),Criterion.PURPOSE,4,null);
+        mvc.perform(body(request(put(path+"/review"),teacher),new ReviewRequest(1,List.of(override),null,null))).andExpect(status().isOk());
         mvc.perform(body(request(post(path+"/confirm"),teacher),new ConfirmRequest(2))).andExpect(status().isOk());
     }
     @Test void analysisViewSeparatesSimilarityFromContributionAndUsesTeacherReview() throws Exception {

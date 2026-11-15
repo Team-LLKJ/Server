@@ -57,12 +57,8 @@ public class ProcessGradingService {
         if(request.expectedRevision()!=revision)throw fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_VERSION_CONFLICT","최신 교사 검토를 확인해주세요.");
         Result result;
         try{result=engine.applyReview(repository.getInput(jobId),job.result(),request.overrides());}catch(IllegalArgumentException ex){throw fail(HttpStatus.BAD_REQUEST,"INVALID_PROCESS_REVIEW","문항·영역·보정 사유를 확인하고, 수준 또는 점수(0~영역 만점, 소수 둘째 자리까지) 중 하나만 입력해주세요.");}
-        boolean studentLevel=ProcessGradingEngine.studentLevel(job.result().cells());
         String decision=request.complianceDecision();
         String reason=request.complianceReason();
-        if (!studentLevel && (decision==null || reason==null || reason.isBlank())) {
-            throw fail(HttpStatus.BAD_REQUEST,"PROCESS_COMPLIANCE_REQUIRED","규정 준수 판단과 사유를 입력해주세요.");
-        }
         var review=new Review(revision+1,teacher,Instant.now(),request.overrides(),
                 Objects.requireNonNullElse(decision,"HOLD"),Objects.requireNonNullElse(reason,""),result,false);
         repository.saveReview(jobId,review);return review;
@@ -77,7 +73,7 @@ public class ProcessGradingService {
         requireLatest(id,pid,jobId);
         var review=repository.getReview(jobId).orElseThrow(()->fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_REQUIRED","먼저 교사 검토를 저장해주세요."));
         if(review.revision()!=request.expectedRevision())throw fail(HttpStatus.CONFLICT,"PROCESS_REVIEW_VERSION_CONFLICT","최신 교사 검토를 확인해주세요.");
-        if(review.result().total()==null||(!ProcessGradingEngine.studentLevel(review.result().cells())&&"HOLD".equals(review.complianceDecision())))throw fail(HttpStatus.CONFLICT,"PROCESS_CONFIRMATION_HELD","판단 보류 항목과 규정 준수 검토를 먼저 완료해주세요.");
+        if(review.result().total()==null)throw fail(HttpStatus.CONFLICT,"PROCESS_CONFIRMATION_HELD","판단 보류 항목을 먼저 완료해주세요.");
         if(review.confirmed())return review;
         var confirmed=new Review(review.revision()+1,teacher,Instant.now(),review.overrides(),review.complianceDecision(),review.complianceReason(),review.result(),true);
         repository.saveReview(jobId,confirmed);return confirmed;
