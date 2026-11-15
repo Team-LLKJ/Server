@@ -46,7 +46,7 @@ class ReportHwpApiTest extends AuthTestSupport {
         byte[] bytes=mvc.perform(request(get(teacherPath(f)).param("version","1"),teacher)).andExpect(status().isOk())
                 .andExpect(content().contentType("application/x-hwp")).andExpect(header().string("Content-Disposition","attachment; filename=\"lit-report-"+report.id()+"-v1.hwp\""))
                 .andExpect(header().string("Cache-Control","no-store")).andReturn().getResponse().getContentAsByteArray();
-        assertThat(extractText(bytes)).contains("AI 활용 학습 보고서","한글 리포트 평가","학생 한글","분모를 같게","한글 셀 | 두 번째 셀","마지막 답안","교사의 검토 근거","성장 과정 확인","키워드 기반 분류","활동 및 경고 기록","문항 번호","문항 2","[미작성]")
+        assertThat(extractText(bytes)).contains("AI 활용 학습 보고서","한글 리포트 평가","학생 한글","분모를 같게","한글 셀 | 두 번째 셀","마지막 답안","교사의 검토 근거","성장 과정 확인","키워드 기반 분류","활동 및 경고 기록","두 번째 문항","[미작성]")
                 .doesNotContain("대화원문비공개표식","<table>","<p>");
         mvc.perform(request(get(teacherPath(f).replace("/students/","/participants/")),teacher)).andExpect(status().isOk());
         // 학생 보고서 내려받기는 없앴습니다(2026-11-14, 교사 전용).
@@ -64,7 +64,7 @@ class ReportHwpApiTest extends AuthTestSupport {
         int charId=(int)title.getCharShape().getPositonShapeIdPairList().get(0).getShapeId();
         var titleShape=document.getDocInfo().getCharShapeList().get(charId);
         assertThat(titleShape.getBaseSize()).isEqualTo(1800);
-        assertThat(titleShape.getProperty().isBold()).isTrue();
+        assertThat(titleShape.getProperty().isBold()).isFalse(); // PDF 미리보기처럼 보통 굵기
         assertThat(document.getBinData().getEmbeddedBinaryDataList()).hasSize(1);
         assertThat(document.getDocInfo().getBinDataList().get(0).getExtensionForEmbedding()).isEqualTo("png");
         assertThat(document.getDocInfo().getParaShapeList().get(title.getHeader().getParaShapeId()).getProperty1().getAlignment())
@@ -74,18 +74,14 @@ class ReportHwpApiTest extends AuthTestSupport {
             var controls=section.getParagraph(i).getControlList();
             if(controls!=null)for(var control:controls)if(control instanceof kr.dogfoot.hwplib.object.bodytext.control.ControlTable table)tables.add(table);
         }
-        assertThat(tables).hasSize(6);
-        assertThat(tables.get(0).getTable().getColumnCount()).isEqualTo(2);
-        assertThat(tables.get(0).getRowList()).hasSize(3);
+        assertThat(tables).hasSize(5);
+        assertThat(tables.get(0).getTable().getColumnCount()).isEqualTo(4);
+        assertThat(tables.get(0).getRowList()).hasSize(2);
         var scores=tables.get(2);
         assertThat(scores.getRowList()).hasSize(6);
         assertThat(scores.getTable().getColumnCount()).isEqualTo(3);
         assertThat(scores.getRowList().get(0).getCellList().get(0).getListHeader().getProperty().isTitleCell()).isTrue();
         assertThat(scores.getTable().getProperty().isAutoRepeatTitleRow()).isTrue();
-        var answers=tables.get(5);
-        assertThat(answers.getTable().getColumnCount()).isEqualTo(2);
-        assertThat(answers.getRowList()).hasSize(3);
-        assertThat(answers.getTable().getProperty().isAutoRepeatTitleRow()).isTrue();
         assertThat(extractText(hwp.exportReport(report,false))).contains("KST","1. 종합 평가","2. 평가 기준별 루브릭");
     }
     @Test void exportedVersionsAreFrozenAndConversationOriginalsRequireOptIn() throws Exception {
@@ -121,6 +117,8 @@ class ReportHwpApiTest extends AuthTestSupport {
         String path=teacherPath(f).replace("/report/hwp","/report.hwp");
         byte[] bytes=mvc.perform(request(get(path),teacher)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         assertThat(extractText(bytes)).contains("긴 한글 답안","마지막문장표식");
+        var document=HWPReader.fromInputStream(new ByteArrayInputStream(bytes));
+        assertThat(document.getBodyText().getSectionList().get(0).getParagraphCount()).isGreaterThan(40);
         mvc.perform(get(studentPath(f).replace("/report/hwp","/report.hwp")).header("X-Participant-Token",f.token())).andExpect(status().isForbidden());
         as(teacher);assertThat(reports.versions(f.id(),f.pid())).hasSize(1);
         assertThat(report.version()).isEqualTo(1);

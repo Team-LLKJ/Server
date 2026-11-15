@@ -16,8 +16,8 @@ import java.util.*;
 final class HwpReportWriter {
     private static final int WIDTH=50458, MAX_PARAGRAPH_CHARS=2000;
     private final HWPFile document;
-    private final int bodyChar,titleChar,subtitleChar,headingChar,noteChar,tableLabelChar;
-    private final int bodyPara,titlePara,headerNotePara,headingPara,cellPara;
+    private final int bodyChar,titleChar,subtitleChar,headingChar,noteChar;
+    private final int bodyPara,titlePara,headerNotePara,headingPara,cellPara,subtitlePara;
     private final int cellBorder,headerBorder;
     private boolean first=true;
     private int headingNumber;
@@ -29,16 +29,16 @@ final class HwpReportWriter {
         var info=document.getDocInfo();
         for(var faces:List.of(info.getHangulFaceNameList(),info.getEnglishFaceNameList(),info.getHanjaFaceNameList(),info.getJapaneseFaceNameList(),info.getEtcFaceNameList(),info.getSymbolFaceNameList(),info.getUserFaceNameList()))for(var face:faces)face.setName("나눔고딕");
         bodyChar=createCharShape(11,false,0x292929);
-        titleChar=createCharShape(18,true,0x292929);
-        subtitleChar=createCharShape(12,false,0x292929);
-        tableLabelChar=createCharShape(11,true,0x292929);
-        headingChar=createCharShape(12,true,0x292929);
+        titleChar=createCharShape(18,false,0x292929); // PDF 미리보기와 같게 굵게 하지 않습니다
+        subtitleChar=createCharShape(11,false,0x292929);
+        headingChar=createCharShape(12,false,0x292929);
         noteChar=createCharShape(9,false,0x666666);
         bodyPara=createParaShape(Alignment.Left,0,500,false);
         titlePara=createParaShape(Alignment.Left,500,300,true);
         headerNotePara=createParaShape(Alignment.Left,0,1000,true);
         headingPara=createParaShape(Alignment.Left,1400,700,true);
         cellPara=createParaShape(Alignment.Left,0,0,false);
+        subtitlePara=createParaShape(Alignment.Left,600,500,true); // 머리 구분선과 평가 제목 사이를 띄웁니다
         cellBorder=createBorder(0xFFFFFF);
         headerBorder=createBorder(ReportBrand.TINT_BGR);
         document.getDocInfo().getParaShapeList().get(headerNotePara).setBorderFillId(createRuleBorder(ReportBrand.PRIMARY_BGR));
@@ -79,7 +79,7 @@ final class HwpReportWriter {
     void addSectionHeading(String text) {addText(text,headingChar,headingPara);}
     void addPageBreak() {var paragraph=addParagraph("",bodyChar,bodyPara);paragraph.getHeader().getDivideSort().setDividePage(true);}
     void addTitle(String text) {addText(text,titleChar,titlePara);}
-    void addSubtitle(String text) {addText(text,subtitleChar,bodyPara);}
+    void addSubtitle(String text) {addText(text,subtitleChar,subtitlePara);}
     void addHeading(String text) {addText(++headingNumber+". "+text,headingChar,headingPara);}
     void addQuestion(String text) {addText(text,headingChar,headingPara);}
     void addText(String text) {addText(text,bodyChar,bodyPara);}
@@ -111,7 +111,7 @@ final class HwpReportWriter {
         paragraph.getCharShape().getPositonShapeIdPairList().clear();paragraph.getCharShape().addParaCharShape(0,charId);
         paragraph.deleteLineSeg();
     }
-    /** 표를 만들고 긴 셀은 페이지 경계에서 나눌 수 있게 합니다. */
+    /** 짧은 요약 정보는 표에, 긴 자유 서술은 표 밖의 일반 문단에 배치합니다. */
     void addTable(List<List<String>> rows,int[] widths,boolean firstRowHeader) {
         if(rows.isEmpty()||Arrays.stream(widths).sum()!=42520)throw new IllegalArgumentException("Invalid report table");
         widths=widths.clone();int assigned=0;for(int i=0;i<widths.length;i++){widths[i]=i==widths.length-1?WIDTH-assigned:(int)((long)widths[i]*WIDTH/42520);assigned+=widths[i];}
@@ -120,22 +120,25 @@ final class HwpReportWriter {
         anchor.getText().addExtendCharForTable();chars.add(new HWPCharNormal(13));
         var control=(ControlTable)anchor.addNewControl(ControlType.Table);
         var header=control.getHeader();var prop=header.getProperty();
-        prop.setLikeWord(true);prop.setApplyLineSpace(false);prop.setVertRelTo(VertRelTo.Para);prop.setHorzRelTo(HorzRelTo.Para);
+        // 글자처럼 취급한 표는 한글에서 쪽을 넘겨 나뉘지 않아 쪽 끝에 큰 빈칸이 생깁니다. 본문 위치에 자리를 차지하는 표로 두고 쪽 경계에서 나눕니다.
+        prop.setLikeWord(false);prop.setApplyLineSpace(false);prop.setVertRelTo(VertRelTo.Para);prop.setHorzRelTo(HorzRelTo.Para);
         prop.setVertRelativeArrange(RelativeArrange.TopOrLeft);prop.setHorzRelativeArrange(RelativeArrange.TopOrLeft);
         prop.setWidthCriterion(WidthCriterion.Absolute);prop.setHeightCriterion(HeightCriterion.Absolute);
-        prop.setAllowOverlap(false);prop.setTextFlowMethod(TextFlowMethod.FitWithText);prop.setTextHorzArrange(TextHorzArrange.BothSides);prop.setObjectNumberSort(ObjectNumberSort.Table);
+        prop.setAllowOverlap(false);prop.setTextFlowMethod(TextFlowMethod.TakePlace);prop.setTextHorzArrange(TextHorzArrange.BothSides);prop.setObjectNumberSort(ObjectNumberSort.Table);
         header.setWidth(WIDTH);header.setHeight(rows.size()*2400L);header.setOutterMarginBottom(500);
         var table=control.getTable();table.setRowCount(rows.size());table.setColumnCount(widths.length);
         table.getProperty().setDivideAtPageBoundary(DivideAtPageBoundary.Divide);table.getProperty().setAutoRepeatTitleRow(firstRowHeader);
         table.setBorderFillId(cellBorder);
+        // 칸 안 글자가 테두리에 붙지 않게 표·칸 안쪽 여백을 둡니다(약 2.1mm 좌우, 1.4mm 위아래).
+        table.setLeftInnerMargin(600);table.setRightInnerMargin(600);table.setTopInnerMargin(400);table.setBottomInnerMargin(400);
         for(int r=0;r<rows.size();r++) {
             if(rows.get(r).size()!=widths.length)throw new IllegalArgumentException("Invalid report table row");
             table.getCellCountOfRowList().add(widths.length);var row=control.addNewRow();
             for(int c=0;c<widths.length;c++) {
                 var cell=row.addNewCell();var cellHeader=cell.getListHeader();cellHeader.setParaCount(1);
                 cellHeader.setColIndex(c);cellHeader.setRowIndex(r);cellHeader.setColSpan(1);cellHeader.setRowSpan(1);
-                cellHeader.setWidth(widths[c]);cellHeader.setHeight(2400);cellHeader.setTextWidth(widths[c]-1000);
-                cellHeader.setLeftMargin(500);cellHeader.setRightMargin(500);cellHeader.setTopMargin(400);cellHeader.setBottomMargin(400);
+                cellHeader.setWidth(widths[c]);cellHeader.setHeight(2400);cellHeader.setTextWidth(widths[c]-1200);
+                cellHeader.setLeftMargin(600);cellHeader.setRightMargin(600);cellHeader.setTopMargin(400);cellHeader.setBottomMargin(400);cellHeader.getProperty().setApplyInnerMagin(true);
                 boolean shaded=firstRowHeader?r==0:(widths.length==4?c%2==0:c==0);cellHeader.setBorderFillId(shaded?headerBorder:cellBorder);
                 cellHeader.getProperty().setTitleCell(firstRowHeader&&r==0);
                 cellHeader.getProperty().setLineChange(LineChange.Normal);cellHeader.getProperty().setTextVerticalAlignment(TextVerticalAlignment.Center);
@@ -143,7 +146,7 @@ final class HwpReportWriter {
                 String value=sanitize(rows.get(r).get(c));var parts=new ArrayList<String>();
                 for(String line:value.split("\\R",-1)){if(line.isEmpty())parts.add("");else for(int start=0;start<line.length();){int end=Math.min(start+MAX_PARAGRAPH_CHARS,line.length());if(end<line.length()&&Character.isHighSurrogate(line.charAt(end-1)))end--;parts.add(line.substring(start,end));start=end;}}
                 cellHeader.setParaCount(parts.size());
-                for(int i=0;i<parts.size();i++){var p=cell.getParagraphList().addNewParagraph();p.createText();p.createCharShape();p.getHeader().setLastInList(i==parts.size()-1);setParagraph(p,parts.get(i),shaded?tableLabelChar:bodyChar,cellPara);}
+                for(int i=0;i<parts.size();i++){var p=cell.getParagraphList().addNewParagraph();p.createText();p.createCharShape();p.getHeader().setLastInList(i==parts.size()-1);setParagraph(p,parts.get(i),bodyChar,cellPara);}
             }
         }
     }

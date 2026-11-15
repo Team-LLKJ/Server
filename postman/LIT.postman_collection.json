@@ -1201,7 +1201,7 @@
     },
     {
       "name": "교사 검토·리포트 (제출 후 테스트)",
-      "description": "전체 흐름에서 제출 후 사용. evaluationId, participantId, teacherAccessToken, participantToken 필요. PDF 요청은 Send and Download로 저장. 문항별 제출 답안은 문항 번호/답안 2열 표로 표시합니다. 교사 검토는 현재 version을 expectedVersion으로 갱신.",
+      "description": "전체 흐름에서 제출 후 사용. evaluationId, participantId, teacherAccessToken, participantToken 필요. PDF 요청은 Send and Download로 저장. 교사 검토는 현재 version을 expectedVersion으로 갱신.",
       "item": [
         {
           "name": "교사 학생 목록",
@@ -3244,7 +3244,7 @@
               "type": "noauth"
             },
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/students/{{participantId}}/report/hwp?version={{reportVersion}}&includeConversations=false",
-            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 답안에 삽입된 표는 행별 텍스트로, 이미지는 표시문으로 변환합니다. 보고서 서식: 굵은 보고서·섹션 제목, 학생/제출일/평가 점수 정보 표, 영역별 점수 3열 표·문항 번호/답안 2열 표. 실제 HWP 표이며 미입력 점수는0점으로 바꾸지 않습니다."
+            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다. 보고서 서식: 중앙 제목·학생 정보 2열 표·영역별 점수 3열 표·번호가 있는 섹션·문항별 답안. 실제 HWP 표이며 미입력 점수는0점으로 바꾸지 않습니다."
           }
         },
         {
@@ -3261,7 +3261,7 @@
               "type": "noauth"
             },
             "url": "{{baseUrl}}/api/evaluations/{{evaluationId}}/report/hwp?version={{reportVersion}}&includeConversations=false",
-            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 답안에 삽입된 표는 행별 텍스트로, 이미지는 표시문으로 변환합니다. 보고서 서식: 굵은 보고서·섹션 제목, 학생/제출일/평가 점수 정보 표, 영역별 점수 3열 표·문항 번호/답안 2열 표. 실제 HWP 표이며 미입력 점수는0점으로 바꾸지 않습니다."
+            "description": "기존 POST reports로 먼저 리포트를 생성합니다. HWP 바이너리를 파일로 저장하세요. version을 생략하면 최신 저장본이며 원문은 기본 제외합니다. includeConversations=true일 때만 대화 원문을 포함합니다. 표는 행별 텍스트, 이미지는 표시문으로 변환합니다. 보고서 서식: 중앙 제목·학생 정보 2열 표·영역별 점수 3열 표·번호가 있는 섹션·문항별 답안. 실제 HWP 표이며 미입력 점수는0점으로 바꾸지 않습니다."
           }
         }
       ]
@@ -3472,7 +3472,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.pdf?version=1&includeConversations=false",
-            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. 보고서·섹션 제목은 굵게 표시하며 정보 표에는 학생, 제출일, 평가 점수를 표시합니다. 문항별 제출 답안은 문항 번호/답안 2열 표로 표시합니다. docs/REPORT_FORMAT.md 참고."
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
           }
         },
         {
@@ -3486,7 +3486,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/teacher/evaluations/{{evaluationId}}/participants/{{participantId}}/report.hwp?version=1&includeConversations=false",
-            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. 보고서·섹션 제목은 굵게 표시하며 정보 표에는 학생, 제출일, 평가 점수를 표시합니다. 문항별 제출 답안은 문항 번호/답안 2열 표로 표시합니다. docs/REPORT_FORMAT.md 참고."
+            "description": "공통 보고서 서식. 기존 students 경로도 유지. 저장된 동일 version으로 두 형식 비교. docs/REPORT_FORMAT.md 참고."
           }
         }
       ]
