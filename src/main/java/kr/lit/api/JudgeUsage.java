@@ -13,7 +13,7 @@ import java.util.*;
 @Component
 public class JudgeUsage {
     public enum Task { SEMANTIC, PURPOSE, RUBRIC }
-    record Context(String evaluationId,String participantId,Task task) {}
+    record Context(String evaluationId,String participantId,Task task,Runnable heartbeat) {}
     private static final ThreadLocal<Context> CURRENT=new ThreadLocal<>();
     private final JdbcTemplate db;
     public JudgeUsage(JdbcTemplate db){this.db=db;}
@@ -22,8 +22,15 @@ public class JudgeUsage {
     public interface Scope extends AutoCloseable { @Override void close(); }
     /** try-with-resources로 씁니다. 중첩되면 바깥 맥락을 되돌립니다. */
     public Scope open(String evaluationId,String participantId,Task task) {
-        var previous=CURRENT.get();CURRENT.set(new Context(evaluationId,participantId,task));
+        return open(evaluationId,participantId,task,()->{});
+    }
+    Scope open(String evaluationId,String participantId,Task task,Runnable heartbeat) {
+        var previous=CURRENT.get();CURRENT.set(new Context(evaluationId,participantId,task,heartbeat));
         return ()->{if(previous==null)CURRENT.remove();else CURRENT.set(previous);};
+    }
+    void touchJob() {
+        var context=CURRENT.get();
+        if(context!=null)context.heartbeat().run();
     }
     /** 맥락이 없으면(예: 시험 호출) 기록하지 않습니다. 기록 실패는 판정을 막지 않습니다. */
     void record(String provider,String model,long input,long output,long thinking) {

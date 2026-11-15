@@ -169,16 +169,19 @@ public class SemanticJudgeClient {
      */
     private String send(HttpRequest request,String provider,JudgeRateLimiter.Bucket bucket,boolean rubric) throws Exception {
         for(int attempt=0;;attempt++) {
+            usage.touchJob();
             limiter.acquire(bucket);
+            usage.touchJob();
             HttpResponse<String> response;
             try { response=http.send(request,HttpResponse.BodyHandlers.ofString()); }
             catch(HttpTimeoutException ex) {
-                if(rubric&&attempt<RUBRIC_BACKOFF.size()){limiter.backoff(RUBRIC_BACKOFF.get(attempt));continue;}
+                if(rubric&&attempt<RUBRIC_BACKOFF.size()){usage.touchJob();limiter.backoff(RUBRIC_BACKOFF.get(attempt));continue;}
                 throw new JudgeFailure("JUDGE_"+provider+"_TIMEOUT");
             }
             catch(InterruptedException ex) { Thread.currentThread().interrupt();throw new JudgeFailure("JUDGE_"+provider+"_INTERRUPTED"); }
             int status=response.statusCode();
             if(rubric&&(status==429||status==502||status==503||status==504)&&attempt<RUBRIC_BACKOFF.size()){
+                usage.touchJob();
                 Duration delay=RUBRIC_BACKOFF.get(attempt);
                 limiter.backoff(retryAfter(response).filter(wait->wait.compareTo(delay)>0).orElse(delay));
                 continue;
