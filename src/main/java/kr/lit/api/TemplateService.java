@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.*;
 import kr.lit.auth.AccountAccess;
@@ -101,7 +102,7 @@ public class TemplateService {
             throw fail(HttpStatus.CONFLICT,"CLASS_SNAPSHOT_LOCKED","참가 기록이 있는 회차는 공통 설정을 교체할 수 없습니다.");
         db.update("UPDATE evaluations SET title=?,evaluation_content=?,duration_minutes=?,criteria_json=?,criteria_kind=?,anti_cheat_json=?,template_revision=? WHERE id=?",
                 v.title(),v.guidelines(),v.durationMinutes(),encode(v.criteria()),CommonSettingsRules.kind(v.criteria()),encode(v.antiCheat()),revision,classId);
-        db.update("MERGE INTO evaluation_settings(evaluation_id,ai_policy) KEY(evaluation_id) VALUES (?,?)",classId,v.aiPolicy().name());
+        DatabaseUpsert.save(db,"evaluation_settings","evaluation_id,ai_policy","evaluation_id","?,?",classId,v.aiPolicy().name());
         db.update("DELETE FROM questions WHERE evaluation_id=?",classId);
         for(var q:v.questions())db.update("INSERT INTO questions(id,evaluation_id,position,title,content,min_chars,max_chars) VALUES (?,?,?,?,?,?,?)",
                 UUID.randomUUID().toString(),classId,q.position(),q.title().strip(),q.content(),q.minChars()==null?0:q.minChars(),q.maxChars());

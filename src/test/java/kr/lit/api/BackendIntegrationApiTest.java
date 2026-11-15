@@ -26,13 +26,13 @@ class BackendIntegrationApiTest extends AuthTestSupport {
     @Test void absentAiEvidenceDoesNotAwardFullMarksOrInventContribution() {
         var f=fixture();submit(f);var scores=assessment.scores(f.id(),f.pid());var analysis=assessment.analysis(f.id(),f.pid());
         assertThat(scores.criteria()).allMatch(c->c.ai()==null);assertThat(scores.totalAi()).isNull();assertThat(scores.recommendedMaxScore()).isZero();
-        assertThat(scores.missingAiCriteria()).hasSize(5);assertThat(analysis.indicators()).allMatch(i->i.level()==null&&i.value()==null);
+        assertThat(scores.missingAiCriteria()).hasSize(4);assertThat(analysis.indicators()).allMatch(i->i.level()==null&&i.value()==null);
         assertThat(analysis.contribution().basis()).isEqualTo("TEXT_SIMILARITY_ESTIMATE_V2");assertThat(grading.activity(f.id(),f.pid()).studentContribution()).isNull();
         assertThatThrownBy(()->assessment.confirm(f.id(),f.pid(),true)).isInstanceOfSatisfying(ApiError.Failure.class,e->assertThat(e.code).isEqualTo("GRADING_INCOMPLETE"));
         assertThat(assessment.scores(f.id(),f.pid()).status()).isEqualTo("NOT_STARTED");
     }
     @Test void defaultRubricIsEditableDraftAndCannotBeResetAfterClearingScores() {
-        var f=fixture();var rubric=assessment.rubric(f.id());assertThat(rubric.criteria().stream().map(Criterion::maxScore)).containsExactly(15,25,20,25,15);
+        var f=fixture();var rubric=assessment.rubric(f.id());assertThat(rubric.criteria().stream().map(Criterion::maxScore)).containsExactly(20,30,20,30);
         assertThat(rubric.criteria()).allMatch(c->c.basis().contains("초안"));submit(f);
         assessment.saveScore(f.id(),f.pid(),1,new ScoreInput(2,"교사 검토"));assessment.saveScore(f.id(),f.pid(),1,new ScoreInput(null,null));
         assertThat(assessment.rubric(f.id()).locked()).isTrue();
@@ -42,8 +42,8 @@ class BackendIntegrationApiTest extends AuthTestSupport {
         var f=fixture();
         var one=work.reserve(f.id(),f.token(),f.q(),new Ask("concept","광합성 개념을 설명해줘"),"stub","local-stub");work.finish(one,"빛을 사용해 양분을 만드는 과정입니다.",null);
         var two=work.reserve(f.id(),f.token(),f.q(),new Ask("verify","방금 설명의 출처와 근거가 맞는지 확인해줘"),"stub","local-stub");work.finish(two,"출처를 함께 대조하세요.",null);
-        work.saveDisclosure(f.id(),f.token(),new Disclosure("내장 AI","개념 확인","근거를 검증하기 위해"));submit(f);
-        var scores=assessment.scores(f.id(),f.pid());assertThat(scores.recommendedMaxScore()).isEqualTo(75);
+        submit(f);
+        var scores=assessment.scores(f.id(),f.pid());assertThat(scores.recommendedMaxScore()).isEqualTo(70);
         assertThat(scores.criteria().get(3).ai()).isNull();assertThat(scores.status()).isEqualTo("NOT_STARTED");
         assertThatThrownBy(()->assessment.confirm(f.id(),f.pid(),true)).isInstanceOf(ApiError.Failure.class);
         assessment.saveScore(f.id(),f.pid(),4,new ScoreInput(3,"답안의 고유 해석을 교사가 확인함"));

@@ -1,4 +1,9 @@
 spring:
+  # 판정 작업(답안 기여도·질문 용도·루브릭)이 키별 한도 때문에 기다려도 평가 종료 등 다른 예약 작업이 밀리지 않게 스레드를 넉넉히 둡니다.
+  task:
+    scheduling:
+      pool:
+        size: 8
   web:
     resources:
       add-mappings: false
@@ -50,7 +55,11 @@ lit:
     # 답안 출처 판정 V2: 문장 3-gram 포함률 기준, 정규화 후 그대로 이어지는 최소 일치 글자 수
     ai-referenced-threshold: ${LIT_GRADING_AI_REFERENCED_THRESHOLD:0.4}
     min-span-length: ${LIT_GRADING_MIN_SPAN_LENGTH:20}
-    # 채점용 LLM 판정(답안 출처 2단계·질문 용도 분류). Claude Haiku 먼저, 애매한 것만 Gemini. 학생 대화용 lit.ai.*와 별도이며 기본은 꺼짐.
+    # 평가가 끝나기 전(교사 종료·시간 만료 전)에는 채점 결과(분석·AI 사용 방법·루브릭 점수)를 내려 주지 않습니다.
+    results-after-end: ${LIT_GRADING_RESULTS_AFTER_END:true}
+    # 채점용 LLM 판정. 학생 대화용 lit.ai.*와 별도이며 기본은 꺼짐. docs/AI_JUDGE.md 참고.
+    #  ① 답안 기여도: Haiku 먼저 → 단계 2만 Gemini(analysis 키)  ② 질문 용도: Gemini(analysis) 3번 → 엇갈리면 Haiku
+    #  ③ 루브릭: Gemini(rubric 키) 3번 → 엇갈리면 Haiku. Gemini 키는 용도마다 다른 Google 프로젝트에서 받습니다.
     judge:
       enabled: ${LIT_GRADING_JUDGE_ENABLED:false}
       timeout-seconds: ${LIT_GRADING_JUDGE_TIMEOUT_SECONDS:60}
@@ -61,9 +70,28 @@ lit:
         model: ${LIT_GRADING_JUDGE_ANTHROPIC_MODEL:claude-haiku-5-5}
         endpoint: ${LIT_GRADING_JUDGE_ANTHROPIC_ENDPOINT:https://api.anthropic.com/v1/messages}
       gemini:
-        api-key: ${LIT_GRADING_JUDGE_GEMINI_API_KEY:${GEMINI_API_KEY:}}
-        model: ${LIT_GRADING_JUDGE_GEMINI_MODEL:${GEMINI_MODEL:}}
+        analysis-key: ${LIT_GRADING_JUDGE_GEMINI_ANALYSIS_KEY:${LIT_GRADING_JUDGE_GEMINI_API_KEY:}}
+        rubric-key: ${LIT_GRADING_JUDGE_GEMINI_RUBRIC_KEY:}
+        model: ${LIT_GRADING_JUDGE_GEMINI_MODEL:gemini-3.1-flash-lite}
+        rubric-model: ${LIT_GRADING_JUDGE_GEMINI_RUBRIC_MODEL:}
         endpoint: ${LIT_GRADING_JUDGE_GEMINI_ENDPOINT:https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent}
+      # 키별 분당(rpm)·하루(rpd) 호출 한도. 0이면 제한 없음. 실제 프로젝트 한도에 맞춰 바꿉니다.
+      limits:
+        analysis:
+          rpm: ${LIT_GRADING_JUDGE_ANALYSIS_RPM:15}
+          rpd: ${LIT_GRADING_JUDGE_ANALYSIS_RPD:1000}
+        rubric:
+          rpm: ${LIT_GRADING_JUDGE_RUBRIC_RPM:15}
+          rpd: ${LIT_GRADING_JUDGE_RUBRIC_RPD:1000}
+        anthropic:
+          rpm: ${LIT_GRADING_JUDGE_ANTHROPIC_RPM:50}
+          rpd: ${LIT_GRADING_JUDGE_ANTHROPIC_RPD:0}
+        max-wait-seconds: 300
+      rubric:
+        runs: ${LIT_GRADING_JUDGE_RUBRIC_RUNS:3}
+        stop-when-two-agree: ${LIT_GRADING_JUDGE_RUBRIC_STOP_WHEN_TWO_AGREE:false}
+        insufficient-question-count: ${LIT_GRADING_JUDGE_RUBRIC_INSUFFICIENT_QUESTIONS:2}
+        max-ai-answer-chars: 1500
     drafting-penalty: ${LIT_GRADING_DRAFTING_PENALTY:1.0}
     specific-question-min-length: ${LIT_GRADING_SPECIFIC_QUESTION_MIN_LENGTH:20}
     usage-high-share: 0.5

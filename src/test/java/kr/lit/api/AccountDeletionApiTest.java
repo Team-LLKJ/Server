@@ -21,9 +21,9 @@ class AccountDeletionApiTest extends AuthTestSupport {
             List.of(new AssessmentModels.CriterionInput("근거",100,"설명",null,AssessmentModels.Indicator.MANUAL)),
             json.valueToTree(Map.of()),List.of(new WorkModels.QuestionInput(1,"질문","설명",null,null)),60);
         var template=templates.create(input);String classId=templates.addClass(template.id(),"1반").classId();
-        templates.openLobby(template.id(),classId,60);
-        var started=templates.start(template.id(),classId,60);
-        var participant=evaluations.join(started.pin(),"학생",null);String question=work.configuration(classId).questions().get(0).id();
+        var lobby=templates.openLobby(template.id(),classId,60);
+        var participant=evaluations.join(lobby.pin(),"학생",null);
+        templates.start(template.id(),classId,60);String question=work.configuration(classId).questions().get(0).id();
         work.save(classId,participant.participantToken(),question,new WorkModels.SaveAnswer("학생 답안",0,WorkModels.AnswerSource.DIRECT,null));
         var review=work.review(classId,participant.participantToken());work.submit(classId,participant.participantToken(),review.reviewToken());
         grading.saveScore(classId,participant.participantId(),1,new AssessmentModels.ScoreInput(3,"근거"));grading.confirm(classId,participant.participantId(),false);

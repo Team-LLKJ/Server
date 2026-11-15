@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.databind.*;
 import kr.lit.auth.*;
 import org.springframework.http.HttpStatus;
@@ -46,7 +47,7 @@ public class ReportService {
  public Students students(String id,int page,int size){return students(id,page,size,"");}
  public Students students(String id,int page,int size,String query){
   teacher(id);if(page<0||size<1||size>100||query==null||query.length()>100)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는0 이상, size는1~100, query는100자 이하입니다.");
-  String filter=" FROM participants p WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0";
+  String filter=" FROM participants p WHERE p.evaluation_id=? AND POSITION(LOWER(?) IN LOWER(p.nickname))>0";
   String q=query.strip();
   long count=db.queryForObject("SELECT COUNT(*)"+filter,Long.class,id,q);
   String warning="EXISTS (SELECT 1 FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ("+WorkModels.ClientEventType.warningSql()+"))";
@@ -64,7 +65,7 @@ public class ReportService {
    var snapshot=(com.fasterxml.jackson.databind.node.ObjectNode)decode(stored.get(0));boolean frozen=snapshot.hasNonNull("aiDisclosure");
    if(!frozen)snapshot.set("aiDisclosure",readDisclosure(pid));
    if(!"SYSTEM_GENERATED".equals(snapshot.path("aiDisclosure").path("source").asText()))snapshot.set("studentAiDisclosure",snapshot.path("aiDisclosure"));
-   snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.generateDisclosure(id,pid,snapshot)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
+   snapshot.set("aiDisclosure",json.valueToTree(automaticDisclosure.getDisclosure(id,pid)));snapshot.put("aiDisclosureFrozen",true);return snapshot;
   }
   var root=json.createObjectNode();root.put("evaluationId",id);root.put("participantId",pid);
   var policy=db.queryForList("SELECT ai_policy FROM evaluation_settings WHERE evaluation_id=?",String.class,id);
@@ -98,10 +99,6 @@ public class ReportService {
  public UsageReport teacherHwpReport(String id,String pid,Integer version){
   if(version!=null)return teacherReport(id,pid,version);
   try{return teacherReport(id,pid,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND")||db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,pid)==0)throw failure;return teacherGenerate(id,pid);}
- }
- public UsageReport studentHwpReport(String id,String token,Integer version){
-  if(version!=null)return studentReport(id,token,version);
-  try{return studentReport(id,token,null);}catch(ApiError.Failure failure){if(!failure.code.equals("REPORT_NOT_FOUND"))throw failure;var guest=participants.authenticateReport(id,token);if(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE evaluation_id=? AND participant_id=?",Integer.class,id,guest.participantId())==0)throw failure;return studentGenerate(id,token);}
  }
  private TeacherReview review(String pid){var values=db.queryForList("SELECT review_json FROM teacher_reviews WHERE participant_id=?",String.class,pid);return values.isEmpty()?null:parse(values.get(0),TeacherReview.class);}
  private Analysis classify(JsonNode source){
@@ -156,7 +153,7 @@ public class ReportService {
    boolean equal=before==null?rating.score()==null:rating.score()!=null&&before*next.maxScore()==rating.score()*priorMax;
    if(!equal) db.update("INSERT INTO teacher_review_changes(evaluation_id,participant_id,criterion_id,previous_score,score,teacher_id,changed_at,review_version,previous_max_score,max_score) VALUES (?,?,?,?,?,?,?,?,?,?)",id,pid,rating.criterion().name(),before,rating.score(),next.teacherId(),OffsetDateTime.ofInstant(next.reviewedAt(),ZoneOffset.UTC),next.version(),priorMax,next.maxScore());
   }
-  db.update("MERGE INTO teacher_reviews(participant_id,evaluation_id,review_json,updated_at) KEY(participant_id) VALUES (?,?,?,CURRENT_TIMESTAMP)",pid,id,encode(next));
+  DatabaseUpsert.save(db,"teacher_reviews","participant_id,evaluation_id,review_json,updated_at","participant_id","?,?,?,CURRENT_TIMESTAMP",pid,id,encode(next));
  }
  public List<ReviewChange> reviewHistory(String id,String pid,long afterId,int limit){
   teacher(id);person(id,pid);if(afterId<0||limit<1||limit>200)throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","이력 조회 범위를 확인해주세요.");
@@ -188,8 +185,6 @@ public class ReportService {
  public UsageReport teacherGenerate(String id,String pid){teacher(id);return generate(id,pid);}
  public UsageReport teacherReport(String id,String pid,Integer version){teacher(id);return getReport(id,pid,version,null);}
  public List<ReportVersion> versions(String id,String pid){teacher(id);person(id,pid);return db.query("SELECT id,version,created_at FROM usage_reports WHERE participant_id=? ORDER BY version DESC",(r,n)->new ReportVersion(r.getString("id"),r.getInt("version"),instant(r,"created_at")),pid);}
- public UsageReport studentGenerate(String id,String token){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return generate(id,pid);}
- public UsageReport studentReport(String id,String token,Integer version){String pid=participants.authenticateReport(id,token).participantId();evaluations.details(id);return getReport(id,pid,version,null);}
  // Called by the scheduled job through the Spring proxy, one transaction per participant.
  public void generateForJob(String id,String pid){generate(id,pid);}
 }

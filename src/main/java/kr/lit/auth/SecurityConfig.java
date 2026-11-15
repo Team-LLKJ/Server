@@ -87,14 +87,17 @@ public class SecurityConfig {
                     String[] segments=path.split("/");
                     int idIndex=studentPath?4:3;
                     if(segments.length<=idIndex) {error(res,json,404,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");return;}
-                    boolean reportPath=(req.getMethod().equals("GET")||req.getMethod().equals("POST"))&&path.matches("/api/evaluations/[^/]+/(?:reports|report(?:\\.(?:pdf|hwp)|/(?:pdf|hwp))?)");
-                    var guest=reportPath?participants.authenticateReport(segments[idIndex],req.getHeader("X-Participant-Token")):participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
+                    // 보고서·AI 활용 기록은 교사만 봅니다(2026-11-14). 참가자 토큰으로는 막고 교사 API(/api/teacher/...)를 씁니다.
+                    if(path.matches("/api/(?:student/)?evaluations/[^/]+/(?:reports?(?:/.*)?|report\\.(?:pdf|hwp)|ai-disclosure)")) {error(res,json,403,"TEACHER_ONLY","보고서와 AI 활용 기록은 선생님만 볼 수 있습니다.");return;}
+                    boolean lobbyPath=path.matches("/api/(?:student/)?evaluations/[^/]+/(?:state|heartbeat|leave)")
+                            ||req.getMethod().equals("POST")&&path.matches("/api/(?:student/)?evaluations/[^/]+/submission"); // 제출 재시도
+                    var guest=lobbyPath?participants.authenticateLobby(segments[idIndex],req.getHeader("X-Participant-Token")):participants.authenticate(segments[idIndex],req.getHeader("X-Participant-Token"));
                     SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(guest,null,List.of(new SimpleGrantedAuthority("ROLE_PARTICIPANT"))));
                 } catch(ApiError.Failure failure) {error(res,json,failure.status.value(),failure.code,failure.getMessage());return;}
                 chain.doFilter(req,res);return;
             }
             // Participation endpoints are public and do not consume account credentials.
-            if(path.startsWith("/api/participation/")) {chain.doFilter(req,res);return;}
+            if(path.startsWith("/api/participation/")||(path.equals("/api/auth/refresh")&&req.getMethod().equals("POST"))) {chain.doFilter(req,res);return;}
             String header=req.getHeader("Authorization");
             if(header!=null) {
                 if(!header.matches("Bearer [A-Za-z0-9_-]{43}")) {error(res,json,401,"INVALID_ACCESS_TOKEN","유효하지 않은 로그인 토큰입니다.");return;}

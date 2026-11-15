@@ -41,14 +41,14 @@ class BackendIntegrationCompletionApiTest extends AuthTestSupport {
     @Test void eventAliasesDisclosureAndConversationIdsSurviveSubmissionAndExport()throws Exception {
         var f=fixture(true);work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.FULLSCREEN,java.time.Instant.now(),null));work.recordClientEvent(f.id(),f.token(),new ClientEvent(ClientEventType.DEVTOOLS,java.time.Instant.now(),null));
         var turn=work.reserve(f.id(),f.token(),f.qid(),new Ask("integration-turn","개념을 설명해줘"),"stub","test");work.finish(turn,"개념 설명",null);
-        mvc.perform(put("/api/student/evaluations/"+f.id()+"/ai-disclosure").header("X-Participant-Token",f.token()).contentType("application/json").content("{\"tools\":\"LIT\",\"usedParts\":\"최종 답안\",\"reason\":\"저장설명동결표식\"}")).andExpect(status().isOk());submit(f);
+        mvc.perform(put("/api/student/evaluations/"+f.id()+"/ai-disclosure").header("X-Participant-Token",f.token()).contentType("application/json").content("{\"tools\":\"LIT\",\"usedParts\":\"최종 답안\",\"reason\":\"저장설명동결표식\"}")).andExpect(status().isForbidden());submit(f);
         as(teacher);String root="/api/teacher/evaluations/"+f.id()+"/students/"+f.pid();var messages=ok(request(get(root+"/conversations"),teacher));assertThat(messages.get(0).path("conversationId").asLong()).isEqualTo(turn.turn().id());assertThat(messages.get(0).path("id").asText()).isEqualTo(turn.turn().id()+"-USER");
         var activity=ok(request(get(root+"/activity"),teacher));assertThat(activity.path("warningsTotal").asInt()).isEqualTo(2);assertThat(activity.path("studentContribution").isNull()).isTrue();
         db.update("UPDATE ai_disclosures SET reason='제출 후 강제 변경' WHERE participant_id=?",f.pid());mvc.perform(request(get(root+"/ai-disclosure"),teacher)).andExpect(jsonPath("source").value("SYSTEM_GENERATED")).andExpect(jsonPath("status").value("READY")).andExpect(jsonPath("frozen").value(true));
         // HWP first GET generates the missing report; repeated GET reuses it.
         mvc.perform(request(get(root+"/report/hwp"),teacher)).andExpect(status().isOk());mvc.perform(request(get(root+"/report/hwp"),teacher)).andExpect(status().isOk());as(teacher);assertThat(reports.versions(f.id(),f.pid())).hasSize(1);
-        var report=reports.teacherReport(f.id(),f.pid(),null);try(var doc=org.apache.pdfbox.Loader.loadPDF(pdf.render(report,false))){assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains("시스템 관측").doesNotContain("제출 후 강제 변경","저장설명동결표식");}
-        assertThat(me(f).path("readOnly").asBoolean()).isTrue();mvc.perform(accept(f,me(f).at("/policy/policyVersion").asText())).andExpect(status().isConflict());
+        var report=reports.teacherReport(f.id(),f.pid(),null);try(var doc=org.apache.pdfbox.Loader.loadPDF(pdf.render(report,false))){assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(doc)).contains("AI 활용 기록").doesNotContain("제출 후 강제 변경","저장설명동결표식");}
+        mvc.perform(get("/api/evaluations/"+f.id()+"/me").header("X-Participant-Token",f.token())).andExpect(status().isUnauthorized()); // 제출한 학생
     }
     Map<String,byte[]> download(String path)throws Exception {
         var response=mvc.perform(request(get(path),teacher)).andExpect(status().isOk()).andExpect(content().contentType("application/zip")).andReturn().getResponse().getContentAsByteArray();

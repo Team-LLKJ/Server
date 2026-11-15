@@ -52,12 +52,22 @@ class AuthApiTest extends AuthTestSupport {
         var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null));
         assertThat(Instant.parse(refreshed.path("accessExpiresAt").asText())).isEqualTo(familyExpiry.toInstant());
     }
-    @Test void refreshRotationAndReuseRevokeSessionFamily() throws Exception {
-        var refreshed=ok(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null));String access=refreshed.get("accessToken").asText();
-        mvc.perform(request(get("/api/auth/me"),teacher)).andExpect(status().isUnauthorized());
-        mvc.perform(request(get("/api/auth/me"),null).header("Authorization","Bearer "+access)).andExpect(status().isOk());
-        mvc.perform(request(body(post("/api/auth/refresh"),new Refresh(teacher.refreshToken())),null)).andExpect(status().isUnauthorized()).andExpect(jsonPath("code").value("REFRESH_TOKEN_REUSED"));
-        mvc.perform(request(get("/api/auth/me"),null).header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
+    @Test void refreshRotationCanBeRepeatedBrieflyWithoutRevokingNewSession() throws Exception {
+        var refresh=new Refresh(teacher.refreshToken());
+        var refreshed=ok(request(body(post("/api/auth/refresh"),refresh),null));
+        String access=refreshed.path("accessToken").asText();
+        mvc.perform(request(get("/api/auth/me"),teacher)).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("code").value("INVALID_ACCESS_TOKEN"));
+        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("code").value("AUTH_REQUIRED"));
+        var repeated=ok(body(request(post("/api/auth/refresh"),teacher),refresh));
+        assertThat(repeated).isEqualTo(refreshed);
+        db.update("UPDATE auth_sessions SET rotated_at=? WHERE refresh_hash=?",
+                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(11),kr.lit.auth.AuthService.hash(teacher.refreshToken()));
+        mvc.perform(body(post("/api/auth/refresh"),refresh)).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("code").value("REFRESH_TOKEN_REUSED"));
+        mvc.perform(get("/api/auth/me").header("Authorization","Bearer "+access)).andExpect(status().isOk());
+        mvc.perform(body(post("/api/auth/refresh"),new Refresh(refreshed.path("refreshToken").asText()))).andExpect(status().isOk());
     }
     @Test void logoutExpiryAndOtherTeacherOwnership() throws Exception {
         var e=ok(request(body(post("/api/teacher/evaluations"),Map.of("title","수업","expiresInMinutes",60)),teacher));var other=newTeacher();

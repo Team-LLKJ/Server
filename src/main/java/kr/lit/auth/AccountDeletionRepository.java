@@ -14,7 +14,7 @@ public class AccountDeletionRepository {
     public boolean existsRunningEvaluation(String evaluationId) {return db.queryForObject("SELECT COUNT(*) FROM evaluations WHERE id=? AND state='STARTED' AND COALESCE(ends_at,expires_at)>CURRENT_TIMESTAMP",Integer.class,evaluationId)>0;}
     public void deleteEvaluation(String evaluationId) {
         // 모든 참가자 종속 레코드를 지운 뒤 부모를 지웁니다. 테이블명은 고정 목록입니다.
-        for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures","usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
+        for(String table:List.of("notifications","sentence_labels","purpose_labels","purpose_classifications","rubric_labels","rubric_judgments","rubric_runs","judge_usage","grading_score_changes","grading_scores","grading_results","grading_analyses","evaluation_rubrics","ai_disclosures","usage_reports","teacher_review_changes","teacher_reviews","submissions","learning_events","ai_turns"))
             db.update("DELETE FROM "+table+" WHERE evaluation_id=?",evaluationId);
         db.update("DELETE FROM answers WHERE participant_id IN (SELECT id FROM participants WHERE evaluation_id=?) OR question_id IN (SELECT id FROM questions WHERE evaluation_id=?)",evaluationId,evaluationId);
         db.update("DELETE FROM questions WHERE evaluation_id=?",evaluationId);
@@ -36,7 +36,7 @@ public class AccountDeletionRepository {
         db.update("DELETE FROM password_reset_tokens WHERE user_id=?",userId);
         db.update("DELETE FROM signup_email_verifications WHERE email=?",email);
         // 이메일 변경 기능은 별도 브랜치여서 해당 테이블이 추가된 경우에만 정리합니다.
-        if(db.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='PUBLIC' AND TABLE_NAME='EMAIL_CHANGE_VERIFICATIONS'",Integer.class)>0)
+        if(db.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_SCHEMA)='public' AND LOWER(TABLE_NAME)='email_change_verifications'",Integer.class)>0)
             db.update("DELETE FROM email_change_verifications WHERE user_id=?",userId);
         db.update("UPDATE participants SET user_id=NULL WHERE user_id=?",userId);
         db.update("UPDATE teacher_invites SET created_by=NULL WHERE created_by=?",userId);

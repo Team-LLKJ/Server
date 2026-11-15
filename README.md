@@ -36,6 +36,8 @@ DB·빌드 결과·환경변수 파일은 Git에 포함하지 않습니다.
 | DATABASE_USER | `sa` |
 | DATABASE_PASSWORD | 빈 값 |
 
+PostgreSQL 운영 설정과 기존 H2 데이터 이전은 [PostgreSQL 전환 가이드](docs/POSTGRESQL.md)를 참고하세요.
+
 현재 스키마의 `MERGE`, `DATEADD`, `IF NOT EXISTS` 등은 H2 기준입니다.
 MySQL/PostgreSQL 이전에는 드라이버, DB별 SQL과 버전형 마이그레이션을 맞춰야 합니다.
 기존 DB에는 테이블·nullable 소유자 컬럼을 추가하고 기존 기록을 삭제하지 않습니다.
@@ -52,7 +54,7 @@ Authorization: Bearer {accessToken}
 
 학생은 가입·로그인 없이 PIN과 닉네임으로 참여합니다. 참여 응답의 participantToken을 학생 API의 `X-Participant-Token` 헤더에 사용하세요.
 교사 공통 키는 사용하지 않습니다.
-Access Token은 2시간, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다.
+Access Token은 2시간, Refresh Token은 최초 로그인 기준 최대 14일이며 회전·재사용 감지·로그아웃을 지원합니다. 같은 갱신 요청을 10초 이내에 다시 보내면 유효한 직후 토큰 쌍을 반환합니다.
 토큰은 opaque 난수 방식이며 DB에는 해시만 저장합니다. 역할은 DB에서 확인합니다.
 
 [Auth 상세 명세](docs/AUTH.md)에 가입 Body, 토큰 응답, 이메일 인증·오류 정책을 정리했습니다.
@@ -108,7 +110,7 @@ PIN 확인·참여는 공개입니다. 학생 풀이 API는 로그인 대신 평
 | GET | `/api/evaluations/{id}/conversations` | 본인 대화 |
 | GET | `/api/evaluations/{id}/learning-events` | 본인 학습 기록 |
 | POST | `/api/evaluations/{id}/learning-events` | 창 이탈·캡처·복사 시도·붙여넣기·AI 답변 복사 기록 |
-| GET·PUT | `/api/evaluations/{id}/ai-disclosure` | 사용한 AI 도구·활용 부분·선택 이유 |
+| GET·PUT | `/api/evaluations/{id}/ai-disclosure` | (2026-11-14 없앰, 403 `TEACHER_ONLY`) 교사 `GET /api/teacher/evaluations/{id}/students/{pid}/ai-disclosure` 사용 |
 | GET | `/api/evaluations/{id}/submission-preview` | 제출 내용 확인 |
 | POST | `/api/evaluations/{id}/submission` | 최종 제출 확정 |
 | GET | `/api/evaluations/{id}/submission` | 확정된 기록 조회 |
@@ -281,7 +283,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 평가 내용 저장·학생 공유 요청 예시는 [평가 내용 API](docs/EVALUATION_CONTENT.md)를 참고하세요.
 
-교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요.
+교사 채점 화면의 검색·답안·대화·활동·20점 개별 리뷰·이력 연동은 [채점 화면 API](docs/TEACHER_GRADING.md)를 참고하세요. 활동 카드의 `usage`는 전체 질문 수를 기준으로 계산하며 기타·판단 보류를 `colorKey: "neutral"`로 제공합니다.
 
 ## 수행평가 틀과 반별 회차
 
@@ -299,7 +301,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 ### AI 활용 과정 평가 V1
 
-행동 근거 기반 Gemini 수준 추천·서버 인용 검증·100점 환산·교사 검토/확정은 `/api/teacher/evaluations/{id}/process-grading` API로 제공합니다. 평가 시작 전에 `/policy`로 목표·허용 규칙·문항 배점 비율·AI 미관측 정책을 설정해야 합니다. 제출 시 입력을 고정해 자동 예약하며, 정책 누락·근거 부족은0점 대신 판단 보류합니다. 투명성은 평가 전체에서 한 번 반영하며 재분석·교사 보정은 이력을 보존합니다. 기존 키워드 채점 API와 리포트는 호환 유지되고 Web 연결은 별도입니다. [정책·분석·근거·검토·확정 명세](docs/PROCESS_GRADING.md)를 참고하세요.
+행동 근거 기반 Gemini 수준 추천·서버 인용 검증·100점 환산·교사 검토/확정은 `/api/teacher/evaluations/{id}/process-grading` API로 제공합니다. 평가 시작 전에 `/policy`로 목표·허용 규칙·문항 배점 비율·AI 미관측 정책을 설정해야 합니다. 제출 시 입력을 고정하고 저장 직후 백그라운드에서 분석을 시작하며, 정책 누락·근거 부족은0점 대신 판단 보류합니다. 투명성 기준은 2026-11-14에 삭제했고(목적 20·자기 주도 30·비판적 검토 20·학생 기여 30) 재분석·교사 보정은 이력을 보존합니다. 기존 키워드 채점 API와 리포트는 호환 유지되고 Web 연결은 별도입니다. [정책·분석·근거·검토·확정 명세](docs/PROCESS_GRADING.md)를 참고하세요.
 
 ## 이메일 변경
 
@@ -327,7 +329,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 ### HWP 리포트 다운로드
 
-저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 학생용 `GET /api/evaluations/{id}/report/hwp`로 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 기존 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
+저장된 AI 활용 리포트(학생 답안·분석·교사 검토)는 교사용 `GET /api/teacher/evaluations/{id}/students/{participantId}/report/hwp`, 실제 `.hwp` 파일로 내보냅니다. `version`은 생략 시 최신 저장본, `includeConversations`는 기본 false입니다. 리포트 미생성 시 교사용 POST reports로 먼저 생성하세요. 한글 프로그램 설치 없이 동작하며, HTML 표는 텍스트·이미지는 표시문으로 변환합니다. [요청·응답과 서식 범위](docs/HWP_EXPORT.md)를 참고하세요.
 
 ### 학생 재접속
 
@@ -340,7 +342,7 @@ GitHub Actions 테스트·Docker 실행 점검·GHCR 이미지 게시·EC2 배�
 
 ### 반별 대기실과 실제 시작
 
-‘평가 시작하러 가기’는 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`(`{ "expiresInMinutes":60 }`)를 호출해 PIN·QR을 표시합니다. 학생 참가 중에는 WAITING을 유지하고, 대기실의 ‘평가 시작하기’에서 기존 `/start`(`{ "expiresInMinutes":45 }`)를 호출해야 풀이와 타이머가 시작됩니다. 학생은 기존 state 조회로 STARTED 전환을 확인합니다. 대기실 없이 start는409이며 프런트 두 버튼의 호출 분리가 필요합니다. [상세 흐름](docs/ASSESSMENT_CLASSES.md)을 참고하세요.
+‘평가 시작하러 가기’는 `POST /api/teacher/assessments/{id}/classes/{classId}/lobby`(`{ "expiresInMinutes":60 }`)를 호출해 PIN·QR을 표시합니다. 학생 참가 중에는 WAITING을 유지하고, 대기실의 ‘평가 시작하기’에서 기존 `/start`(`{ "expiresInMinutes":45 }`)를 호출해야 풀이와 타이머가 시작됩니다. 학생은 기존 state 조회로 STARTED 전환을 확인합니다. 대기실 없이 시작하면 409 `CLASS_LOBBY_REQUIRED`, 대기실에 연결된 참가자가 없으면 409 `NO_PARTICIPANTS`를 반환합니다. [상세 흐름](docs/ASSESSMENT_CLASSES.md)을 참고하세요.
 
 ### HWP 보고서 서식
 
@@ -379,7 +381,7 @@ PDF와 HWP에 첨부 원본 LIT PNG 로고와 #007BFF를 적용합니다. 종합
 
 가입 시 약관/개인정보 버전·동의를 필수 저장하고 공개 정책 버전을 제공합니다. 분석 reasons/evidence.quote·유사도 구간·버전별 PASTE 관측, 종합 평가, 학생 상태/lastWarningAt, SSE 및 비동기 ZIP 작업을 지원합니다. .mjs MIME 보정은 서버 배포 단계에 포함합니다. [요청·오류·프런트 연결 계약](docs/SIGNUP_CONSENT_ANALYSIS_EVIDENCE.md).
 
-AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOMATIC_AI_DISCLOSURE.md).
+AI 사용 기록은 저장된 질문 용도와 답안 문장 분석에서 줄 단위로 생성합니다. [API 계약](docs/AUTOMATIC_AI_DISCLOSURE.md).
 
 운영 도메인 연결: `scripts/configure-domain-https.py`는 승인된 `llkj.itslit.r-e.kr`을 기존 IP 인증서에 추가하고 Nginx·참가/비밀번호 재설정 URL을 설정합니다. 기존 Certbot 갱신 타이머를 재사용하며, 설정을 `/opt/lit/backups/domain-https-*`에 백업하고 적용 검증 실패 시 되돌립니다. 앱 이미지는 기존 배포본을 사용합니다.
 
@@ -393,3 +395,7 @@ AI 사용 기록 자동 생성 및 읽기 전용 전환: [API 계약](docs/AUTOM
 
 Authorize에서 `TeacherAccessToken`에는 로그인 응답의 `accessToken`만, `ParticipantToken`에는 PIN 참가 응답의 `participantToken`을 넣습니다. 교사 요청에는 Bearer, 학생 요청에는 X-Participant-Token이 붙으며 공개 가입·로그인·PIN 참여에는 인증을 요구하지 않습니다. 인증값은 브라우저 영구 저장을 끈 상태입니다. [상세 사용법](docs/SWAGGER.md)을 참고하세요. 운영 주소는 이 변경을 배포한 후 사용할 수 있습니다.
 
+
+문항이 있는 평가에 저장된 과정 채점 정책이 없으면 서버가 평가 안내, AI 정책별 허용 규칙, 균등 문항 배점으로 기본 정책을 제공합니다. Gemini 과반과 유효한 Haiku 단계가 다르면 차이와 관계없이 Haiku 단계로 확정합니다. 과정 채점 화면의 구조화 요약은 새 PDF·HWP에도 사용합니다. 기본 사전 정책, 학생 단위 교사 검토, 질문·답안 근거 필드는 [과정 채점](docs/PROCESS_GRADING.md) 및 [AI 활용 분석](docs/AI_GRADING.md) 명세를 참고하세요.
+
+소유자 여부, 닉네임 검증, 문항 제목 기본값, AI 분석 구조화 필드는 [프런트 연동 계약](docs/FRONTEND_INTEGRATION_REFERENCE.md#백엔드-계약)을 참고하세요.

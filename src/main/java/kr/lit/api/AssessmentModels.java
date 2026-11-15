@@ -33,14 +33,37 @@ public final class AssessmentModels {
 
     // ---- 분석 ----
     public record Compliance(ComplianceResult result,List<String> reasons) {}
-    public record Reason(String type,String text,@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Double scoreDelta) {}
+    public record ReasonEvidence(Long conversationId,String quote) {}
+    public record Reason(String type,String text,@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Double scoreDelta,List<ReasonEvidence> evidence) {
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String kind(){return "CREDIT".equals(type)?"ADD":"DEDUCTION".equals(type)?"DEDUCT":null;}
+        public Reason { evidence=evidence==null?List.of():List.copyOf(evidence); }
+        public Reason(String type,String text,Double scoreDelta) { this(type,text,scoreDelta,List.of()); }
+    }
     public record Segment(String questionId,int start,int end,String type,double similarity,double effectiveSimilarity,boolean estimated,int answerVersion) {}
     public record AnswerText(String questionId,String text,int answerVersion) {}
     public record PasteObservation(long eventId,String questionId,String occurredAt,Integer length,Integer start,Integer end,Integer answerVersion,boolean matchesFinalAnswer,boolean clientReported) {}
+    /** sentences[]와 reviewCount는 같은 응답(Analysis)의 최상위에 있습니다. */
+    @io.swagger.v3.oas.annotations.media.Schema(description="답안 기여도 비율(direct + aiReferenced = 100, aiUsed = 0). 문장별 판정은 Analysis.sentences, 확인 필요 수는 Analysis.reviewCount")
     public record Contribution(int direct,int aiReferenced,int aiUsed,String basis,List<Segment> segments) {
         public Contribution(int direct,int aiReferenced,int aiUsed,String basis){this(direct,aiReferenced,aiUsed,basis,List.of());}
     }
-    public record Usage(QuestionType type,String label,int count,double share,String level) {}
+    public enum UsageType {
+        UNDERSTAND, PLAN, REVIEW, EDIT, DRAFT, OTHER;
+
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public static UsageType fromStoredValue(String value) {
+            return switch (value) {
+                case "CONCEPT_UNDERSTANDING", "RESEARCH" -> UNDERSTAND;
+                case "IDEA_EXPLORATION" -> PLAN;
+                case "VERIFICATION" -> REVIEW;
+                case "ANSWER_DRAFTING" -> DRAFT;
+                default -> valueOf(value);
+            };
+        }
+    }
+    public record Usage(UsageType type,String label,int count,double share,String level) {}
+    public record AiAnswerMatch(int start,int end,String text) {}
     public record ClassifiedQuestion(long conversationId,String requestId,String questionId,QuestionType type,String label,String method) {}
     public record Paragraph(String id,String questionId,int questionPosition,String text,String source,double similarity,
                             double changedRatio,Long conversationId,boolean estimated,String declaredSource) {}
@@ -48,16 +71,46 @@ public final class AssessmentModels {
      * 답안 출처 판정 V2의 문장별 결과. source는 DIRECT 또는 AI_REFERENCED, reason은 SPAN_MATCH(최장 일치 구간)·GRAM_OVERLAP(3-gram 포함률)·null(DIRECT).
      * start/end는 answerTexts[].text 기준 UTF-16 위치(end 미포함)입니다.
      */
-    public record Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
+    public record Sentence(String id,String questionId,String paragraphId,String text,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="문장 출처",allowableValues={"DIRECT","AI"}) String source,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="AI로 본 근거",allowableValues={"SPAN_MATCH","GRAM_MATCH","SEMANTIC","TEACHER"},nullable=true) String reason,int longestSpan,
                            double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
-                           boolean needsReview,SemanticVerdict semantic,String teacherLabel) {
+                           boolean needsReview,SemanticVerdict semantic,@io.swagger.v3.oas.annotations.media.Schema(description="교사 확정 출처(teacherSource와 같음)",allowableValues={"AI","DIRECT"},nullable=true) String teacherLabel,AiAnswerMatch aiAnswerMatch,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="긴 붙여넣기 구간과 겹치는 문장. LIT AI 답변과 안 겹쳐도 다른 AI에서 가져왔을 수 있어 교사 확인 대상(needsReview)입니다") boolean pasted,
+                           @io.swagger.v3.oas.annotations.media.Schema(description="AI 답변과 겹치지만 학생이 질문에서 먼저 쓴 표현이라 학생 문장(DIRECT)으로 본 경우, 겹친 AI 답변의 대화 id. 아니면 null",nullable=true) Long studentFirstConversationId) {
+        public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
+                        boolean needsReview,SemanticVerdict semantic,String teacherLabel,AiAnswerMatch aiAnswerMatch,boolean pasted){
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,needsReview,semantic,teacherLabel,aiAnswerMatch,pasted,null);
+        }
+        public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated,
+                        boolean needsReview,SemanticVerdict semantic,String teacherLabel,AiAnswerMatch aiAnswerMatch){
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,needsReview,semantic,teacherLabel,aiAnswerMatch,false,null);
+        }
+        /** LLM이 고른 가장 가까운 AI 문장(없으면 null). */
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String closestAiSentence(){return aiAnswerMatch!=null?aiAnswerMatch.text():semantic==null?null:semantic.closestCandidateText();}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"AI","DIRECT","UNCERTAIN"})
+        public String sourceStatus(){return needsReview&&teacherLabel==null?"UNCERTAIN":source;}
+        /** 교사가 확정한 출처(AI|DIRECT, 확정 전 null). */
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        @io.swagger.v3.oas.annotations.media.Schema(allowableValues={"AI","DIRECT"},nullable=true)
+        public String teacherSource(){return teacherLabel;}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public Integer haikuLevel(){return semantic==null?null:semantic.haikuLevel();}
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public Integer geminiLevel(){return semantic==null?null:semantic.geminiLevel();}
         public Sentence(String id,String questionId,String paragraphId,String text,String source,String reason,int longestSpan,
                         double similarity,Long conversationId,int start,int end,int answerVersion,boolean estimated){
-            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null,null);
+            this(id,questionId,paragraphId,text,source,reason,longestSpan,similarity,conversationId,start,end,answerVersion,estimated,false,null,null,null);
         }
     }
     /** 교사의 문장 판정 수정(3단계 보정 자료). AI 또는 DIRECT. */
-    public record SentenceLabelInput(@NotBlank @Pattern(regexp="AI|DIRECT") String label) {}
+    public record SentenceLabelInput(@Pattern(regexp="AI|DIRECT") String label,@Pattern(regexp="AI|DIRECT") String source) {
+        public SentenceLabelInput(String label){this(label,null);}
+        /** label(이전 이름)과 source(문서 이름) 중 들어온 값. */
+        public String value(){return source!=null?source:label;}
+    }
     /**
      * 2단계 LLM 판정 결과(문장 하나). haikuLevel·geminiLevel은 0~3 단계(3: 거의 그대로 따라감, 2: 핵심 주장 같음,
      * 1: 일반적 내용·자기 경험 중심, 0: 다름). geminiLevel은 Haiku 단계 2라서 Gemini에 보낸 문장만 있고, 보내지 않았거나 실패하면 null입니다.
@@ -78,9 +131,20 @@ public final class AssessmentModels {
     }
     public record Signals(int aiQuestions,int completedResponses,int pasteEvents,int aiCopyEvents,int warningEvents,
                           boolean disclosedTools,boolean disclosedUsedParts,boolean disclosedReason,boolean aiUsed) {}
+    public record RequiredRecord(String name,boolean done) {}
     public record Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,
                            Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,
                            List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations,List<AnswerText> answerTexts,List<PasteObservation> pasteEvents,java.util.Map<String,Object> definition,List<Sentence> sentences,String semanticStatus) {
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public List<RequiredRecord> requiredRecords(){
+            if(signals==null)return List.of();
+            return List.of(new RequiredRecord("사용 AI 도구",signals.disclosedTools()),
+                    new RequiredRecord("질문 기록",signals.aiQuestions()>0),
+                    new RequiredRecord("답안 활용 부분",signals.disclosedUsedParts()));
+        }
+        /** 교사 확인이 필요한 문장 수. */
+        @com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public int reviewCount(){return sentences==null?0:(int)sentences.stream().filter(Sentence::needsReview).count();}
         public Analysis(String participantId,String status,String model,String aiPolicy,int aiLevel,Compliance compliance,Contribution contribution,List<Usage> usage,List<ClassifiedQuestion> questions,List<Paragraph> paragraphs,List<IndicatorResult> indicators,Signals signals,String summary,Instant analyzedAt,List<String> limitations){this(participantId,status,model,aiPolicy,aiLevel,compliance,contribution,usage,questions,paragraphs,indicators,signals,summary,analyzedAt,limitations,List.of(),List.of(),java.util.Map.of(),List.of(),null);}
     }
     public record AnalysisRun(String evaluationId,int queued,String status) {}
@@ -90,8 +154,10 @@ public final class AssessmentModels {
     public record TeacherScore(int level,double score,String feedback,Instant updatedAt) {}
     public record CriterionScore(int criterionId,String name,int maxScore,Indicator indicator,AiScore ai,TeacherScore teacher,boolean adjusted) {}
     public record ComplianceReview(ComplianceResult ai,ComplianceDecision decision,String note) {}
+    /** gradingStatus: 제출 후 채점 진행 QUEUED | GRADING | DONE | FAILED(제출 전 null). LLM 루브릭 판정은 과정 채점(process-grading) 결과에 있습니다. */
     public record Scores(String participantId,List<CriterionScore> criteria,Double totalAi,Double totalTeacher,double totalCurrent,
-                         String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria,String summary) {}
+                         String status,Double confirmedTotal,Instant confirmedAt,String analysisStatus,ComplianceReview compliance,int recommendedMaxScore,List<String> missingAiCriteria,String summary,
+                         String gradingStatus) {}
     public record ScoreInput(@Min(0) @Max(4) Integer level,@Size(max=2000) String feedback) {}
     public record ConfirmInput(Boolean acceptAiForMissing) {}
     public record ComplianceInput(@NotNull ComplianceDecision decision,@Size(max=1000) String note) {}

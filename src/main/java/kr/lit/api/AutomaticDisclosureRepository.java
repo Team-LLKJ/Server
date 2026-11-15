@@ -11,5 +11,7 @@ public class AutomaticDisclosureRepository {
     public void lockEvaluation(String id){db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id);}
     public List<String> getDisclosure(String pid){return db.queryForList("SELECT disclosure_json FROM system_ai_disclosures WHERE participant_id=?",String.class,pid);}
     public List<String> getSubmission(String pid){return db.queryForList("SELECT snapshot FROM submissions WHERE participant_id=?",String.class,pid);}
+    public List<String> getAnalysis(String pid){return db.queryForList("SELECT result_json FROM grading_analyses WHERE participant_id=? AND result_json IS NOT NULL",String.class,pid);}
+    public int updateDisclosure(String pid,String value){return db.update("UPDATE system_ai_disclosures SET disclosure_json=? WHERE participant_id=?",value,pid);}
     public void saveDisclosure(String id,String pid,String value){db.update("INSERT INTO system_ai_disclosures(participant_id,evaluation_id,disclosure_json) VALUES (?,?,?)",pid,id,value);}
 }

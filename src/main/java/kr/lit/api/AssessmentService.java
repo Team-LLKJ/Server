@@ -1,5 +1,6 @@
 package kr.lit.api;
 
+import kr.lit.db.DatabaseUpsert;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,10 +30,13 @@ public class AssessmentService {
     private final NotificationService notifications;
     private final SemanticJudge judge;
     private final PurposeClassifier purposes;
+    private final GradingQueue queue;
+    private final JudgeUsage usage;
 
-    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes) {
-        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;
+    public AssessmentService(JdbcTemplate db,ObjectMapper json,EvaluationService evaluations,ReportService reports,AssessmentAnalyzer analyzer,NotificationService notifications,SemanticJudge judge,PurposeClassifier purposes,GradingQueue queue,JudgeUsage usage,AutomaticDisclosureService disclosures) {
+        this.db=db;this.json=json;this.evaluations=evaluations;this.reports=reports;this.analyzer=analyzer;this.notifications=notifications;this.judge=judge;this.purposes=purposes;this.queue=queue;this.usage=usage;this.disclosures=disclosures;
     }
+    private final AutomaticDisclosureService disclosures;
 
     // ===== 공통 =====
     private ApiError.Failure fail(HttpStatus status,String code,String message) { return new ApiError.Failure(status,code,message); }
@@ -51,26 +55,29 @@ public class AssessmentService {
     private static OffsetDateTime now() { return OffsetDateTime.now(ZoneOffset.UTC); }
     private String encode(Object v) { try { return json.writeValueAsString(v); } catch(Exception e) { throw new IllegalStateException(e); } }
     private <T> T decode(String v,TypeReference<T> type) { try { return json.readValue(v,type); } catch(Exception e) { throw new IllegalStateException(e); } }
-    private static double score(int max,int level) { return Math.round(max*level/4.0*100)/100.0; }
+    /** level 0~4(1~5단계 − 1). 점수 = 배점 × level ÷ 4, 소수 첫째 자리 반올림(예: 15점 항목 4단계 = 11.3). */
+    private static double score(int max,int level) { return RubricJudge.score(max,level+1).doubleValue(); }
+    /** 평가가 끝나기 전에는 채점 결과를 내려 주지 않습니다(lit.grading.results-after-end). */
+    private void requireResultsVisible(String id) {
+        if(!queue.resultsVisible(id)) throw fail(HttpStatus.CONFLICT,"GRADING_RESULTS_NOT_READY","평가가 끝난 뒤 채점 결과를 볼 수 있습니다.");
+    }
 
     // ===== 루브릭 =====
+    /** 기본 루브릭(2026-11-14): 목적 20, 자기 주도 30, 비판적 검토 20, 학생 기여 30. 투명성은 평가하지 않습니다. */
     public static List<Criterion> defaultCriteria() {
         return List.of(
-            new Criterion(1,"AI 활용 목적의 적절성",15,"AI를 답 생성이 아니라 학습·탐색·이해를 위해 썼는가",List.of(
+            new Criterion(1,"AI 활용 목적의 적절성",20,"AI를 답 생성이 아니라 학습·탐색·이해를 위해 썼는가",List.of(
                 "AI를 주로 답안 생성·대리 작성에 사용함","학습 목적 질문이 일부 있으나 답 생성 요청이 많음","학습·탐색 목적과 답 생성 요청이 섞여 있음",
                 "대부분 개념 이해·자료 탐색·아이디어 구체화에 사용함","모든 질문이 학습·탐색·이해 목적에 적절함"),Indicator.PURPOSE,"프로젝트 제안 초안·교사 확인 필요"),
-            new Criterion(2,"자기 주도적 사고",25,"자기 생각과 판단을 먼저 내고 AI는 보조로 썼는가",List.of(
+            new Criterion(2,"자기 주도적 사고",30,"자기 생각과 판단을 먼저 내고 AI는 보조로 썼는가",List.of(
                 "자기 생각 없이 AI에 의존함","AI 질문 전 자기 생각이 거의 없음","일부 문항에서 자기 생각을 먼저 제시함",
                 "대부분 자기 생각을 먼저 쓰고 질문을 구체화함","자기 주장·질문 구체화·선택 이유가 모두 분명함"),Indicator.SELF_DIRECTION,"프로젝트 제안 초안·교사 확인 필요"),
             new Criterion(3,"AI 답변의 비판적 검토",20,"AI 답을 그대로 받지 않고 검증·수정했는가",List.of(
                 "AI 답변을 검토 없이 그대로 수용함","검토 흔적이 거의 없음","일부 답변을 확인하거나 수정함",
                 "대부분의 답변을 확인·반박·수정함","모든 답변을 근거와 함께 검증·수정함"),Indicator.CRITICAL_REVIEW,"프로젝트 제안 초안·교사 확인 필요"),
-            new Criterion(4,"최종 답안에 대한 학생의 기여",25,"자신의 해석과 근거가 최종 답안에 반영됐는가",List.of(
+            new Criterion(4,"최종 답안에 대한 학생의 기여",30,"자신의 해석과 근거가 최종 답안에 반영됐는가",List.of(
                 "최종 답안이 AI 문장 위주임","학생 기여가 적음","학생 작성과 AI 참고가 비슷함",
-                "대부분 학생의 해석과 근거로 작성함","학생 고유의 해석·근거·사례로 완성함"),Indicator.CONTRIBUTION,"프로젝트 제안 초안·교사 확인 필요"),
-            new Criterion(5,"AI 활용 과정의 투명성",15,"AI 사용 범위와 반영 과정을 명확히 기록했는가",List.of(
-                "AI 사용 기록이 없음","기록이 매우 부족함","도구·질문·활용 부분 중 일부를 기록함",
-                "대부분 기록함","사용 도구·질문 기록·활용 부분을 모두 명확히 기록함"),Indicator.TRANSPARENCY,"프로젝트 제안 초안·교사 확인 필요"));
+                "대부분 학생의 해석과 근거로 작성함","학생 고유의 해석·근거·사례로 완성함"),Indicator.CONTRIBUTION,"프로젝트 제안 초안·교사 확인 필요"));
     }
     private List<Criterion> criteria(String id) {
         var rows=db.queryForList("SELECT criteria_json FROM evaluation_rubrics WHERE evaluation_id=?",String.class,id);
@@ -94,7 +101,7 @@ public class AssessmentService {
             var levels=c.levelDescriptions()==null?List.of("","","","",""):c.levelDescriptions();
             list.add(new Criterion(n++,c.name().strip(),c.maxScore(),c.description()==null?"":c.description().strip(),levels,c.indicator(),"교사 지정"));
         }
-        db.update("MERGE INTO evaluation_rubrics(evaluation_id,criteria_json,updated_at) KEY(evaluation_id) VALUES (?,?,?)",id,encode(list),now());
+        DatabaseUpsert.save(db,"evaluation_rubrics","evaluation_id,criteria_json,updated_at","evaluation_id","?,?,?",id,encode(list),now());
         db.update("UPDATE evaluations SET criteria_json=?,criteria_kind='RUBRIC' WHERE id=? AND criteria_kind<>'TITLES'",encode(input.criteria()),id);
         return rubricView(id);
     }
@@ -142,6 +149,7 @@ public class AssessmentService {
      */
     public Analysis labelSentence(String id,String pid,String sentenceId,SentenceLabelInput input) {
         String teacherId=teacher(id);person(id,pid);requireSubmitted(pid);
+        if(input.value()==null) throw fail(HttpStatus.BAD_REQUEST,"SOURCE_REQUIRED","source(AI 또는 DIRECT)가 필요합니다.");
         if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty()) throw fail(HttpStatus.NOT_FOUND,"EVALUATION_NOT_FOUND","평가를 찾을 수 없습니다.");
         var source=reportsWorkWithoutAuth(id,pid);
         var algorithm=compute(id,pid,source,null,false);
@@ -150,7 +158,7 @@ public class AssessmentService {
         var config=new LinkedHashMap<String,Object>(analyzer.getDefinition());config.putAll(judge.describe());config.put("semanticStatus",algorithm.semanticStatus());
         var semantic=sentence.semantic();
         db.update("INSERT INTO sentence_labels(evaluation_id,participant_id,question_id,sentence_id,sentence_text,teacher_label,algorithm_source,algorithm_reason,longest_span,similarity,haiku_level,gemini_level,needs_review,config_json,teacher_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                id,pid,sentence.questionId(),sentence.id(),sentence.text(),input.label(),sentence.source(),sentence.reason(),sentence.longestSpan(),sentence.similarity(),
+                id,pid,sentence.questionId(),sentence.id(),sentence.text(),input.value(),sentence.source(),sentence.reason(),sentence.longestSpan(),sentence.similarity(),
                 semantic==null?null:semantic.haikuLevel(),semantic==null?null:semantic.geminiLevel(),sentence.needsReview(),encode(config),teacherId,now());
         return analyzeAndStore(id,pid);
     }
@@ -170,16 +178,19 @@ public class AssessmentService {
         return analyzeAndStore(id,pid);
     }
     private Analysis analyzeAndStore(String id,String pid) {
-        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
+        db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id);
+        var src=reportsWorkWithoutAuth(id,pid);
+        var result=compute(id,pid,src);
         var analyzedAt=OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC);
         int updated=db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",encode(result),analyzedAt,result.semanticStatus(),pid);
         if(updated==0) db.update("INSERT INTO grading_analyses(participant_id,evaluation_id,analysis_status,result_json,requested_at,analyzed_at,semantic_status) VALUES (?,?,'DONE',?,?,?,?)",
                 pid,id,encode(result),analyzedAt,analyzedAt,result.semanticStatus());
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
         return result;
     }
     public Map<String,Object> getAnalysisDefinition(String id){teacher(id);return analyzer.getDefinition();}
     public Analysis analysis(String id,String pid) {
-        teacher(id);person(id,pid);
+        teacher(id);person(id,pid);requireResultsVisible(id);
         var result=stored(id,pid,true);
         if(result!=null) return result;
         return new Analysis(pid,"NOT_SUBMITTED",AssessmentAnalyzer.MODEL,null,0,null,null,List.of(),List.of(),List.of(),List.of(),null,
@@ -188,7 +199,7 @@ public class AssessmentService {
     public AnalysisRun run(String id) {
         teacher(id);
         var pids=db.queryForList("SELECT participant_id FROM submissions WHERE evaluation_id=?",String.class,id);
-        for(String pid:pids) db.update("MERGE INTO grading_analyses(participant_id,evaluation_id,analysis_status,requested_at) KEY(participant_id) VALUES (?,?,'PENDING',?)",pid,id,now());
+        for(String pid:pids) DatabaseUpsert.save(db,"grading_analyses","participant_id,evaluation_id,analysis_status,requested_at","participant_id","?,?,'PENDING',?",pid,id,now());
         return new AnalysisRun(id,pids.size(),"PENDING");
     }
     /** 스케줄러 전용(교사 인증 없음). 한 명씩 별도 트랜잭션으로 처리합니다. */
@@ -202,6 +213,7 @@ public class AssessmentService {
         var result=compute(id,pid,src);
         db.update("UPDATE grading_analyses SET analysis_status='DONE',result_json=?,error_code=NULL,analyzed_at=?,semantic_status=?,semantic_attempts=0,semantic_failed_at=NULL WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
     }
     /** 스케줄러 전용: 2단계 판정이 필요한(semantic_status=PENDING) 분석의 LLM 후보를 만듭니다. 대상이 아니면 null. */
     public SemanticJudge.Plan prepareSemantic(String id,String pid) {
@@ -217,11 +229,13 @@ public class AssessmentService {
         if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty())return;
         var rows=db.queryForList("SELECT participant_id FROM grading_analyses WHERE participant_id=? AND evaluation_id=? AND analysis_status='DONE' AND semantic_status='PENDING'",String.class,pid,id);
         if(rows.isEmpty()) return;
-        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid),failure);
+        var src=reportsWorkWithoutAuth(id,pid);
+        var result=compute(id,pid,src,failure);
         // 실패 없이도 캐시가 채워지지 않았다면(예: 그사이 제출본 변경) PENDING으로 남아 다음 주기에 다시 판정합니다.
         boolean failed=SemanticJudge.STATUS_PARTIAL.equals(result.semanticStatus())||SemanticJudge.STATUS_UNAVAILABLE.equals(result.semanticStatus());
         db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=?,semantic_attempts=semantic_attempts+?,semantic_failed_at=? WHERE participant_id=?",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),failed?1:0,failed?now():null,pid);
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
     }
     public void markSemanticUnavailable(String pid) {
         db.update("UPDATE grading_analyses SET semantic_status='UNAVAILABLE',semantic_attempts=semantic_attempts+1,semantic_failed_at=? WHERE participant_id=? AND semantic_status='PENDING'",now(),pid);
@@ -249,9 +263,11 @@ public class AssessmentService {
         if(rows.isEmpty()||!submitted(pid)) return;
         String id=rows.get(0);
         if(db.queryForList("SELECT id FROM evaluations WHERE id=? FOR UPDATE",String.class,id).isEmpty()) return;
-        var result=compute(id,pid,reportsWorkWithoutAuth(id,pid));
+        var src=reportsWorkWithoutAuth(id,pid);
+        var result=compute(id,pid,src);
         db.update("UPDATE grading_analyses SET result_json=?,analyzed_at=?,semantic_status=? WHERE participant_id=? AND analysis_status='DONE'",
                 encode(result),OffsetDateTime.ofInstant(result.analyzedAt(),ZoneOffset.UTC),result.semanticStatus(),pid);
+        disclosures.refreshAnalysisDisclosure(id,pid,result,src);
     }
 
     // ===== 점수 =====
@@ -288,10 +304,14 @@ public class AssessmentService {
         var compliance=new ComplianceReview(analysis==null||analysis.compliance()==null?null:analysis.compliance().result(),
                 result==null||result.decision()==null?null:ComplianceDecision.valueOf(result.decision()),result==null?null:result.note());
         return new Scores(pid,out,anyAi?round2(ai):null,allTeacher&&!list.isEmpty()?round2(teacher):null,round2(current),status,
-                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi,analysis==null?"제출 후 분석할 수 있습니다.":analysis.summary());
+                result==null?null:result.total(),result==null?null:result.confirmedAt(),analysis==null?"NOT_SUBMITTED":analysis.status(),compliance,recommendedMax,missingAi,
+                analysis==null?"제출 후 분석할 수 있습니다.":analysis.summary(),queue.status(pid));
     }
     private static double round2(double v) { return Math.round(v*100)/100.0; }
-    public Scores scores(String id,String pid) { teacher(id);person(id,pid);return scoresView(id,pid,stored(id,pid,true)); }
+    public Scores scores(String id,String pid) { teacher(id);person(id,pid);requireResultsVisible(id);return scoresView(id,pid,stored(id,pid,true)); }
+    public GradingQueue.Progress gradingProgress(String id) { teacher(id);return queue.progress(id); }
+    public GradingQueue.Progress retryGrading(String id,String pid) { teacher(id);person(id,pid);requireSubmitted(pid);queue.retry(id,pid);return queue.progress(id); }
+    public JudgeUsage.Summary judgeUsage(String id) { teacher(id);return usage.summary(id); }
     public Scores saveScore(String id,String pid,int criterionId,ScoreInput input) {
         String teacherId=teacher(id);person(id,pid);requireSubmitted(pid);
         var criterion=criteria(id).stream().filter(c->c.criterionId()==criterionId).findFirst()
@@ -307,7 +327,7 @@ public class AssessmentService {
             db.update("UPDATE grading_scores SET feedback=?,teacher_id=?,updated_at=? WHERE participant_id=? AND criterion_id=?",input.feedback(),teacherId,now(),pid,criterionId);after=before;
         } else {
             String feedback=input.feedback()!=null?input.feedback():current==null?"":current.feedback();
-            db.update("MERGE INTO grading_scores(participant_id,criterion_id,evaluation_id,score_level,feedback,teacher_id,updated_at) KEY(participant_id,criterion_id) VALUES (?,?,?,?,?,?,?)",
+            DatabaseUpsert.save(db,"grading_scores","participant_id,criterion_id,evaluation_id,score_level,feedback,teacher_id,updated_at","participant_id,criterion_id","?,?,?,?,?,?,?",
                     pid,criterionId,id,input.level(),feedback,teacherId,now());after=input.level();
         }
         String previousFeedback=current==null?null:current.feedback();
@@ -374,14 +394,14 @@ public class AssessmentService {
         teacher(id);
         if(page<0||size<1||size>200||query==null||query.length()>100) throw fail(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","page는 0 이상, size는 1~200, query는 100자 이하입니다.");
         String q=query.strip();
-        String filter=" FROM participants p WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0";
+        String filter=" FROM participants p WHERE p.evaluation_id=? AND POSITION(LOWER(?) IN LOWER(p.nickname))>0";
         long total=db.queryForObject("SELECT COUNT(*)"+filter,Long.class,id,q);
         String warn="(SELECT COUNT(*) FROM learning_events e WHERE e.participant_id=p.id AND e.event_type IN ("+WorkModels.ClientEventType.warningSql()+"))";
         long warning=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+">0",Long.class,id,q);
         long submittedCount=db.queryForObject("SELECT COUNT(*)"+filter+" AND "+warn+"=0 AND EXISTS (SELECT 1 FROM submissions s WHERE s.participant_id=p.id)",Long.class,id,q);
         long confirmed=db.queryForObject("SELECT COUNT(*)"+filter+" AND EXISTS (SELECT 1 FROM grading_results g WHERE g.participant_id=p.id AND g.grading_status='CONFIRMED')",Long.class,id,q);
         var rows=db.query("SELECT p.id,p.nickname,p.expelled_at,s.submitted_at,s.submission_mode,"+warn+" warnings,(SELECT MAX(e.created_at) FROM learning_events e WHERE e.participant_id=p.id) last_event_at FROM participants p LEFT JOIN submissions s ON s.participant_id=p.id"
-                        +" WHERE p.evaluation_id=? AND LOCATE(LOWER(?),LOWER(p.nickname))>0 ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",
+                        +" WHERE p.evaluation_id=? AND POSITION(LOWER(?) IN LOWER(p.nickname))>0 ORDER BY p.nickname,p.id LIMIT ? OFFSET ?",
                 (r,n)->new Object[]{r.getString("id"),r.getString("nickname"),instant(r,"submitted_at"),r.getString("submission_mode"),r.getInt("warnings"),instant(r,"last_event_at"),instant(r,"expelled_at")},id,q,size,(long)page*size);
         var items=new ArrayList<SubmissionRow>();
         for(var row:rows) {

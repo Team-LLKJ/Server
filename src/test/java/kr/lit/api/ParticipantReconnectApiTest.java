@@ -39,24 +39,27 @@ class ParticipantReconnectApiTest extends AuthTestSupport {
         assertThat(response.at("/lobby/screen").asText()).isEqualTo("WAITING");assertThat(response.path("workspace").isNull()).isTrue();
         assertThat(db.queryForObject("SELECT started_at FROM evaluations WHERE id=?",java.time.OffsetDateTime.class,f.id())).isNull();
     }
-    @Test void endedAndExpiredParticipantsCanReturnReadOnlyAndCannotSave() throws Exception {
+    @Test void expiredParticipantIsSubmittedOnReconnectAndThenBlocked() throws Exception {
         var f=fixture(true);work.save(f.id(),f.token(),f.question(),new SaveAnswer("마감 전 답안",0,AnswerSource.DIRECT,null));
         evaluations.participant(f.id(),f.token(),true);
         db.update("UPDATE evaluations SET ends_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP),expires_at=DATEADD('SECOND',-1,CURRENT_TIMESTAMP) WHERE id=?",f.id());
+        // 다시 들어오는 순간 마감 자동 제출: 문항·답안은 주지 않고 제출 상태만 알려 줍니다.
         var response=reconnect(f);
-        assertThat(response.path("readOnly").asBoolean()).isTrue();assertThat(response.at("/workspace/status").asText()).isEqualTo("SUBMITTED");
-        assertThat(response.at("/workspace/questions/0/answer/content").asText()).isEqualTo("마감 전 답안");
+        assertThat(response.path("readOnly").asBoolean()).isTrue();assertThat(response.at("/lobby/screen").asText()).isEqualTo("SUBMITTED");assertThat(response.path("workspace").isNull()).isTrue();
+        assertThat(submissionByToken(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).isEqualTo("마감 전 답안");
         mvc.perform(body(request(put("/api/evaluations/"+f.id()+"/questions/"+f.question()+"/answer"),null).header("X-Participant-Token",f.token()),new SaveAnswer("마감 후 입력",1,AnswerSource.DIRECT,null)))
-                .andExpect(status().isConflict()).andExpect(jsonPath("code").value("ALREADY_SUBMITTED"));
-        reconnect(f);assertThat(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,f.pid())).isEqualTo(1);
+                .andExpect(status().isUnauthorized());
+        mvc.perform(body(request(post("/api/participation/reconnect"),null),input(f))).andExpect(status().isUnauthorized());
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM submissions WHERE participant_id=?",Integer.class,f.pid())).isEqualTo(1);
     }
-    @Test void submittedParticipantReturnsReadOnlyAndWrongTokensCannotActivateOthers() throws Exception {
+    @Test void submittedParticipantCannotReturnAndWrongTokensCannotActivateOthers() throws Exception {
         var f=fixture(true);var review=work.review(f.id(),f.token());work.submit(f.id(),f.token(),review.reviewToken());evaluations.participant(f.id(),f.token(),true);
         var foreign=fixture(true);
         mvc.perform(body(request(post("/api/participation/reconnect"),null),Map.of("evaluationId",f.id(),"participantToken",foreign.token())))
                 .andExpect(status().isUnauthorized());
         assertThat(db.queryForObject("SELECT active FROM participants WHERE id=?",Boolean.class,f.pid())).isFalse();
-        var result=reconnect(f);assertThat(result.path("readOnly").asBoolean()).isTrue();assertThat(result.at("/lobby/screen").asText()).isEqualTo("SUBMITTED");
+        mvc.perform(body(request(post("/api/participation/reconnect"),null),input(f))).andExpect(status().isUnauthorized()).andExpect(jsonPath("code").value("INVALID_PARTICIPANT_TOKEN"));
+        assertThat(db.queryForObject("SELECT active FROM participants WHERE id=?",Boolean.class,f.pid())).isFalse();
     }
     @Test void requiresTokenAndAppliesSharedParticipationRateLimit() throws Exception {
         var f=fixture(true);

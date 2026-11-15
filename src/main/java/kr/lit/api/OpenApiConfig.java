@@ -32,6 +32,37 @@ public class OpenApiConfig {
                         .addSecuritySchemes(PARTICIPANT_AUTH,new SecurityScheme().type(SecurityScheme.Type.APIKEY).in(SecurityScheme.In.HEADER)
                                 .name("X-Participant-Token").description("PIN 참가 응답의 participantToken을 입력합니다. 교사 로그인 토큰과 다릅니다.")));
     }
+    /**
+     * 스키마 이름 충돌 방지. 기본은 클래스의 짧은 이름만 써서, 이름이 같은 중첩 레코드(예: AssessmentModels.Analysis와 ReportModels.Analysis,
+     * PurposeUsageAnalyzer.View와 다른 View)가 하나로 덮였습니다. kr.lit 안에서 짧은 이름이 겹치는 중첩 클래스만 "바깥클래스.이름"으로 씁니다.
+     */
+    @Bean
+    public io.swagger.v3.core.jackson.ModelResolver uniqueSchemaNames() {
+        return new io.swagger.v3.core.jackson.ModelResolver(io.swagger.v3.core.util.Json.mapper(),new UniqueTypeNames(collidingNames()));
+    }
+    static final class UniqueTypeNames extends io.swagger.v3.core.jackson.TypeNameResolver {
+        private final Set<String> colliding;
+        UniqueTypeNames(Set<String> colliding){this.colliding=colliding;}
+        @Override protected String getNameOfClass(Class<?> cls) {
+            String name=super.getNameOfClass(cls);
+            var outer=cls.getEnclosingClass();
+            return outer!=null&&cls.getName().startsWith("kr.lit.")&&colliding.contains(cls.getSimpleName())?outer.getSimpleName()+"."+cls.getSimpleName():name;
+        }
+    }
+    /** kr.lit 패키지의 모든 클래스(중첩 포함)에서 짧은 이름이 둘 이상인 것. */
+    static Set<String> collidingNames() {
+        var scanner=new org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider(false){
+            @Override protected boolean isCandidateComponent(org.springframework.beans.factory.annotation.AnnotatedBeanDefinition definition){return true;}
+        };
+        scanner.addIncludeFilter((reader,factory)->true);
+        var counts=new HashMap<String,Integer>();
+        for(var definition:scanner.findCandidateComponents("kr.lit")) {
+            String name=definition.getBeanClassName();if(name==null) continue;
+            counts.merge(name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1),1,Integer::sum);
+        }
+        var out=new HashSet<String>();counts.forEach((k,v)->{if(v>1)out.add(k);});
+        return Set.copyOf(out);
+    }
     @Bean
     public OpenApiCustomizer customizeApiAuthentication() {
         return api->api.getPaths().forEach((path,item)->item.readOperations().forEach(operation->{

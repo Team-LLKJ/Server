@@ -35,7 +35,7 @@ class ReportApiTest extends AuthTestSupport {
   var f=fixture(true);var first=reports.teacherGenerate(f.id(),f.pid());
   assertThat(first.version()).isEqualTo(1);assertThat(first.content().teacherReview()).isNull();
   assertThat(first.content().analysis().classifications().get(0).purposes()).contains("IDEATION","RESEARCH","VERIFICATION","REVISION");
-  assertThat(reports.studentGenerate(f.id(),f.token()).id()).isEqualTo(first.id());
+  assertThat(reports.teacherGenerate(f.id(),f.pid()).id()).isEqualTo(first.id());
   reports.saveReview(f.id(),f.pid(),review(0));var second=reports.teacherGenerate(f.id(),f.pid());
   assertThat(second.version()).isEqualTo(2);assertThat(second.content().teacherReview().ratings()).hasSize(5);
   assertThat(reports.teacherReport(f.id(),f.pid(),1).content().teacherReview()).isNull();
@@ -50,9 +50,9 @@ class ReportApiTest extends AuthTestSupport {
   mvc.perform(request(get(root(f)),other)).andExpect(status().isNotFound());
   mvc.perform(request(post(root(f)+"/reports"),teacher)).andExpect(status().isConflict()).andExpect(jsonPath("code").value("SUBMISSION_REQUIRED"));
   mvc.perform(get(root(f))).andExpect(status().isUnauthorized());
-  mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",f.token())).andExpect(status().isNotFound());
+  mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",f.token())).andExpect(status().isForbidden());
   var second=fixture(true);
-  mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",second.token())).andExpect(status().isUnauthorized());
+  mvc.perform(get("/api/evaluations/"+f.id()+"/report").header("X-Participant-Token",second.token())).andExpect(status().isForbidden());
   mvc.perform(request(get("/api/teacher/evaluations/"+second.id()+"/students/"+f.pid()),teacher)).andExpect(status().isNotFound());
   mvc.perform(request(get("/api/teacher/evaluations/"+f.id()+"/students?page=-1"),teacher)).andExpect(status().isBadRequest());
  }
@@ -75,8 +75,8 @@ class ReportApiTest extends AuthTestSupport {
   var f=fixture(false);as(teacher);var r=work.reserve(f.id(),f.token(),f.qid(),new Ask("pending","설명"),"stub","local-stub");
   evaluations.end(f.id());var closed=work.finish(r,"늦은 응답",null);
   assertThat(closed.state()).isEqualTo("FAILED");assertThat(closed.errorCode()).isEqualTo("EVALUATION_CLOSED");
-  assertThat(closed.answerText()).isNull();assertThat(work.workspace(f.id(),f.token()).questions().get(0).answer().content()).contains("분모");
-  evaluations.end(f.id());assertThat(work.learningEvents(f.id(),f.token(),0,100).stream().filter(e->e.type().equals("AI_FAILED"))).hasSize(1);
+  assertThat(closed.answerText()).isNull();assertThat(submissionByToken(f.id(),f.token()).snapshot().at("/answers/0/answer/content").asText()).contains("분모");
+  evaluations.end(f.id());as(teacher);assertThat(work.teacherEvents(f.id(),f.pid(),0,100).stream().filter(e->e.type().equals("AI_FAILED"))).hasSize(1);
  }
  @Test void pdfHasKoreanAndConversationExportIsOptional() throws Exception {
   var f=fixture(true);reports.saveReview(f.id(),f.pid(),review(0));var report=reports.teacherGenerate(f.id(),f.pid());
@@ -105,15 +105,14 @@ class ReportApiTest extends AuthTestSupport {
   try(var doc=Loader.loadPDF(pdf.render(reports.teacherGenerate(f.id(),f.pid()),false))){assertThat(doc.getNumberOfPages()).isGreaterThan(2);assertThat(new PDFTextStripper().getText(doc)).contains("긴 한글 답안");}
  }
 
- @Test void studentReportEndpointAndVersionAccessAreScoped() throws Exception {
+ @Test void studentReportApisAreTeacherOnly() throws Exception {
+  // 보고서는 교사만 만듭니다(2026-11-14). 참가자 토큰으로는 만들기·조회·파일 모두 403.
   var f=fixture(true);
-  mvc.perform(post("/api/evaluations/"+f.id()+"/reports").header("X-Participant-Token",f.token()))
-   .andExpect(status().isOk()).andExpect(jsonPath("version").value(1));
-  mvc.perform(get("/api/evaluations/"+f.id()+"/report?version=1").header("X-Participant-Token",f.token()))
-   .andExpect(status().isOk()).andExpect(jsonPath("content.participantId").value(f.pid()));
-  mvc.perform(get("/api/evaluations/"+f.id()+"/report?version=0").header("X-Participant-Token",f.token())).andExpect(status().isBadRequest());
-  mvc.perform(get("/api/evaluations/"+f.id()+"/report/pdf").header("X-Participant-Token",f.token())).andExpect(status().isOk()).andExpect(content().contentType("application/pdf"));
-  mvc.perform(get("/api/evaluations/"+f.id()+"/report/pdf")).andExpect(status().isUnauthorized());
+  for(var call:List.of(post("/api/evaluations/"+f.id()+"/reports"),get("/api/evaluations/"+f.id()+"/report?version=1"),get("/api/evaluations/"+f.id()+"/report/pdf"),
+          get("/api/evaluations/"+f.id()+"/report/hwp"),get("/api/evaluations/"+f.id()+"/report.hwp"),get("/api/evaluations/"+f.id()+"/report.pdf")))
+   mvc.perform(call.header("X-Participant-Token",f.token())).andExpect(status().isForbidden()).andExpect(jsonPath("code").value("TEACHER_ONLY"));
+  assertThat(db.queryForObject("SELECT COUNT(*) FROM usage_reports WHERE participant_id=?",Integer.class,f.pid())).isZero();
+  mvc.perform(request(post(root(f)+"/reports"),teacher)).andExpect(status().isOk()).andExpect(jsonPath("version").value(1));
   mvc.perform(request(get(root(f)+"/report?version=99"),teacher)).andExpect(status().isNotFound());
  }
 

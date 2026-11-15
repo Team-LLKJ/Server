@@ -9,6 +9,15 @@ import static kr.lit.api.ReportModels.*;
 /** PDF/HWP 공통 표현 모델. 저장된 리포트만 사용하며 DB·시계에 접근하지 않습니다. */
 @Component
 public class ReportLayout {
+    private void addSummaryEntries(List<Block> blocks,String label,List<ProcessGradingSummary.Entry> entries) {
+        if (entries.isEmpty()) return;
+        blocks.add(new Text(label,"subtitle"));
+        for (var entry : entries) {
+            text(blocks,entry.text());
+            if (entry.quote()!=null) text(blocks,"“"+entry.quote()+"”");
+        }
+    }
+
     public sealed interface Block permits Text,Table,PageBreak {}
     public record Text(String value,String style) implements Block {}
     public record Table(List<List<String>> rows,int[] widths,boolean header) implements Block {}
@@ -27,13 +36,23 @@ public class ReportLayout {
         overview.add(List.of("답안 저장",saves+"회"));overview.add(List.of("AI 질문",c.submission().path("conversations").size()+"건 (완료 "+completed+"건·실패 "+failed+"건)"));overview.add(List.of("경고 신고",warnings+"건"));
         overview.add(List.of("교사 검토",c.grading()!=null?labelCode(c.grading().status()):review==null?"검토 전":labelCode(review.compliance().name())));
         if(review!=null&&!review.comment().isBlank())overview.add(List.of("교사 의견",review.comment()));
-        if(c.grading()!=null&&c.grading().summary()!=null)blocks.add(new Text(c.grading().summary(),"body"));
+        if (c.grading()!=null) {
+            var summary=c.grading().evaluationSummary();
+            if (summary!=null) {
+                addSummaryEntries(blocks,"잘한 점",summary.strengths());
+                addSummaryEntries(blocks,"아쉬운 점",summary.weaknesses());
+                if (!summary.checks().isEmpty()) {
+                    blocks.add(new Text("선생님 확인 필요","subtitle"));
+                    summary.checks().forEach(check -> text(blocks,check));
+                }
+            } else if (c.grading().summary()!=null) text(blocks,c.grading().summary());
+        }
         blocks.add(new Table(overview,new int[]{14520,28000},false));
         blocks.add(new Text("신고 기록만으로 부정행위를 판단하지 않습니다.","note"));
         heading(blocks,"2. 평가 기준별 루브릭");
         var scores=new ArrayList<List<String>>();scores.add(List.of("평가 기준","점수","평가 내용"));
         if(c.grading()!=null) {
-            for(var criterion:c.grading().criteria())scores.add(List.of(criterion.name(),criterion.score()==null?"미채점":formatScore(criterion.score())+" / "+criterion.maxScore()+(criterion.teacherScored()?"":" (AI 추천)"),selectFeedback(criterion)));
+            for(var criterion:c.grading().criteria())scores.add(List.of(criterion.name(),criterion.notApplicable()?"해당 없음":criterion.score()==null?"미채점":formatScore(criterion.score())+" / "+criterion.maxScore()+(criterion.teacherScored()?"":" (AI 추천)"),selectFeedback(criterion)));
         }else for(var criterion:Criterion.values()) {
             var rating=review==null?null:review.ratings().stream().filter(r->r.criterion()==criterion).findFirst().orElse(null);
             String evidence=rating==null?"":Objects.toString(rating.evidence(),"");
@@ -57,9 +76,15 @@ public class ReportLayout {
         var disclosure=c.submission().path("aiDisclosure");
         if(!disclosure.isMissingNode()&&!disclosure.isNull()) {
             usage.add(List.of("생성 상태",labelCode(disclosure.path("status").asText("READY"))));
-            usage.add(List.of("사용 AI 도구",disclosure.path("tools").asText().isBlank()?"기록된 완료 응답 없음":disclosure.path("tools").asText()));
-            usage.add(List.of("사용한 부분",disclosure.path("usedParts").asText().isBlank()?"미작성":disclosure.path("usedParts").asText()));
-            usage.add(List.of("선택·활용 이유",disclosure.path("reason").asText().isBlank()?"미작성":disclosure.path("reason").asText()));
+            usage.add(List.of("AI 활용 기록 · 사용한 도구",disclosure.path("tools").asText().isBlank()?"기록된 완료 응답 없음":disclosure.path("tools").asText()));
+            String usedParts=disclosure.path("usedParts").asText();
+            String reason=disclosure.path("reason").asText();
+            if(!raw){
+                usedParts=String.join("\n",usedParts.lines().map(line->line.replaceFirst("^((?:문항 [0-9]+) – [^:]+): .*$","$1")).toList());
+                reason=String.join("\n",reason.lines().map(line->line.replaceFirst("( – AI 답변 인용) \".*\": ","$1: ")).toList());
+            }
+            usage.add(List.of("AI 활용 기록 · 활용 부분",usedParts.isBlank()?"기록 없음":usedParts));
+            usage.add(List.of("AI 활용 기록 · 이유",reason.isBlank()?"기록 없음":reason));
         }
         blocks.add(new Table(usage,new int[]{14520,28000},false));
         blocks.add(new Text("키워드 기반 분류(교사 검토 필요). 복수 목적을 허용합니다. 문장 유사도는 실제 작성자 비율이나 기여 점수가 아닙니다.","note"));
@@ -102,12 +127,12 @@ public class ReportLayout {
         var result=grading.aiRecommendation();if(result==null)return;
         if(result.partialScore()!=null){var p=grading.teacherReview()==null?result.partialScore():grading.teacherReview().result().partialScore();if(p!=null)blocks.add(new Text("확인된 항목 "+p.assessedScore()+" / "+p.assessedMaxScore()+"점 · 판단 보류 배점 "+p.heldMaxScore()+"점 · 평가 대상 아님 "+p.notApplicableMaxScore()+"점","note"));}
         for(var cell:result.cells()){
-            String questionLabel=ProcessGradingModels.GLOBAL.equals(cell.questionId())?"전체 기록":java.util.stream.StreamSupport.stream(submission.path("answers").spliterator(),false).filter(a->a.path("question").path("id").asText().equals(cell.questionId())).map(a->"문항 "+a.path("question").path("position").asInt()).findFirst().orElse("문항별 평가");
+            String questionLabel=cell.questionId()==null?"학생 전체 기록":ProcessGradingModels.GLOBAL.equals(cell.questionId())?"전체 기록":java.util.stream.StreamSupport.stream(submission.path("answers").spliterator(),false).filter(a->a.path("question").path("id").asText().equals(cell.questionId())).map(a->"문항 "+a.path("question").path("position").asInt()).findFirst().orElse("문항별 평가");
             heading(blocks,cell.criterionName()+" · "+questionLabel);
             var rows=new ArrayList<List<String>>();rows.add(List.of("구분","내용"));
             rows.add(List.of("AI 추천",cell.level()==null?cell.status().equals("NOT_APPLICABLE")?"평가 대상 아님":"판단 보류":cell.level()+"단계 · "+cell.score()+" / "+cell.maxScore()+"점"));
             var teacher=grading.teacherReview();
-            var override=teacher==null?null:teacher.overrides().stream().filter(o->o.criterion()==cell.criterion()&&o.questionId().equals(cell.questionId())).findFirst().orElse(null);
+            var override=teacher==null?null:teacher.overrides().stream().filter(o->o.criterion()==cell.criterion()&&Objects.equals(o.questionId(),cell.questionId())).findFirst().orElse(null);
             rows.add(List.of("교사 검토",teacher==null?"검토 전":(teacher.confirmed()?"최종 확정":"검토 중")+(override==null?"":": "+(override.score()!=null?override.score().stripTrailingZeros().toPlainString()+" / "+cell.maxScore()+"점 (점수 직접 입력)":override.level()+"단계")+" · "+override.reason())));
             rows.add(List.of("평가 이유",cell.reason()));
             if(cell.details()!=null){
